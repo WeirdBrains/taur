@@ -10,7 +10,10 @@ Grant (or with \-\-revoke, remove) site\-admin rights: accept requests, manage a
 .SH OPTIONS
 .TP
 \fB\-\-home\fR \fI<HOME>\fR
-Data directory (default: $TAUR_HOME, else ~/.local/share/taur)
+Data directory (default: ~/.local/share/taur)
+.RS
+May also be specified with the \fBTAUR_HOME\fR environment variable. 
+.RE
 .TP
 \fB\-\-revoke\fR
 
@@ -20,3 +23,8 @@ Print help
 .TP
 <\fINAME\fR>
 
+.SH ENVIRONMENT
+Command\-line flags take precedence over environment variables, which take precedence over defaults.
+.TP
+\fBTAUR_HOME\fR
+Data directory (database, git repos, outbox, SSH host key). Default: ~/.local/share/taur.

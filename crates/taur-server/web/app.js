@@ -123,6 +123,7 @@ async function pagePackage(name) {
     api("GET", `/api/v1/packages/${enc(base)}/comments`, undefined, false).catch(() => []),
     api("GET", `/api/v1/packages/${enc(base)}/flag`, undefined, false).catch(() => ({})),
   ]);
+  const server = await api("GET", "/api/v1/server", undefined, false).catch(() => ({}));
   const subscribed = me ? (await api("GET", `/api/v1/packages/${enc(base)}/notify`).catch(() => ({ subscribed: false }))).subscribed : false;
   const voted = me ? (await api("GET", `/api/v1/packages/${enc(base)}/vote`).catch(() => ({ voted: false }))).voted : false;
   const list = (k) => (info[k] && info[k].length ? info[k].join(", ") : "—");
@@ -130,7 +131,8 @@ async function pagePackage(name) {
   const rows = [
     ["Package base", base], ["Description", info.Description || "—"],
     ["Upstream URL", info.URL ? h("a", { href: info.URL, rel: "nofollow noopener" }, info.URL) : "—"],
-    ["Git clone", h("code", {}, `${origin}/${base}.git`)], ["Snapshot", h("a", { href: info.URLPath }, "tarball")],
+    ["Git clone", h("code", {}, `${origin}/${base}.git`)],
+    ...(server.ssh_clone_base ? [["SSH clone", h("code", {}, `${server.ssh_clone_base}/${base}.git`)]] : []), ["Snapshot", h("a", { href: info.URLPath }, "tarball")],
     ["Licenses", list("License")], ["Keywords", list("Keywords")], ["Depends", list("Depends")],
     ["Make depends", list("MakeDepends")], ["Check depends", list("CheckDepends")], ["Optional depends", list("OptDepends")],
     ["Provides", list("Provides")], ["Conflicts", list("Conflicts")], ["Replaces", list("Replaces")], ["Groups", list("Groups")],

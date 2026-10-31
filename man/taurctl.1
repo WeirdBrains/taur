@@ -87,5 +87,13 @@ Run an MCP server on stdio that forwards to the TAUR server\*(Aqs /mcp endpoint 
 .TP
 taurctl\-help(1)
 Print this message or the help of the given subcommand(s)
+.SH ENVIRONMENT
+Flags take precedence over environment variables.
+.TP
+\fBTAUR_SERVER\fR
+TAUR server URL (overrides the config file).
+.TP
+\fBTAURCTL_CONFIG_DIR\fR
+Config directory (default: $XDG_CONFIG_HOME/taurctl or ~/.config/taurctl).
 .SH VERSION
 v0.10.0

@@ -58,6 +58,7 @@ pub fn app_with(state: AppState) -> Router {
         .route("/packages-meta-v1.json.gz", get(dump_meta))
         .route("/packages-meta-ext-v1.json.gz", get(dump_meta_ext))
         .route("/mcp", post(mcp_post).get(mcp_get).delete(mcp_get))
+        .route("/api/v1/server", get(server_info))
         .route("/api/v1/register", post(register))
         .route("/api/v1/login", post(login))
         .route("/api/v1/logout", post(logout))
@@ -207,6 +208,15 @@ async fn dump_meta(State(s): St) -> Response {
 
 async fn dump_meta_ext(State(s): St) -> Response {
     gz(s.dump_packages_meta_ext())
+}
+
+async fn server_info(State(s): St) -> Response {
+    Json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "base_url": s.base_url(),
+        "ssh_clone_base": s.ssh_clone_base(),
+    }))
+    .into_response()
 }
 
 // ---- MCP ----
