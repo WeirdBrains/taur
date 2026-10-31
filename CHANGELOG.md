@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.12.1] - 2026-10-31
+### Fixed
+- Tests compile on Windows: Unix file-mode assertions are gated with `cfg(unix)`.
+
+### Changed
+- Windows build (`x86_64-pc-windows-gnu`) is now compile-checked (check, clippy, release build); docs/services.md explains how to cross-build.
+
 ## [0.12.0] - 2026-10-31
 ### Added
 - Service configs for systemd, SysV init, OpenRC, runit, macOS launchd and Windows (WinSW).

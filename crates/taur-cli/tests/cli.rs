@@ -1,7 +1,6 @@
 //! Spins up the real server on a temp home and drives the `taurctl` binary.
 
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
@@ -109,11 +108,15 @@ fn full_management_flow() {
     e.ok(&["verify", &vt], "");
     let token = std::fs::read_to_string(e.cfg.path().join("token")).unwrap();
     assert!(!out.contains(token.trim()), "token must not be printed");
-    let mode = std::fs::metadata(e.cfg.path().join("token"))
-        .unwrap()
-        .permissions()
-        .mode();
-    assert_eq!(mode & 0o777, 0o600);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(e.cfg.path().join("token"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
     assert!(e.ok(&["whoami"], "").contains("alice <a@x> (verified)"));
 
     e.store.import_dir(&fixture(), Some("alice")).unwrap();

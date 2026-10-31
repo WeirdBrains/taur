@@ -107,8 +107,12 @@ and restart on failure. Logs go to `C:\ProgramData\TAUR\logs`, data to
 .\packaging\windows\uninstall-service.ps1
 ```
 
-**Windows caveats.** These have not been tested: TAUR has not been built or run on
-Windows yet (no Windows Rust target or machine was available).
+**Windows caveats.** TAUR is compile-checked for Windows: `cargo check`, `cargo clippy
+-D warnings` and `cargo build --release` pass for `x86_64-pc-windows-gnu`
+(cross-compiled from Linux with mingw-w64). It has not been run or tested on Windows.
+To cross-build: `rustup target add x86_64-pc-windows-gnu`, install mingw-w64-gcc, then
+`cargo build --release --target x86_64-pc-windows-gnu` (using rustup's toolchain, not a
+distro rustc without the Windows standard library).
 - The code avoids Unix-only APIs: file permissions are only set on Unix, and the null
   device and child-process environment are chosen per platform. On Windows the outbox,
   SSH host key and taurctl token are protected only by the ACLs of their directories.
