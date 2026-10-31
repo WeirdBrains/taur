@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.3.0] - 2026-10-31
+### Added
+- Git pushes over smart HTTP (token auth) and an embedded SSH server, validated like aurweb.
+- SSH key management (API and `taurctl key`).
+- Smart-HTTP clones.
+- Man pages for `taur`.
+
 ## [0.2.0] - 2026-10-31
 ### Added
 - `taurctl` management CLI (accounts, search/info, organizations, roles, package ownership).
