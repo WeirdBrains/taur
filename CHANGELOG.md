@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.9.0] - 2026-10-31
+### Added
+- MCP server at `/mcp` (streamable HTTP) with public search/info and token-authenticated management tools.
+- `taurctl mcp` stdio bridge.
+
 ## [0.8.0] - 2026-10-31
 ### Added
 - Package notification subscriptions (email on pushes and comments), also in the web UI and `taurctl pkg notify|unnotify`.
