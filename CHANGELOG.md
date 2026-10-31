@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.10.0] - 2026-10-31
+### Added
+- gRPC API (`taur serve --grpc-bind`) covering packages, accounts, organizations, package management, community features, requests and SSH keys, with bearer-token auth.
+
 ## [0.9.0] - 2026-10-31
 ### Added
 - MCP server at `/mcp` (streamable HTTP) with public search/info and token-authenticated management tools.
