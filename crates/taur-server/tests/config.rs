@@ -168,4 +168,19 @@ fn env_flags_validation_and_admins() {
             "{n} missing from packaging/taur.env.example"
         );
     }
+    // .env.example has an uncommented entry for every variable, incl. taurctl's.
+    let dotenv =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.env.example"))
+            .unwrap();
+    for n in ENV_VARS
+        .iter()
+        .map(|v| v.0)
+        .chain(["TAUR_SERVER", "TAURCTL_CONFIG_DIR"])
+    {
+        assert!(
+            dotenv.lines().any(|l| l.starts_with(&format!("{n}="))),
+            "{n} missing from .env.example"
+        );
+        assert!(doc.contains(n), "{n} missing from docs/configuration.md");
+    }
 }
