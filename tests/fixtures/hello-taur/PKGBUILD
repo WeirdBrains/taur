@@ -1,0 +1,23 @@
+pkgbase=hello-taur
+pkgname=(hello-taur hello-taur-docs)
+pkgver=1.2.3
+pkgrel=1
+epoch=1
+pkgdesc="A tiny test package for TAUR"
+arch=(any)
+url="https://example.com/hello-taur"
+license=(MIT)
+depends=(glibc)
+depends_x86_64=(lib32-glibc)
+makedepends=('rust>=1.80')
+optdepends=('bash: for the helper script')
+
+package_hello-taur() {
+  install -Dm644 /dev/null "$pkgdir/usr/share/hello-taur/hello"
+}
+
+package_hello-taur-docs() {
+  pkgdesc="Docs for hello-taur"
+  depends=()
+  install -Dm644 /dev/null "$pkgdir/usr/share/doc/hello-taur/README"
+}
