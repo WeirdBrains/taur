@@ -104,6 +104,65 @@ async fn git_snapshot_and_dumps() {
         get(&app, "/packages-meta-v1.json.gz").await.0,
         StatusCode::OK
     );
+    let (st, b) = get(&app, "/packages-meta-ext-v1.json.gz").await;
+    assert_eq!(st, StatusCode::OK);
+    let mut s = String::new();
+    std::io::Read::read_to_string(&mut flate2::read::GzDecoder::new(&b[..]), &mut s).unwrap();
+    let v: Value = serde_json::from_str(&s).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 2);
+    assert!(v[0]["License"].is_array());
+}
+
+#[tokio::test]
+async fn notify_and_pin_api() {
+    let (d, app) = setup();
+    let a = token(&app, d.path(), "alice").await;
+    let b = token(&app, d.path(), "bob").await;
+    let store = Store::open(d.path()).unwrap();
+    store
+        .set_admin(store.user_id("alice").unwrap(), true)
+        .unwrap();
+    let n = json!(null);
+    let u = "/api/v1/packages/hello-taur/notify";
+    assert_eq!(
+        call(&app, send("POST", u, Some(&b), n.clone())).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let (_, body) = call(&app, send("GET", u, Some(&b), n.clone())).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["subscribed"],
+        true
+    );
+    let (_, body) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/packages/hello-taur/comments",
+            Some(&a),
+            json!({"content": "pin me"}),
+        ),
+    )
+    .await;
+    let id = serde_json::from_slice::<Value>(&body).unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let pin = format!("/api/v1/comments/{id}/pin");
+    assert_eq!(
+        call(&app, send("POST", &pin, Some(&b), n.clone())).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(&app, send("POST", &pin, Some(&a), n.clone())).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get_json(&app, "/api/v1/packages/hello-taur/comments").await[0]["pinned"],
+        true
+    );
+    assert_eq!(
+        call(&app, send("DELETE", u, Some(&b), n.clone())).await.0,
+        StatusCode::NO_CONTENT
+    );
 }
 
 #[tokio::test]

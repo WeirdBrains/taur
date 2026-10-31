@@ -130,6 +130,10 @@ pub enum CommentCmd {
     Edit { id: i64, text: String },
     /// Delete a comment (author, package maintainers or site admins).
     Delete { id: i64 },
+    /// Pin a comment to the top (package maintainers or site admins).
+    Pin { id: i64 },
+    /// Unpin a comment.
+    Unpin { id: i64 },
 }
 
 #[derive(Subcommand, Debug)]
@@ -235,6 +239,10 @@ pub enum PkgCmd {
     Vote { pkgbase: String },
     /// Remove your vote.
     Unvote { pkgbase: String },
+    /// Get email notifications for updates and comments on a package base.
+    Notify { pkgbase: String },
+    /// Stop notifications for a package base.
+    Unnotify { pkgbase: String },
     /// Flag a package base out-of-date.
     Flag {
         pkgbase: String,
@@ -581,6 +589,14 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                 c.send("DELETE", &format!("/api/v1/comments/{id}"), None)?;
                 done(g, format!("deleted comment #{id}"));
             }
+            CommentCmd::Pin { id } => {
+                c.send("POST", &format!("/api/v1/comments/{id}/pin"), None)?;
+                done(g, format!("pinned comment #{id}"));
+            }
+            CommentCmd::Unpin { id } => {
+                c.send("DELETE", &format!("/api/v1/comments/{id}/pin"), None)?;
+                done(g, format!("unpinned comment #{id}"));
+            }
         },
         Cmd::Request(r) => match r {
             RequestCmd::File {
@@ -698,6 +714,14 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                 c.send("DELETE", &pkg_path(pkgbase, "vote"), None)?;
                 done(g, format!("removed vote for {pkgbase}"));
             }
+            PkgCmd::Notify { pkgbase } => {
+                c.send("POST", &pkg_path(pkgbase, "notify"), None)?;
+                done(g, format!("notifications on for {pkgbase}"));
+            }
+            PkgCmd::Unnotify { pkgbase } => {
+                c.send("DELETE", &pkg_path(pkgbase, "notify"), None)?;
+                done(g, format!("notifications off for {pkgbase}"));
+            }
             PkgCmd::Flag { pkgbase, comment } => {
                 c.send(
                     "POST",
@@ -715,7 +739,8 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                 print(g, &v, |v| {
                     for c in v.as_array().into_iter().flatten() {
                         println!(
-                            "#{} {} at {}{}\n{}\n",
+                            "{}#{} {} at {}{}\n{}\n",
+                            if c["pinned"] == true { "[pinned] " } else { "" },
                             s(&c["id"]),
                             s(&c["author"]),
                             s(&c["created_at"]),

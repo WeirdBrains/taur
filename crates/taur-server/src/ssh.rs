@@ -210,6 +210,7 @@ impl Handler for GitSsh {
             .env("TAUR_HOOK_BIN", &self.hook_bin)
             .env("TAUR_HOME", self.store.home())
             .env("TAUR_PUSHER", &user)
+            .envs(self.store.hook_env())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

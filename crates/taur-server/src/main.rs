@@ -26,25 +26,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             smtp_url,
             mail_from,
         } => {
-            store.set_base_url(&base_url);
-            match smtp_url {
-                Some(url) => {
-                    store.set_mailer(Arc::new(taur_core::mail::SmtpMailer::new(
-                        &url, &mail_from,
-                    )?));
-                    eprintln!("taur: sending mail via SMTP");
-                }
-                None => {
-                    let outbox = store.home().join("outbox");
-                    store.set_mailer(Arc::new(taur_core::mail::FileMailer::new(
-                        outbox.clone(),
-                        &mail_from,
-                    )));
-                    eprintln!(
-                        "taur: no SMTP configured; writing mail to {}",
-                        outbox.display()
-                    );
-                }
+            store.configure_mail(smtp_url.as_deref(), &mail_from, &base_url)?;
+            if smtp_url.is_some() {
+                eprintln!("taur: sending mail via SMTP");
+            } else {
+                eprintln!(
+                    "taur: no SMTP configured; writing mail to {}",
+                    store.home().join("outbox").display()
+                );
             }
             let store = Arc::new(store);
             let s2 = store.clone();
@@ -107,6 +96,13 @@ fn hook(name: &str) -> i32 {
             .ok_or_else(|| taur_core::Error::Invalid("not a TAUR repository".into()))?
             .to_string();
         let store = Store::open(std::path::Path::new(&home))?;
+        if let (Ok(from), Ok(base)) = (
+            std::env::var("TAUR_MAIL_FROM"),
+            std::env::var("TAUR_BASE_URL"),
+        ) {
+            let smtp = std::env::var("TAUR_SMTP_URL").ok();
+            store.configure_mail(smtp.as_deref(), &from, &base)?;
+        }
         match name {
             "pre-receive" => {
                 let mut input = String::new();
