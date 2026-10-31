@@ -20,6 +20,13 @@ serde_urlencoded = "0.7"
 clap_mangen = "0.2"
 russh = { version = "0.65", default-features = false, features = ["ring", "rsa", "flate2"] }
 rand = { version = "0.10", features = ["thread_rng"] }
+tonic = "0.14"
+tonic-prost = "0.14"
+prost = "0.14"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+protoc-bin-vendored = "3"
 
 [dev-dependencies]
 tempfile.workspace = true

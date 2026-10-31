@@ -1,0 +1,168 @@
+// TAUR gRPC API. Mirrors the JSON API; authenticate with metadata
+// `authorization: Bearer <token>` (from Accounts.Login or the HTTP API).
+syntax = "proto3";
+package taur.v1;
+
+message Empty {}
+message PkgbaseRequest { string pkgbase = 1; }
+message IdRequest { int64 id = 1; }
+message OrgRequest { string org = 1; }
+message Toggle { string pkgbase = 1; bool on = 2; }
+message Status { bool value = 1; }
+message StringList { repeated string values = 1; }
+
+// ---- packages (public) ----
+message Package {
+  int64 id = 1;
+  string name = 2;
+  int64 pkgbase_id = 3;
+  string pkgbase = 4;
+  string version = 5;
+  optional string description = 6;
+  optional string url = 7;
+  int64 num_votes = 8;
+  double popularity = 9;
+  optional int64 out_of_date = 10;
+  optional string maintainer = 11;
+  optional string submitter = 12;
+  int64 first_submitted = 13;
+  int64 last_modified = 14;
+  string url_path = 15;
+  optional string organization = 16;
+  // Lowercase .SRCINFO keys: depends, makedepends, optdepends, checkdepends,
+  // conflicts, provides, replaces, groups, license. Info only.
+  map<string, StringList> relations = 17;
+  repeated string keywords = 18;
+  repeated string comaintainers = 19;
+}
+message PackageList { repeated Package packages = 1; }
+message SearchRequest { string query = 1; string by = 2; } // by defaults to name-desc
+message InfoRequest { repeated string names = 1; }
+message Comment {
+  int64 id = 1;
+  optional string author = 2;
+  string content = 3;
+  int64 created_at = 4;
+  optional int64 edited_at = 5;
+  bool pinned = 6;
+}
+message CommentList { repeated Comment comments = 1; }
+message Flag { optional int64 out_of_date = 1; optional string flagger = 2; optional string comment = 3; }
+
+service Packages {
+  rpc Search(SearchRequest) returns (PackageList);
+  rpc Info(InfoRequest) returns (PackageList);
+  rpc Comments(PkgbaseRequest) returns (CommentList);
+  rpc GetFlag(PkgbaseRequest) returns (Flag);
+}
+
+// ---- accounts ----
+message User { int64 id = 1; string name = 2; string email = 3; bool verified = 4; }
+message RegisterRequest { string name = 1; string email = 2; string password = 3; }
+message LoginRequest { string name = 1; string password = 2; }
+message Session { string token = 1; int64 expires_at = 2; }
+message PasswordRequest { string password = 1; }
+message TokenRequest { string token = 1; }
+message EmailRequest { string email = 1; }
+message ResetPasswordRequest { string token = 1; string password = 2; }
+
+service Accounts {
+  rpc Register(RegisterRequest) returns (User);
+  rpc Login(LoginRequest) returns (Session);
+  rpc Logout(Empty) returns (Empty);
+  rpc Whoami(Empty) returns (User);
+  rpc Unregister(PasswordRequest) returns (Empty);
+  rpc Verify(TokenRequest) returns (User);
+  rpc ResendVerification(Empty) returns (Empty);
+  rpc RequestPasswordReset(EmailRequest) returns (Empty);
+  rpc ResetPassword(ResetPasswordRequest) returns (Empty);
+}
+
+// ---- organizations ----
+message Membership { string name = 1; string role = 2; } // role: owner|admin|contributor
+message MembershipList { repeated Membership orgs = 1; }
+message OrgDetail { int64 id = 1; string name = 2; repeated Membership members = 3; }
+message SetMemberRequest { string org = 1; string user = 2; string role = 3; }
+message MemberRequest { string org = 1; string user = 2; }
+
+service Orgs {
+  rpc List(Empty) returns (MembershipList);
+  rpc Get(OrgRequest) returns (OrgDetail);
+  rpc Create(OrgRequest) returns (OrgDetail);
+  rpc Delete(OrgRequest) returns (Empty);
+  rpc SetMember(SetMemberRequest) returns (Empty);
+  rpc RemoveMember(MemberRequest) returns (Empty);
+}
+
+// ---- package management ----
+message OwnedPackage { string pkgbase = 1; optional string maintainer = 2; optional string org = 3; }
+message OwnedPackageList { repeated OwnedPackage packages = 1; }
+message TransferRequest {
+  string pkgbase = 1;
+  oneof to { string org = 2; string user = 3; }
+}
+message ComaintainersRequest { string pkgbase = 1; repeated string users = 2; }
+
+service Manage {
+  rpc MyPackages(Empty) returns (OwnedPackageList);
+  rpc Transfer(TransferRequest) returns (Empty);
+  rpc Disown(PkgbaseRequest) returns (Empty);
+  rpc Adopt(PkgbaseRequest) returns (Empty);
+  rpc SetComaintainers(ComaintainersRequest) returns (Empty);
+}
+
+// ---- community ----
+message FlagRequest { string pkgbase = 1; string comment = 2; }
+message AddCommentRequest { string pkgbase = 1; string content = 2; }
+message EditCommentRequest { int64 id = 1; string content = 2; }
+message PinRequest { int64 id = 1; bool pinned = 2; }
+
+service Community {
+  rpc Vote(Toggle) returns (Empty);           // on=false removes the vote
+  rpc VoteStatus(PkgbaseRequest) returns (Status);
+  rpc Notify(Toggle) returns (Empty);         // on=false unsubscribes
+  rpc NotifyStatus(PkgbaseRequest) returns (Status);
+  rpc FlagOutOfDate(FlagRequest) returns (Empty);
+  rpc Unflag(PkgbaseRequest) returns (Empty);
+  rpc AddComment(AddCommentRequest) returns (Comment);
+  rpc EditComment(EditCommentRequest) returns (Comment);
+  rpc DeleteComment(IdRequest) returns (Empty);
+  rpc PinComment(PinRequest) returns (Empty);
+}
+
+// ---- requests ----
+message PackageRequest {
+  int64 id = 1;
+  string pkgbase = 2;
+  optional string requester = 3;
+  string kind = 4;
+  optional string merge_into = 5;
+  string comments = 6;
+  string status = 7;
+  optional string closure_comment = 8;
+  int64 created_at = 9;
+  optional int64 closed_at = 10;
+}
+message PackageRequestList { repeated PackageRequest requests = 1; }
+message FileRequestRequest { string pkgbase = 1; string kind = 2; optional string merge_into = 3; string comment = 4; }
+message ListRequestsRequest { bool all = 1; }
+message CloseRequestRequest { int64 id = 1; string comment = 2; }
+
+service Requests {
+  rpc File(FileRequestRequest) returns (PackageRequest);
+  rpc List(ListRequestsRequest) returns (PackageRequestList);
+  rpc Get(IdRequest) returns (PackageRequest);
+  rpc Accept(CloseRequestRequest) returns (Empty);
+  rpc Reject(CloseRequestRequest) returns (Empty);
+}
+
+// ---- SSH keys ----
+message SshKey { int64 id = 1; string fingerprint = 2; string algorithm = 3; string comment = 4; int64 created_at = 5; }
+message SshKeyList { repeated SshKey keys = 1; }
+message AddSshKeyRequest { string key = 1; }
+
+service SshKeys {
+  rpc List(Empty) returns (SshKeyList);
+  rpc Add(AddSshKeyRequest) returns (SshKey);
+  rpc Remove(IdRequest) returns (Empty);
+}

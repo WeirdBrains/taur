@@ -22,6 +22,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Cmd::Serve {
             bind,
             ssh_bind,
+            grpc_bind,
             base_url,
             smtp_url,
             mail_from,
@@ -52,6 +53,16 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let listener = tokio::net::TcpListener::bind(&addr).await?;
                 eprintln!("taur: ssh on {}", listener.local_addr()?);
                 tokio::spawn(taur_server::ssh::serve(listener, store.clone(), hook_bin));
+            }
+            if let Some(addr) = grpc_bind {
+                let listener = tokio::net::TcpListener::bind(&addr).await?;
+                eprintln!("taur: grpc on {}", listener.local_addr()?);
+                let s3 = store.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = taur_server::grpc::serve(listener, s3).await {
+                        eprintln!("taur: grpc server stopped: {e}");
+                    }
+                });
             }
             let listener = tokio::net::TcpListener::bind(&bind).await?;
             eprintln!("taur: listening on http://{}", listener.local_addr()?);

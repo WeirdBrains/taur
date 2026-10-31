@@ -15,3 +15,4 @@
 - [taurctl management CLI](cli.md)
 - [Web UI](web-ui.md)
 - [MCP server](mcp.md)
+- [gRPC API](grpc.md)

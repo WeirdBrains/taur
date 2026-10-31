@@ -23,6 +23,9 @@ pub enum Cmd {
         /// Also serve git over SSH on this address (e.g. 0.0.0.0:2222).
         #[arg(long)]
         ssh_bind: Option<String>,
+        /// Also serve the gRPC API on this address (plaintext HTTP/2, e.g. 127.0.0.1:50051).
+        #[arg(long)]
+        grpc_bind: Option<String>,
         /// Public base URL used in email links.
         #[arg(long, env = "TAUR_BASE_URL", default_value = taur_core::DEFAULT_BASE_URL)]
         base_url: String,
