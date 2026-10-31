@@ -45,7 +45,7 @@
 7. **v0.7.0 (done):** static web UI over the JSON API (bearer tokens).
 8. **v0.8.0 (done):** notification subscriptions, comment pinning, orphan auto-accept,
    extended metadata dump.
-9. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
+9. **v0.9.0 (done):** MCP server (streamable HTTP `/mcp`, `taurctl mcp` stdio).
 10. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
 
 ## Owner decisions (2026-10-31)

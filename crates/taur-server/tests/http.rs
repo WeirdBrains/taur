@@ -1001,3 +1001,132 @@ async fn web_ui_is_served() {
         StatusCode::OK
     );
 }
+
+async fn mcp(app: &axum::Router, token: Option<&str>, msg: Value) -> (StatusCode, Value) {
+    let (st, b) = call(app, send("POST", "/mcp", token, msg)).await;
+    (st, serde_json::from_slice(&b).unwrap_or(Value::Null))
+}
+
+fn tool(id: i64, name: &str, args: Value) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": name, "arguments": args}})
+}
+
+#[tokio::test]
+async fn mcp_endpoint() {
+    let (d, app) = setup();
+    let (st, v) = mcp(
+        &app,
+        None,
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+               "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}}),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(v["result"]["protocolVersion"], "2025-03-26");
+    assert!(v["result"]["capabilities"]["tools"].is_object());
+    // notifications get 202 and no body
+    let (st, _) = mcp(
+        &app,
+        None,
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+    )
+    .await;
+    assert_eq!(st, StatusCode::ACCEPTED);
+    let (_, v) = mcp(
+        &app,
+        None,
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+    )
+    .await;
+    let tools = v["result"]["tools"].as_array().unwrap();
+    assert!(tools.iter().any(|t| t["name"] == "search_packages"));
+    let disown = tools.iter().find(|t| t["name"] == "disown").unwrap();
+    assert_eq!(disown["annotations"]["destructiveHint"], true);
+    assert_eq!(disown["inputSchema"]["required"][0], "pkgbase");
+
+    let (_, v) = mcp(
+        &app,
+        None,
+        tool(3, "search_packages", json!({"query": "hello"})),
+    )
+    .await;
+    assert_eq!(v["result"]["isError"], false);
+    assert_eq!(v["result"]["structuredContent"]["resultcount"], 2);
+    let (_, v) = mcp(
+        &app,
+        None,
+        tool(4, "package_info", json!({"names": ["hello-taur"]})),
+    )
+    .await;
+    assert_eq!(
+        v["result"]["structuredContent"]["results"][0]["Name"],
+        "hello-taur"
+    );
+
+    // management needs a token
+    let (_, v) = mcp(
+        &app,
+        None,
+        tool(5, "vote", json!({"pkgbase": "hello-taur"})),
+    )
+    .await;
+    assert_eq!(v["result"]["isError"], true);
+    let t = token(&app, d.path(), "alice").await;
+    let (_, v) = mcp(&app, Some(&t), tool(6, "whoami", json!({}))).await;
+    assert_eq!(v["result"]["structuredContent"]["name"], "alice");
+    let (_, v) = mcp(
+        &app,
+        Some(&t),
+        tool(7, "vote", json!({"pkgbase": "hello-taur"})),
+    )
+    .await;
+    assert_eq!(v["result"]["isError"], false, "{v}");
+    assert_eq!(
+        get_json(&app, "/rpc/v5/info/hello-taur").await["results"][0]["NumVotes"],
+        1
+    );
+    let (_, v) = mcp(
+        &app,
+        Some(&t),
+        tool(8, "create_org", json!({"org": "weirdbrains"})),
+    )
+    .await;
+    assert_eq!(v["result"]["isError"], false, "{v}");
+    let (_, v) = mcp(&app, Some(&t), tool(9, "list_orgs", json!({}))).await;
+    assert_eq!(
+        v["result"]["structuredContent"]["result"][0]["name"], "weirdbrains",
+        "{v}"
+    );
+    let (_, v) = mcp(
+        &app,
+        Some(&t),
+        tool(10, "add_comment", json!({"pkgbase": "hello-taur"})),
+    )
+    .await;
+    assert_eq!(v["result"]["isError"], true);
+    assert!(
+        v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("content")
+    );
+
+    // protocol errors
+    let (_, v) = mcp(
+        &app,
+        None,
+        json!({"jsonrpc": "2.0", "id": 11, "method": "nope"}),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], -32601);
+    let (_, v) = mcp(&app, None, tool(12, "nope", json!({}))).await;
+    assert_eq!(v["error"]["code"], -32602);
+    let (_, v) = mcp(
+        &app,
+        None,
+        json!([{"jsonrpc": "2.0", "id": 13, "method": "ping"}, {"jsonrpc": "2.0", "method": "notifications/x"}]),
+    )
+    .await;
+    assert_eq!(v.as_array().unwrap().len(), 1);
+    assert_eq!(get(&app, "/mcp").await.0, StatusCode::METHOD_NOT_ALLOWED);
+}

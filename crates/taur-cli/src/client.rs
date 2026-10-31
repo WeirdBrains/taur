@@ -66,6 +66,31 @@ impl Client {
         self.call(method, path, body, true)
     }
 
+    /// Forward one raw MCP JSON-RPC message to `POST /mcp`; `None` when the server sends
+    /// no response (notifications). The token is attached when signed in.
+    pub fn mcp(&self, body: &str) -> Result<Option<String>, CliError> {
+        let mut req = self
+            .agent
+            .post(&format!("{}/mcp", self.base))
+            .set("Content-Type", "application/json")
+            .set("Accept", "application/json, text/event-stream");
+        if let Some(t) = &self.token {
+            req = req.set("Authorization", &format!("Bearer {t}"));
+        }
+        match req.send_string(body) {
+            Ok(r) => {
+                let text = r
+                    .into_string()
+                    .map_err(|e| CliError::Transport(e.to_string()))?;
+                Ok((!text.trim().is_empty()).then_some(text))
+            }
+            Err(ureq::Error::Status(code, _)) => {
+                Err(CliError::Api(code, "MCP request failed".into()))
+            }
+            Err(e) => Err(CliError::Transport(e.kind().to_string())),
+        }
+    }
+
     /// Generic anonymous GET.
     pub fn public_get(&self, path: &str) -> Result<Value, CliError> {
         self.call("GET", path, None, false)
