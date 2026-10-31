@@ -1,6 +1,6 @@
 # Organizations and roles
 
-Library-level model (API/UI in phase 4). Users create organizations and become Owner.
+Enforced in `taur-core`; exposed over HTTP by the [management API](management-api.md) and the `taurctl` CLI. Users create organizations and become Owner.
 
 | Action | Owner | Admin | Contributor |
 |---|---|---|---|

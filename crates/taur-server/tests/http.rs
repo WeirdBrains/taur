@@ -194,3 +194,263 @@ async fn account_api() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+async fn token(app: &axum::Router, name: &str) -> String {
+    let reg = json!({"name": name, "email": format!("{name}@x"), "password": "longenough"});
+    call(app, send("POST", "/api/v1/register", None, reg)).await;
+    let (_, b) = call(
+        app,
+        send(
+            "POST",
+            "/api/v1/login",
+            None,
+            json!({"name": name, "password": "longenough"}),
+        ),
+    )
+    .await;
+    serde_json::from_slice::<Value>(&b).unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[tokio::test]
+async fn org_and_package_api() {
+    let (_d, app) = setup();
+    let a = token(&app, "alice").await;
+    let b = token(&app, "bob").await;
+    let c = token(&app, "carol").await;
+    let n = json!(null);
+    let (st, body) = call(
+        &app,
+        send("POST", "/api/v1/orgs", Some(&a), json!({"name": "brains"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["members"][0]["role"],
+        "owner"
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("GET", "/api/v1/orgs/brains", Some(&b), n.clone())
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/orgs/brains/members/bob",
+                Some(&a),
+                json!({"role": "admin"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    // admin adds a contributor but cannot create owners
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/orgs/brains/members/carol",
+                Some(&b),
+                json!({"role": "owner"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/orgs/brains/members/carol",
+                Some(&b),
+                json!({"role": "contributor"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/orgs/brains/members/alice",
+                Some(&c),
+                json!({"role": "contributor"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (_, body) = call(&app, send("GET", "/api/v1/orgs", Some(&c), n.clone())).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap(),
+        json!([{"name": "brains", "role": "contributor"}])
+    );
+    // orphaned fixture: alice adopts, moves to org, carol can manage
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/adopt",
+                Some(&a),
+                n.clone()
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/owner",
+                Some(&c),
+                json!({"org": "brains"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/owner",
+                Some(&a),
+                json!({"org": "brains"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (_, body) = call(&app, send("GET", "/api/v1/packages", Some(&c), n.clone())).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()[0]["org"],
+        "brains"
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/owner",
+                Some(&c),
+                json!({"user": "carol"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/owner",
+                Some(&c),
+                json!({})
+            )
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/disown",
+                Some(&a),
+                n.clone()
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/disown",
+                Some(&c),
+                n.clone()
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/packages/nope/adopt", Some(&a), n.clone())
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "DELETE",
+                "/api/v1/orgs/brains/members/carol",
+                Some(&b),
+                n.clone()
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("DELETE", "/api/v1/orgs/brains", Some(&b), n.clone())
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("DELETE", "/api/v1/orgs/brains", Some(&a), n.clone())
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&app, send("GET", "/api/v1/orgs/brains", Some(&a), n))
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}
