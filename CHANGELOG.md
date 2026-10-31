@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.5.0] - 2026-10-31
+### Added
+- `Organization` field in RPC results (TAUR extension).
+
 ## [0.4.0] - 2026-10-31
 ### Added
 - Email verification on registration; unverified accounts can't push or manage.
