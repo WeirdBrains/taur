@@ -84,6 +84,32 @@ CREATE TABLE IF NOT EXISTS ssh_keys (
   public_key TEXT NOT NULL,
   comment TEXT NOT NULL,
   created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS votes (
+  pkgbase_id INTEGER NOT NULL REFERENCES pkgbases(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  voted_at INTEGER NOT NULL,
+  PRIMARY KEY (pkgbase_id, user_id));
+CREATE TABLE IF NOT EXISTS comments (
+  id INTEGER PRIMARY KEY,
+  pkgbase_id INTEGER NOT NULL REFERENCES pkgbases(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  edited_at INTEGER,
+  deleted_at INTEGER);
+CREATE TABLE IF NOT EXISTS requests (
+  id INTEGER PRIMARY KEY,
+  pkgbase_id INTEGER REFERENCES pkgbases(id) ON DELETE SET NULL,
+  pkgbase_name TEXT NOT NULL,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL,
+  merge_into TEXT,
+  comments TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  closure_comment TEXT,
+  closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  closed_at INTEGER);
 CREATE TABLE IF NOT EXISTS co_maintainers (
   pkgbase_id INTEGER NOT NULL REFERENCES pkgbases(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -255,6 +281,25 @@ impl Store {
         if !has_verified {
             conn.execute_batch("ALTER TABLE users ADD COLUMN verified_at INTEGER")?;
         }
+        // v0.6.0: site admins, out-of-date flagger
+        for (table, col, ty) in [
+            ("users", "is_admin", "INTEGER NOT NULL DEFAULT 0"),
+            (
+                "pkgbases",
+                "flagger_id",
+                "INTEGER REFERENCES users(id) ON DELETE SET NULL",
+            ),
+            ("pkgbases", "flagger_comment", "TEXT"),
+        ] {
+            let exists = conn
+                .prepare(&format!(
+                    "SELECT 1 FROM pragma_table_info('{table}') WHERE name = '{col}'"
+                ))?
+                .exists([])?;
+            if !exists {
+                conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty}"))?;
+            }
+        }
         let mailer = crate::mail::FileMailer::new(home.join("outbox"), crate::DEFAULT_MAIL_FROM);
         Ok(Store {
             conn: Mutex::new(conn),
@@ -353,6 +398,20 @@ impl Store {
                     "UPDATE pkgbases SET last_modified = ?1, maintainer_id = COALESCE(?2, maintainer_id) WHERE id = ?3",
                     params![now, mid, id],
                 )?;
+                // A new version clears the out-of-date flag.
+                let old: Option<String> = tx
+                    .query_row(
+                        "SELECT version FROM packages WHERE pkgbase_id = ?1 LIMIT 1",
+                        [id],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if old.as_deref() != Some(info.version().as_str()) {
+                    tx.execute(
+                        "UPDATE pkgbases SET out_of_date = NULL, flagger_id = NULL, flagger_comment = NULL WHERE id = ?1",
+                        [id],
+                    )?;
+                }
                 id
             }
             None => {

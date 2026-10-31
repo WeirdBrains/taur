@@ -14,7 +14,7 @@ taur-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "sync", "time"] }
 clap = { version = "4", features = ["derive", "env"] }
 serde_urlencoded = "0.7"
 clap_mangen = "0.2"

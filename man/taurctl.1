@@ -1,6 +1,6 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH taurctl 1  "taurctl 0.5.0" 
+.TH taurctl 1  "taurctl 0.6.0" 
 .SH NAME
 taurctl \- Manage a TAUR server: accounts, packages, organizations and roles
 .SH SYNOPSIS
@@ -76,7 +76,13 @@ Manage package ownership
 taurctl\-key(1)
 Manage SSH public keys used for git pushes over SSH
 .TP
+taurctl\-comment(1)
+Edit or delete package comments
+.TP
+taurctl\-request(1)
+File and handle package requests (orphan, deletion, merge)
+.TP
 taurctl\-help(1)
 Print this message or the help of the given subcommand(s)
 .SH VERSION
-v0.5.0
+v0.6.0

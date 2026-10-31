@@ -38,13 +38,17 @@
 3. **v0.3.0 (done):** pushes over smart HTTP and SSH with aurweb-style validation,
    SSH keys, smart-HTTP clone.
 4. **v0.4.0 (done):** email verification, password reset, SMTP/file mailer.
-5. **Phase 2 — pushing & community:** smart-HTTP and ssh push with `.SRCINFO` validation,
-   votes, comments, flag out-of-date, co-maintainers, adopt/disown, requests, keywords API.
-6. **Phase 3 — web UI:** static site for registration, sign-in, package management, over
+5. **v0.5.0 (done):** `Organization` field in RPC.
+6. **v0.6.0 (done):** votes/popularity, flags, comments, co-maintainers, requests,
+   site admins. Remaining from phase 2: notification subscriptions, comment pinning,
+   auto-accepting orphan requests, `packages-meta-ext-v1.json.gz`.
+7. **Phase 2 (rest):** notification subscriptions, comment pinning, orphan auto-accept,
+   extended metadata dump.
+8. **Phase 3 — web UI:** static site for registration, sign-in, package management, over
    the JSON API.
-7. **Phase 4 — organizations:** org CRUD and membership API/UI, org-owned packages.
-8. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
-9. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
+9. **Phase 4 — organizations:** org UI on the web site (API done in v0.2.0).
+10. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
+11. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
 
 ## Owner decisions (2026-10-31)
 - Pushes via both git smart HTTP (account token) and SSH keys.
@@ -76,3 +80,5 @@
   runs in repo hooks that call `taur hook …`.
 - *Proposal:* mail via lettre SMTP (rustls) configured by `TAUR_SMTP_URL`; file outbox
   when unset. Provider still to be chosen.
+- *Proposal:* site admins (`users.is_admin`, granted with `taur admin`) play the AUR
+  Package Maintainer role: accept requests and manage any package.

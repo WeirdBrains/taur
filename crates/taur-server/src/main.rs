@@ -47,6 +47,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             let store = Arc::new(store);
+            let s2 = store.clone();
+            tokio::spawn(async move {
+                // Popularity decays daily; refresh it hourly.
+                let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+                loop {
+                    tick.tick().await;
+                    if let Err(e) = s2.refresh_popularity() {
+                        eprintln!("taur: popularity refresh failed: {e}");
+                    }
+                }
+            });
             if let Some(addr) = ssh_bind {
                 let hook_bin = std::env::current_exe()?;
                 let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -60,6 +71,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Cmd::Import { dir, maintainer } => {
             let info = store.import_dir(&dir, maintainer.as_deref())?;
             println!("imported {} {}", info.pkgbase, info.version());
+        }
+        Cmd::Admin { name, revoke } => {
+            let id = store.user_id(&name)?;
+            store.set_admin(id, !revoke)?;
+            println!(
+                "{name} is {}a site admin",
+                if revoke { "no longer " } else { "" }
+            );
         }
         Cmd::VerifyUser { name } => {
             let user = store

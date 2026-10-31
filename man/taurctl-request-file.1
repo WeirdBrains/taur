@@ -1,0 +1,43 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-request-file 1  "taurctl-request-file " 
+.SH NAME
+taurctl\-request\-file \- File a request against a package base
+.SH SYNOPSIS
+\fBtaurctl request file\fR <\fB\-\-kind\fR> [\fB\-\-server\fR] [\fB\-\-config\-dir\fR] [\fB\-\-into\fR] <\fB\-\-comment\fR> [\fB\-\-json\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIPKGBASE\fR> 
+.SH DESCRIPTION
+File a request against a package base
+.SH OPTIONS
+.TP
+\fB\-\-kind\fR \fI<KIND>\fR
+orphan, deletion or merge
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-into\fR \fI<INTO>\fR
+Target package base for merge requests
+.TP
+\fB\-\-comment\fR \fI<COMMENT>\fR
+
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+<\fIPKGBASE\fR>
+

@@ -10,5 +10,6 @@
 - [Email, verification and password reset](email.md)
 - [Organizations and roles](roles.md)
 - [Organization and package management API](management-api.md)
+- [Votes, flags, comments, co-maintainers and requests](community.md)
 - [Using with yay](yay.md)
 - [taurctl management CLI](cli.md)

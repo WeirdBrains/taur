@@ -116,6 +116,55 @@ pub enum Cmd {
     /// Manage SSH public keys used for git pushes over SSH.
     #[command(subcommand)]
     Key(KeyCmd),
+    /// Edit or delete package comments.
+    #[command(subcommand)]
+    Comment(CommentCmd),
+    /// File and handle package requests (orphan, deletion, merge).
+    #[command(subcommand)]
+    Request(RequestCmd),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum CommentCmd {
+    /// Edit your comment.
+    Edit { id: i64, text: String },
+    /// Delete a comment (author, package maintainers or site admins).
+    Delete { id: i64 },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RequestCmd {
+    /// File a request against a package base.
+    File {
+        pkgbase: String,
+        /// orphan, deletion or merge
+        #[arg(long)]
+        kind: String,
+        /// Target package base for merge requests.
+        #[arg(long)]
+        into: Option<String>,
+        #[arg(long)]
+        comment: String,
+    },
+    /// List pending requests (all with --all).
+    List {
+        #[arg(long)]
+        all: bool,
+    },
+    /// Show one request.
+    Show { id: i64 },
+    /// Accept and carry out a request (site admins).
+    Accept {
+        id: i64,
+        #[arg(long, default_value = "")]
+        comment: String,
+    },
+    /// Reject a request (site admins) or withdraw your own.
+    Reject {
+        id: i64,
+        #[arg(long, default_value = "")]
+        comment: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -182,6 +231,24 @@ pub enum PkgCmd {
     Adopt { pkgbase: String },
     /// Give up maintainership (package becomes orphaned).
     Disown { pkgbase: String },
+    /// Vote for a package base.
+    Vote { pkgbase: String },
+    /// Remove your vote.
+    Unvote { pkgbase: String },
+    /// Flag a package base out-of-date.
+    Flag {
+        pkgbase: String,
+        #[arg(long)]
+        comment: String,
+    },
+    /// Remove the out-of-date flag (maintainers or the flagger).
+    Unflag { pkgbase: String },
+    /// Show comments on a package base.
+    Comments { pkgbase: String },
+    /// Comment on a package base.
+    Comment { pkgbase: String, text: String },
+    /// Set the co-maintainers of a package base (replaces the list; none clears it).
+    Comaintainers { pkgbase: String, users: Vec<String> },
     /// Transfer a package base to an organization or a user.
     Transfer {
         pkgbase: String,
@@ -271,6 +338,10 @@ fn done(g: &Global, msg: String) {
     } else {
         println!("{msg}");
     }
+}
+
+fn pkg_path(pkgbase: &str, action: &str) -> String {
+    format!("/api/v1/packages/{}/{action}", Client::enc(pkgbase))
 }
 
 fn execute(cli: Cli) -> Result<(), CliError> {
@@ -497,6 +568,105 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                 done(g, format!("removed key {id}"));
             }
         },
+        Cmd::Comment(cc) => match cc {
+            CommentCmd::Edit { id, text } => {
+                c.send(
+                    "PATCH",
+                    &format!("/api/v1/comments/{id}"),
+                    Some(serde_json::json!({"content": text})),
+                )?;
+                done(g, format!("edited comment #{id}"));
+            }
+            CommentCmd::Delete { id } => {
+                c.send("DELETE", &format!("/api/v1/comments/{id}"), None)?;
+                done(g, format!("deleted comment #{id}"));
+            }
+        },
+        Cmd::Request(r) => match r {
+            RequestCmd::File {
+                pkgbase,
+                kind,
+                into,
+                comment,
+            } => {
+                let body =
+                    serde_json::json!({"kind": kind, "merge_into": into, "comment": comment});
+                let v = c.send("POST", &pkg_path(pkgbase, "requests"), Some(body))?;
+                print(g, &v, |v| {
+                    println!(
+                        "filed {} request #{} for {}",
+                        s(&v["kind"]),
+                        s(&v["id"]),
+                        s(&v["pkgbase"])
+                    )
+                });
+            }
+            RequestCmd::List { all } => {
+                let v = c.send(
+                    "GET",
+                    if *all {
+                        "/api/v1/requests?all=true"
+                    } else {
+                        "/api/v1/requests"
+                    },
+                    None,
+                )?;
+                print(g, &v, |v| {
+                    for r in v.as_array().into_iter().flatten() {
+                        let into = if r["merge_into"].is_null() {
+                            String::new()
+                        } else {
+                            format!(" -> {}", s(&r["merge_into"]))
+                        };
+                        println!(
+                            "#{} {} {}{} by {} [{}]: {}",
+                            s(&r["id"]),
+                            s(&r["kind"]),
+                            s(&r["pkgbase"]),
+                            into,
+                            s(&r["requester"]),
+                            s(&r["status"]),
+                            s(&r["comments"])
+                        );
+                    }
+                });
+            }
+            RequestCmd::Show { id } => {
+                let v = c.send("GET", &format!("/api/v1/requests/{id}"), None)?;
+                print(g, &v, |v| {
+                    for k in [
+                        "id",
+                        "kind",
+                        "pkgbase",
+                        "merge_into",
+                        "requester",
+                        "status",
+                        "comments",
+                        "closure_comment",
+                        "created_at",
+                        "closed_at",
+                    ] {
+                        println!("{k:<16}: {}", s(&v[k]));
+                    }
+                });
+            }
+            RequestCmd::Accept { id, comment } => {
+                c.send(
+                    "POST",
+                    &format!("/api/v1/requests/{id}/accept"),
+                    Some(serde_json::json!({"comment": comment})),
+                )?;
+                done(g, format!("accepted request #{id}"));
+            }
+            RequestCmd::Reject { id, comment } => {
+                c.send(
+                    "POST",
+                    &format!("/api/v1/requests/{id}/reject"),
+                    Some(serde_json::json!({"comment": comment})),
+                )?;
+                done(g, format!("closed request #{id}"));
+            }
+        },
         Cmd::Pkg(p) => match p {
             PkgCmd::List => {
                 let v = c.my_packages()?;
@@ -519,6 +689,71 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                 confirm(g, &format!("Disown {pkgbase}?"))?;
                 c.pkg_action(pkgbase, "disown", None)?;
                 done(g, format!("disowned {pkgbase}"));
+            }
+            PkgCmd::Vote { pkgbase } => {
+                c.send("POST", &pkg_path(pkgbase, "vote"), None)?;
+                done(g, format!("voted for {pkgbase}"));
+            }
+            PkgCmd::Unvote { pkgbase } => {
+                c.send("DELETE", &pkg_path(pkgbase, "vote"), None)?;
+                done(g, format!("removed vote for {pkgbase}"));
+            }
+            PkgCmd::Flag { pkgbase, comment } => {
+                c.send(
+                    "POST",
+                    &pkg_path(pkgbase, "flag"),
+                    Some(serde_json::json!({"comment": comment})),
+                )?;
+                done(g, format!("flagged {pkgbase} out-of-date"));
+            }
+            PkgCmd::Unflag { pkgbase } => {
+                c.send("DELETE", &pkg_path(pkgbase, "flag"), None)?;
+                done(g, format!("unflagged {pkgbase}"));
+            }
+            PkgCmd::Comments { pkgbase } => {
+                let v = c.public_get(&pkg_path(pkgbase, "comments"))?;
+                print(g, &v, |v| {
+                    for c in v.as_array().into_iter().flatten() {
+                        println!(
+                            "#{} {} at {}{}\n{}\n",
+                            s(&c["id"]),
+                            s(&c["author"]),
+                            s(&c["created_at"]),
+                            if c["edited_at"].is_null() {
+                                ""
+                            } else {
+                                " (edited)"
+                            },
+                            s(&c["content"])
+                        );
+                    }
+                });
+            }
+            PkgCmd::Comment { pkgbase, text } => {
+                let v = c.send(
+                    "POST",
+                    &pkg_path(pkgbase, "comments"),
+                    Some(serde_json::json!({"content": text})),
+                )?;
+                print(g, &v, |v| println!("added comment #{}", s(&v["id"])));
+            }
+            PkgCmd::Comaintainers { pkgbase, users } => {
+                c.send(
+                    "PUT",
+                    &pkg_path(pkgbase, "comaintainers"),
+                    Some(serde_json::json!({"users": users})),
+                )?;
+                done(
+                    g,
+                    format!(
+                        "co-maintainers of {pkgbase}: {}",
+                        if users.is_empty() {
+                            "none".into()
+                        } else {
+                            users.join(", ")
+                        }
+                    ),
+                );
             }
             PkgCmd::Transfer { pkgbase, org, user } => {
                 let (body, to) = match (org, user) {
