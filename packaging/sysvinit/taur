@@ -1,0 +1,62 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          taur
+# Required-Start:    $network $remote_fs $syslog
+# Required-Stop:     $network $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: TAUR AUR-compatible package server
+# Description:       Runs `taur serve` as the taur user; settings from /etc/taur/taur.env.
+### END INIT INFO
+
+NAME=taur
+DAEMON=/usr/bin/taur
+USER=taur
+PIDFILE=/var/run/taur.pid
+LOGFILE=/var/log/taur.log
+ENVFILE=/etc/taur/taur.env
+
+[ -x "$DAEMON" ] || exit 0
+TAUR_HOME=/var/lib/taur
+# shellcheck disable=SC1090
+[ -r /etc/default/taur ] && . /etc/default/taur
+if [ -r "$ENVFILE" ]; then set -a; . "$ENVFILE"; set +a; fi
+export TAUR_HOME
+
+running() {
+    [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+start() {
+    if running; then echo "$NAME already running"; return 0; fi
+    echo "Starting $NAME"
+    touch "$LOGFILE" && chown "$USER" "$LOGFILE"
+    if command -v start-stop-daemon >/dev/null 2>&1; then
+        start-stop-daemon --start --quiet --background --make-pidfile --pidfile "$PIDFILE" \
+            --chuid "$USER" --startas /bin/sh -- -c "exec $DAEMON serve >>$LOGFILE 2>&1"
+    else
+        su -s /bin/sh -c "$DAEMON serve >>$LOGFILE 2>&1 & echo \$!" "$USER" >"$PIDFILE"
+    fi
+    sleep 1
+    running || { echo "$NAME failed to start; see $LOGFILE"; return 1; }
+}
+
+stop() {
+    if ! running; then echo "$NAME not running"; rm -f "$PIDFILE"; return 0; fi
+    echo "Stopping $NAME"
+    kill "$(cat "$PIDFILE")"
+    i=0
+    while running && [ $i -lt 10 ]; do sleep 1; i=$((i + 1)); done
+    running && kill -9 "$(cat "$PIDFILE")"
+    rm -f "$PIDFILE"
+}
+
+case "$1" in
+    start) start ;;
+    stop) stop ;;
+    restart|force-reload) stop; start ;;
+    status)
+        if running; then echo "$NAME is running (pid $(cat "$PIDFILE"))"; exit 0
+        else echo "$NAME is not running"; exit 3; fi ;;
+    *) echo "Usage: $0 {start|stop|restart|status}"; exit 2 ;;
+esac

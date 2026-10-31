@@ -15,6 +15,45 @@ pub mod srcinfo;
 pub mod store;
 
 pub use error::{Error, Result};
+
+/// Null device for `GIT_CONFIG_GLOBAL` (ignore the service user's git config).
+pub const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
+
+/// Set Unix permission bits (no-op on other platforms, where ACLs of the data
+/// directory apply instead).
+pub fn set_mode(path: &std::path::Path, mode: u32) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
+        Ok(())
+    }
+}
+
+/// Variables a child process needs besides `PATH` after `env_clear()` (Windows needs
+/// a few system variables for git to start).
+pub fn base_child_env() -> Vec<(String, std::ffi::OsString)> {
+    let keys: &[&str] = if cfg!(windows) {
+        &[
+            "PATH",
+            "SYSTEMROOT",
+            "WINDIR",
+            "TEMP",
+            "TMP",
+            "COMSPEC",
+            "PATHEXT",
+        ]
+    } else {
+        &["PATH"]
+    };
+    keys.iter()
+        .filter_map(|k| std::env::var_os(k).map(|v| (k.to_string(), v)))
+        .collect()
+}
 pub use roles::{Action, Role};
 pub use store::{PkgInfo, SearchBy, Store};
 

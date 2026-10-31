@@ -16,7 +16,6 @@ use tokio::process::ChildStdin;
 
 /// Load `<home>/ssh_host_ed25519_key`, creating it (0600) on first start.
 pub fn host_key(home: &Path) -> std::io::Result<PrivateKey> {
-    use std::os::unix::fs::PermissionsExt;
     let path = home.join("ssh_host_ed25519_key");
     if path.exists() {
         return russh::keys::load_secret_key(&path, None)
@@ -28,7 +27,7 @@ pub fn host_key(home: &Path) -> std::io::Result<PrivateKey> {
         .to_openssh(russh::keys::ssh_key::LineEnding::LF)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     std::fs::write(&path, pem.as_bytes())?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    taur_core::set_mode(&path, 0o600)?;
     Ok(key)
 }
 
@@ -204,9 +203,9 @@ impl Handler for GitSsh {
         cmd.arg(verb)
             .arg(&repo)
             .env_clear()
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .envs(taur_core::base_child_env())
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_GLOBAL", taur_core::NULL_DEVICE)
             .env("TAUR_HOOK_BIN", &self.hook_bin)
             .env("TAUR_HOME", self.store.home())
             .env("TAUR_PUSHER", &user)

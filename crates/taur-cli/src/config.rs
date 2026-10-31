@@ -4,8 +4,21 @@ use crate::CliError;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+
+/// Unix permission bits; no-op elsewhere (the user profile's ACLs apply).
+fn set_mode(path: &Path, mode: u32) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
+        Ok(())
+    }
+}
 
 pub const DEFAULT_SERVER: &str = "http://127.0.0.1:8080";
 
@@ -56,16 +69,14 @@ pub fn read_token(dir: &Path) -> Option<String> {
 pub fn write_token(dir: &Path, token: &str) -> Result<(), CliError> {
     let err = |e: std::io::Error| CliError::Config(e.to_string());
     fs::create_dir_all(dir).map_err(err)?;
-    fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(err)?;
+    set_mode(dir, 0o700).map_err(err)?;
     let path = dir.join("token");
-    let mut f = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&path)
-        .map_err(err)?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(err)?;
+    let mut o = fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    let mut f = o.open(&path).map_err(err)?;
+    set_mode(&path, 0o600).map_err(err)?;
     f.write_all(token.as_bytes()).map_err(err)
 }
 

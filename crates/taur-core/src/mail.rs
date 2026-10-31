@@ -53,7 +53,6 @@ impl FileMailer {
 
 impl Mailer for FileMailer {
     fn send(&self, to: &str, subject: &str, body: &str) -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
         std::fs::create_dir_all(&self.dir)?;
         let n = self.counter.fetch_add(1, Ordering::SeqCst);
         let nanos = std::time::SystemTime::now()
@@ -68,7 +67,7 @@ impl Mailer for FileMailer {
                 self.from
             ),
         )?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        crate::set_mode(&path, 0o600)?;
         Ok(())
     }
 }
