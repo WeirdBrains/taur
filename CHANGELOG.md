@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.8.0] - 2026-10-31
+### Added
+- Package notification subscriptions (email on pushes and comments), also in the web UI and `taurctl pkg notify|unnotify`.
+- Comment pinning (`taurctl comment pin|unpin`, web UI).
+- Automatic acceptance of orphan requests for packages flagged out-of-date for 180+ days.
+- Extended metadata dump `/packages-meta-ext-v1.json.gz`.
+
 ## [0.7.0] - 2026-10-31
 ### Added
 - Static web UI: package search and details, registration, sign-in, verification, password reset, account and SSH keys, organizations and roles, requests.

@@ -108,7 +108,8 @@ pub async fn handle(
         .env("GIT_PROTOCOL", hdr("git-protocol"))
         .env("REMOTE_ADDR", "127.0.0.1")
         .env("TAUR_HOOK_BIN", &state.hook_bin)
-        .env("TAUR_HOME", state.store.home());
+        .env("TAUR_HOME", state.store.home())
+        .envs(state.store.hook_env());
     if let Some(u) = &user {
         cmd.env("REMOTE_USER", u).env("TAUR_PUSHER", u);
     }

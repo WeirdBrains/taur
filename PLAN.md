@@ -43,7 +43,7 @@
    site admins. Remaining from phase 2: notification subscriptions, comment pinning,
    auto-accepting orphan requests, `packages-meta-ext-v1.json.gz`.
 7. **v0.7.0 (done):** static web UI over the JSON API (bearer tokens).
-8. **Phase 2 (rest):** notification subscriptions, comment pinning, orphan auto-accept,
+8. **v0.8.0 (done):** notification subscriptions, comment pinning, orphan auto-accept,
    extended metadata dump.
 9. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
 10. **Phase 6 — gRPC:** tonic service mirroring the JSON API.

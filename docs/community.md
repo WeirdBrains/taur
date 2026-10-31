@@ -20,6 +20,15 @@ Updated on every vote and refreshed hourly by `taur serve`.
   `POST …/comments` `{"content"}` (1–10000 chars).
 - `PATCH /api/v1/comments/{id}` `{"content"}`: author only.
 - `DELETE /api/v1/comments/{id}`: author, package managers or site admins (soft delete).
+- `POST|DELETE /api/v1/comments/{id}/pin`: package managers or site admins pin/unpin;
+  pinned comments are listed first and carry `"pinned": true`.
+
+## Notifications
+`POST|DELETE /api/v1/packages/{pkgbase}/notify` subscribes/unsubscribes (verified
+accounts); `GET …/notify` returns `{"subscribed": bool}`. Subscribers are emailed when
+the package is pushed with a new commit and when someone comments (never about their own
+action). Git hooks get the server's mail settings through the environment, so SMTP works
+for push notifications too.
 
 ## Co-maintainers
 `PUT /api/v1/packages/{pkgbase}/comaintainers` `{"users": [...]}` replaces the list (the
@@ -38,8 +47,9 @@ org. Co-maintainers may push and manage the package. RPC `CoMaintainers` lists t
 - `POST /api/v1/requests/{id}/reject`: site admins reject; the requester can withdraw
   (status `closed`).
 
-Not yet: aurweb's automatic acceptance of orphan requests for long-flagged packages,
-comment pinning, notification subscriptions.
+Like aurweb, an orphan request for a package flagged out-of-date for 180 days or more
+is accepted automatically when filed: the maintainer is cleared and the request closes
+as `accepted` with an explanatory closure comment.
 
 ## Site admins
 Grant on the server with `taur admin NAME` (revoke with `--revoke`). Site admins can

@@ -20,6 +20,21 @@ pub struct Comment {
     pub content: String,
     pub created_at: i64,
     pub edited_at: Option<i64>,
+    pub pinned: bool,
+}
+
+/// aurweb accepts orphan requests automatically for packages flagged out-of-date this long.
+pub const ORPHAN_AUTO_ACCEPT_SECS: i64 = 180 * 86400;
+
+fn comment_row(r: &rusqlite::Row) -> rusqlite::Result<Comment> {
+    Ok(Comment {
+        id: r.get(0)?,
+        author: r.get(1)?,
+        content: r.get(2)?,
+        created_at: r.get(3)?,
+        edited_at: r.get(4)?,
+        pinned: r.get::<_, Option<i64>>(5)?.is_some(),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -246,23 +261,85 @@ impl Store {
             )?;
             conn.last_insert_rowid()
         };
+        let author = self.user_by_id(user).map(|u| u.name).unwrap_or_default();
+        self.notify_subscribers(
+            pb,
+            Some(user),
+            &format!("New comment on {pkgbase}"),
+            &format!(
+                "{author} commented on {pkgbase}:\n\n{content}\n\n{}/packages/{pkgbase}\n",
+                self.base_url()
+            ),
+        );
         self.comment(id)
+    }
+
+    /// Pin or unpin a comment (anyone who can manage the package). Pinned comments are
+    /// listed first.
+    pub fn pin_comment(&self, user: i64, id: i64, pinned: bool) -> Result<()> {
+        let (_, pb) = self.comment_owner(id)?;
+        if !self.can_manage_pkgbase(user, pb)? {
+            return Err(Error::Forbidden);
+        }
+        let at = if pinned { Some(now()) } else { None };
+        self.lock().execute(
+            "UPDATE comments SET pinned_at = ?1 WHERE id = ?2",
+            params![at, id],
+        )?;
+        Ok(())
+    }
+
+    // ---- notifications ----
+
+    pub fn subscribe(&self, user: i64, pkgbase: &str, on: bool) -> Result<()> {
+        let pb = self.require_pkgbase(pkgbase)?;
+        let sql = if on {
+            "INSERT OR IGNORE INTO notifications (pkgbase_id, user_id) VALUES (?1, ?2)"
+        } else {
+            "DELETE FROM notifications WHERE pkgbase_id = ?1 AND user_id = ?2"
+        };
+        self.lock().execute(sql, params![pb, user])?;
+        Ok(())
+    }
+
+    pub fn is_subscribed(&self, user: i64, pkgbase: &str) -> Result<bool> {
+        let pb = self.require_pkgbase(pkgbase)?;
+        Ok(self
+            .lock()
+            .query_row(
+                "SELECT 1 FROM notifications WHERE pkgbase_id = ?1 AND user_id = ?2",
+                params![pb, user],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    /// Best-effort email to subscribers of a package base, except `actor`.
+    pub fn notify_subscribers(&self, pb: i64, actor: Option<i64>, subject: &str, body: &str) {
+        let emails: Vec<String> = (|| -> Result<Vec<String>> {
+            let conn = self.lock();
+            let mut st = conn.prepare(
+                "SELECT u.email FROM notifications n JOIN users u ON u.id = n.user_id \
+                 WHERE n.pkgbase_id = ?1 AND u.id IS NOT ?2 AND u.verified_at IS NOT NULL",
+            )?;
+            Ok(st
+                .query_map(params![pb, actor], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?)
+        })()
+        .unwrap_or_default();
+        let mailer = self.mailer();
+        for to in emails {
+            let _ = mailer.send(&to, &format!("[TAUR] {subject}"), body);
+        }
     }
 
     fn comment(&self, id: i64) -> Result<Comment> {
         self.lock()
             .query_row(
-                "SELECT c.id, u.name, c.content, c.created_at, c.edited_at FROM comments c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = ?1 AND c.deleted_at IS NULL",
+                "SELECT c.id, u.name, c.content, c.created_at, c.edited_at, c.pinned_at FROM comments c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = ?1 AND c.deleted_at IS NULL",
                 [id],
-                |r| {
-                    Ok(Comment {
-                        id: r.get(0)?,
-                        author: r.get(1)?,
-                        content: r.get(2)?,
-                        created_at: r.get(3)?,
-                        edited_at: r.get(4)?,
-                    })
-                },
+                comment_row,
             )
             .optional()?
             .ok_or_else(|| Error::NotFound(format!("comment {id}")))
@@ -273,18 +350,10 @@ impl Store {
         let pb = self.require_pkgbase(pkgbase)?;
         let conn = self.lock();
         let mut st = conn.prepare(
-            "SELECT c.id, u.name, c.content, c.created_at, c.edited_at FROM comments c LEFT JOIN users u ON u.id = c.user_id \
-             WHERE c.pkgbase_id = ?1 AND c.deleted_at IS NULL ORDER BY c.id DESC",
+            "SELECT c.id, u.name, c.content, c.created_at, c.edited_at, c.pinned_at FROM comments c LEFT JOIN users u ON u.id = c.user_id \
+             WHERE c.pkgbase_id = ?1 AND c.deleted_at IS NULL ORDER BY c.pinned_at IS NULL, c.pinned_at DESC, c.id DESC",
         )?;
-        let rows = st.query_map([pb], |r| {
-            Ok(Comment {
-                id: r.get(0)?,
-                author: r.get(1)?,
-                content: r.get(2)?,
-                created_at: r.get(3)?,
-                edited_at: r.get(4)?,
-            })
-        })?;
+        let rows = st.query_map([pb], comment_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -377,6 +446,28 @@ impl Store {
                 comments.trim()
             ),
         );
+        if kind == "orphan" {
+            let flagged: Option<i64> = self.lock().query_row(
+                "SELECT out_of_date FROM pkgbases WHERE id = ?1",
+                [pb],
+                |r| r.get(0),
+            )?;
+            if flagged.is_some_and(|t| now() - t >= ORPHAN_AUTO_ACCEPT_SECS) {
+                let conn = self.lock();
+                conn.execute(
+                    "UPDATE pkgbases SET maintainer_id = NULL WHERE id = ?1",
+                    [pb],
+                )?;
+                conn.execute(
+                    "UPDATE requests SET status = 'accepted', closure_comment = ?1, closed_at = ?2 WHERE id = ?3",
+                    params![
+                        "Accepted automatically: flagged out-of-date for more than 180 days.",
+                        now(),
+                        id
+                    ],
+                )?;
+            }
+        }
         self.request(id)
     }
 
@@ -519,6 +610,78 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
+    use crate::Store;
+
+    fn setup() -> (tempfile::TempDir, Store, i64, i64) {
+        let d = tempfile::tempdir().unwrap();
+        let s = Store::open(d.path()).unwrap();
+        let fx = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/hello-taur");
+        s.import_dir(&fx, None).unwrap();
+        let a = s.register("alice", "alice@x", "longenough").unwrap().id;
+        let b = s.register("bob", "bob@x", "longenough").unwrap().id;
+        s.mark_verified(a).unwrap();
+        s.mark_verified(b).unwrap();
+        s.lock()
+            .execute("UPDATE pkgbases SET maintainer_id = ?1", [a])
+            .unwrap();
+        (d, s, a, b)
+    }
+
+    fn outbox(d: &tempfile::TempDir) -> String {
+        let mut all = String::new();
+        if let Ok(rd) = std::fs::read_dir(d.path().join("outbox")) {
+            for e in rd.flatten() {
+                all += &std::fs::read_to_string(e.path()).unwrap_or_default();
+            }
+        }
+        all
+    }
+
+    #[test]
+    fn subscribers_get_comment_mail_and_pins_sort_first() {
+        let (d, s, a, b) = setup();
+        s.subscribe(b, "hello-taur", true).unwrap();
+        assert!(s.is_subscribed(b, "hello-taur").unwrap());
+        let first = s.add_comment(a, "hello-taur", "first").unwrap();
+        s.add_comment(a, "hello-taur", "second").unwrap();
+        let mail = outbox(&d);
+        assert!(mail.contains("New comment on hello-taur"));
+        assert!(mail.contains("bob@x"));
+        // Only maintainers (or admins) may pin.
+        assert!(s.pin_comment(b, first.id, true).is_err());
+        s.pin_comment(a, first.id, true).unwrap();
+        let list = s.comments("hello-taur").unwrap();
+        assert_eq!(list[0].content, "first");
+        assert!(list[0].pinned);
+        s.pin_comment(a, first.id, false).unwrap();
+        assert_eq!(s.comments("hello-taur").unwrap()[0].content, "second");
+        s.subscribe(b, "hello-taur", false).unwrap();
+        assert!(!s.is_subscribed(b, "hello-taur").unwrap());
+    }
+
+    #[test]
+    fn orphan_requests_auto_accept_after_180_days_flagged() {
+        let (_d, s, _a, b) = setup();
+        let r = s
+            .file_request(b, "hello-taur", "orphan", None, "gone")
+            .unwrap();
+        assert_eq!(r.status, "pending");
+        let old = super::now() - super::ORPHAN_AUTO_ACCEPT_SECS - 60;
+        s.lock()
+            .execute("UPDATE pkgbases SET out_of_date = ?1", [old])
+            .unwrap();
+        let r = s
+            .file_request(b, "hello-taur", "orphan", None, "really gone")
+            .unwrap();
+        assert_eq!(r.status, "accepted");
+        let m: Option<i64> = s
+            .lock()
+            .query_row("SELECT maintainer_id FROM pkgbases", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(m, None);
+    }
+
     #[test]
     fn popularity_decays() {
         let now = 100 * 86400;

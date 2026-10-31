@@ -54,6 +54,7 @@ pub fn app_with(state: AppState) -> Router {
         .route("/packages.gz", get(dump_packages))
         .route("/pkgbase.gz", get(dump_pkgbases))
         .route("/packages-meta-v1.json.gz", get(dump_meta))
+        .route("/packages-meta-ext-v1.json.gz", get(dump_meta_ext))
         .route("/api/v1/register", post(register))
         .route("/api/v1/login", post(login))
         .route("/api/v1/logout", post(logout))
@@ -89,6 +90,14 @@ pub fn app_with(state: AppState) -> Router {
             axum::routing::put(set_comaintainers),
         )
         .route("/api/v1/packages/{pkgbase}/requests", post(file_request))
+        .route(
+            "/api/v1/packages/{pkgbase}/notify",
+            get(notify_status).post(notify_on).delete(notify_off),
+        )
+        .route(
+            "/api/v1/comments/{id}/pin",
+            post(pin_comment).delete(unpin_comment),
+        )
         .route(
             "/api/v1/comments/{id}",
             axum::routing::patch(edit_comment).delete(delete_comment),
@@ -191,6 +200,10 @@ async fn dump_pkgbases(State(s): St) -> Response {
 
 async fn dump_meta(State(s): St) -> Response {
     gz(s.dump_packages_meta())
+}
+
+async fn dump_meta_ext(State(s): St) -> Response {
+    gz(s.dump_packages_meta_ext())
 }
 
 // ---- accounts ----
@@ -522,6 +535,55 @@ async fn vote_status(
 ) -> Result<Response, ApiError> {
     let u = auth(&s, &h)?;
     Ok(Json(json!({ "voted": s.has_voted(u.id, &p)? })).into_response())
+}
+
+async fn notify_status(
+    State(s): St,
+    h: HeaderMap,
+    Path(p): Path<String>,
+) -> Result<Response, ApiError> {
+    let u = auth(&s, &h)?;
+    Ok(Json(json!({ "subscribed": s.is_subscribed(u.id, &p)? })).into_response())
+}
+
+async fn notify_on(
+    State(s): St,
+    h: HeaderMap,
+    Path(p): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.subscribe(u.id, &p, true)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn notify_off(
+    State(s): St,
+    h: HeaderMap,
+    Path(p): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.subscribe(u.id, &p, false)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn pin_comment(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.pin_comment(u.id, id, true)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn unpin_comment(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.pin_comment(u.id, id, false)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn unvote(State(s): St, h: HeaderMap, Path(p): Path<String>) -> Result<StatusCode, ApiError> {

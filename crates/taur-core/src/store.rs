@@ -97,6 +97,10 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at INTEGER NOT NULL,
   edited_at INTEGER,
   deleted_at INTEGER);
+CREATE TABLE IF NOT EXISTS notifications (
+  pkgbase_id INTEGER NOT NULL REFERENCES pkgbases(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (pkgbase_id, user_id));
 CREATE TABLE IF NOT EXISTS requests (
   id INTEGER PRIMARY KEY,
   pkgbase_id INTEGER REFERENCES pkgbases(id) ON DELETE SET NULL,
@@ -265,6 +269,7 @@ pub struct Store {
     home: PathBuf,
     mailer: std::sync::RwLock<std::sync::Arc<dyn crate::mail::Mailer>>,
     base_url: std::sync::RwLock<String>,
+    hook_env: std::sync::RwLock<Vec<(String, String)>>,
 }
 
 impl Store {
@@ -290,6 +295,7 @@ impl Store {
                 "INTEGER REFERENCES users(id) ON DELETE SET NULL",
             ),
             ("pkgbases", "flagger_comment", "TEXT"),
+            ("comments", "pinned_at", "INTEGER"),
         ] {
             let exists = conn
                 .prepare(&format!(
@@ -306,6 +312,7 @@ impl Store {
             home: home.to_path_buf(),
             mailer: std::sync::RwLock::new(std::sync::Arc::new(mailer)),
             base_url: std::sync::RwLock::new(crate::DEFAULT_BASE_URL.to_string()),
+            hook_env: std::sync::RwLock::new(Vec::new()),
         })
     }
 
@@ -325,6 +332,37 @@ impl Store {
     pub fn set_base_url(&self, url: &str) {
         *self.base_url.write().unwrap_or_else(|e| e.into_inner()) =
             url.trim_end_matches('/').to_string();
+    }
+
+    /// Configure mail delivery and the public base URL (used by `taur serve` and by git
+    /// hooks). Without an SMTP URL, mail goes to `<home>/outbox`. The settings are also
+    /// exported to git hook processes via `hook_env` (never logged).
+    pub fn configure_mail(&self, smtp_url: Option<&str>, from: &str, base_url: &str) -> Result<()> {
+        let mailer: std::sync::Arc<dyn crate::mail::Mailer> = match smtp_url {
+            Some(url) => std::sync::Arc::new(crate::mail::SmtpMailer::new(url, from)?),
+            None => {
+                std::sync::Arc::new(crate::mail::FileMailer::new(self.home.join("outbox"), from))
+            }
+        };
+        self.set_mailer(mailer);
+        self.set_base_url(base_url);
+        let mut env = vec![
+            ("TAUR_MAIL_FROM".to_string(), from.to_string()),
+            ("TAUR_BASE_URL".to_string(), base_url.to_string()),
+        ];
+        if let Some(url) = smtp_url {
+            env.push(("TAUR_SMTP_URL".to_string(), url.to_string()));
+        }
+        *self.hook_env.write().unwrap_or_else(|e| e.into_inner()) = env;
+        Ok(())
+    }
+
+    /// Environment passed to git hook processes.
+    pub fn hook_env(&self) -> Vec<(String, String)> {
+        self.hook_env
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn base_url(&self) -> String {

@@ -123,6 +123,7 @@ async function pagePackage(name) {
     api("GET", `/api/v1/packages/${enc(base)}/comments`, undefined, false).catch(() => []),
     api("GET", `/api/v1/packages/${enc(base)}/flag`, undefined, false).catch(() => ({})),
   ]);
+  const subscribed = me ? (await api("GET", `/api/v1/packages/${enc(base)}/notify`).catch(() => ({ subscribed: false }))).subscribed : false;
   const voted = me ? (await api("GET", `/api/v1/packages/${enc(base)}/vote`).catch(() => ({ voted: false }))).voted : false;
   const list = (k) => (info[k] && info[k].length ? info[k].join(", ") : "—");
   const origin = location.origin;
@@ -147,6 +148,8 @@ async function pagePackage(name) {
     const actions = h("div", { class: "actions" },
       voted ? h("button", { class: "secondary", onclick: guard(() => api("DELETE", `${P}/vote`), "Vote removed.") }, "Remove vote")
             : h("button", { onclick: guard(() => api("POST", `${P}/vote`), "Thanks for voting.") }, "Vote"),
+      subscribed ? h("button", { class: "secondary", onclick: guard(() => api("DELETE", `${P}/notify`), "Notifications off.") }, "Disable notifications")
+                 : h("button", { class: "secondary", onclick: guard(() => api("POST", `${P}/notify`), "You will be emailed about updates and comments.") }, "Enable notifications"),
       info.OutOfDate ? h("button", { class: "secondary", onclick: guard(() => api("DELETE", `${P}/flag`), "Flag removed.") }, "Unflag")
         : h("button", { class: "secondary", onclick: guard(async () => {
             const c = prompt("Why is it out of date? (e.g. new upstream version)");
@@ -187,9 +190,11 @@ async function pagePackage(name) {
   }
   for (const c of comments) {
     const mine = me && c.author === me.name;
-    const canDelete = me && (mine || info.Maintainer === me.name || (info.CoMaintainers || []).includes(me.name));
+    const manager = me && (info.Maintainer === me.name || (info.CoMaintainers || []).includes(me.name) || me.is_admin);
+    const canDelete = me && (mine || manager);
+    const PIN = `/api/v1/comments/${c.id}/pin`;
     cbox.append(h("div", { class: "comment" },
-      h("div", { class: "muted" }, `${c.author || "deleted user"} · ${fmtTime(c.created_at)}${c.edited_at ? " (edited)" : ""}`),
+      h("div", { class: "muted" }, `${c.pinned ? "📌 pinned · " : ""}${c.author || "deleted user"} · ${fmtTime(c.created_at)}${c.edited_at ? " (edited)" : ""}`),
       h("pre", {}, c.content),
       h("div", { class: "actions" },
         mine ? h("button", { class: "secondary", onclick: guard(async () => {
@@ -197,6 +202,7 @@ async function pagePackage(name) {
           if (t === null) throw new Error("Cancelled.");
           await api("PATCH", `/api/v1/comments/${c.id}`, { content: t });
         }, "Comment updated.") }, "Edit") : null,
+        manager ? h("button", { class: "secondary", onclick: guard(() => api(c.pinned ? "DELETE" : "POST", PIN), c.pinned ? "Comment unpinned." : "Comment pinned.") }, c.pinned ? "Unpin" : "Pin") : null,
         canDelete ? h("button", { class: "secondary", onclick: guard(() => api("DELETE", `/api/v1/comments/${c.id}`), "Comment deleted.") }, "Delete") : null)));
   }
   out.push(cbox);

@@ -160,7 +160,20 @@ impl Store {
         let text = git_out(repo, &["show", "master:.SRCINFO"])?;
         let info = srcinfo::parse(&text)?;
         let new = self.pkgbase_id(pkgbase)?.is_none();
-        self.import_srcinfo(&info, if new { Some(pusher) } else { None })?;
+        let pb = self.import_srcinfo(&info, if new { Some(pusher) } else { None })?;
+        if !new {
+            let actor = self.user_by_name(pusher)?.map(|u| u.id);
+            self.notify_subscribers(
+                pb,
+                actor,
+                &format!("{pkgbase} updated to {}", info.version()),
+                &format!(
+                    "{pusher} pushed {pkgbase} {}.\n\n{}/packages/{pkgbase}\n",
+                    info.version(),
+                    self.base_url()
+                ),
+            );
+        }
         let mut c = git();
         c.arg("--git-dir").arg(repo).arg("update-server-info");
         run(c)?;

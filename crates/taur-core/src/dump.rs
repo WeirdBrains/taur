@@ -30,6 +30,20 @@ impl Store {
         gzip(&lines(self.all_pkgbase_names()?))
     }
 
+    /// JSON array of info-shaped package objects (with dependencies etc.), gzipped.
+    pub fn dump_packages_meta_ext(&self) -> Result<Vec<u8>> {
+        let names: Vec<String> = self.all_packages()?.into_iter().map(|p| p.name).collect();
+        let all: Vec<_> = names
+            .chunks(500)
+            .map(|c| self.info(c))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .map(|p| info_value(&p, true))
+            .collect();
+        gzip(&serde_json::to_vec(&all)?)
+    }
+
     /// JSON array of search-shaped package objects, gzipped.
     pub fn dump_packages_meta(&self) -> Result<Vec<u8>> {
         let all: Vec<_> = self
