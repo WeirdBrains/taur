@@ -7,4 +7,5 @@
 - [Metadata dumps](metadata-dumps.md)
 - [User accounts](accounts.md)
 - [Organizations and roles](roles.md)
+- [Organization and package management API](management-api.md)
 - [Using with yay](yay.md)

@@ -185,3 +185,42 @@ fn orgs_and_roles() {
     s.set_member(owner, org, admin, Role::Owner).unwrap();
     s.unregister(&t, "longenough").unwrap();
 }
+
+#[test]
+fn org_and_package_management() {
+    let (_d, s) = store();
+    let a = s.register("alice", "a@x", "longenough").unwrap().id;
+    let b = s.register("bob", "b@x", "longenough").unwrap().id;
+    let org = s.create_org(a, "brains").unwrap();
+    assert_eq!(s.org_id("brains").unwrap(), org);
+    assert!(matches!(s.org_detail(b, "brains"), Err(Error::Forbidden)));
+    s.set_member(a, org, b, Role::Contributor).unwrap();
+    let d = s.org_detail(b, "brains").unwrap();
+    assert_eq!(d.members.len(), 2);
+    assert_eq!(s.orgs_for(b).unwrap()[0].role, Role::Contributor);
+    let pb = s
+        .import_dir(&fixture(), Some("alice"))
+        .map(|_| s.pkgbase_id("hello-taur").unwrap().unwrap())
+        .unwrap();
+    assert_eq!(s.packages_for(a).unwrap().len(), 1);
+    assert!(s.packages_for(b).unwrap().is_empty());
+    assert!(matches!(s.disown(b, pb), Err(Error::Forbidden)));
+    s.set_pkgbase_org(a, pb, Some(org)).unwrap();
+    assert_eq!(s.packages_for(b).unwrap()[0].org.as_deref(), Some("brains"));
+    s.disown(b, pb).unwrap();
+    assert!(matches!(
+        s.adopt(s.register("carol", "c@x", "longenough").unwrap().id, pb),
+        Err(Error::Forbidden)
+    ));
+    s.adopt(b, pb).unwrap();
+    assert!(matches!(s.adopt(a, pb), Err(Error::Conflict(_))));
+    s.transfer_to_user(b, pb, a).unwrap();
+    let p = &s.packages_for(a).unwrap()[0];
+    assert_eq!(
+        (p.maintainer.as_deref(), p.org.as_deref()),
+        (Some("alice"), None)
+    );
+    assert!(matches!(s.delete_org(b, org), Err(Error::Forbidden)));
+    s.delete_org(a, org).unwrap();
+    assert!(s.orgs_for(b).unwrap().is_empty());
+}

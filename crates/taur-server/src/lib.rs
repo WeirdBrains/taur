@@ -8,7 +8,8 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
-use taur_core::{Error, Store, rpc};
+use taur_core::accounts::User;
+use taur_core::{Error, Role, Store, rpc};
 
 type St = State<Arc<Store>>;
 
@@ -26,6 +27,16 @@ pub fn app(store: Arc<Store>) -> Router {
         .route("/api/v1/login", post(login))
         .route("/api/v1/logout", post(logout))
         .route("/api/v1/account", get(account).delete(unregister))
+        .route("/api/v1/orgs", get(list_orgs).post(create_org))
+        .route("/api/v1/orgs/{org}", get(show_org).delete(delete_org))
+        .route(
+            "/api/v1/orgs/{org}/members/{user}",
+            axum::routing::put(set_member).delete(remove_member),
+        )
+        .route("/api/v1/packages", get(my_packages))
+        .route("/api/v1/packages/{pkgbase}/owner", post(set_owner))
+        .route("/api/v1/packages/{pkgbase}/disown", post(disown))
+        .route("/api/v1/packages/{pkgbase}/adopt", post(adopt))
         .fallback(git_dumb)
         .with_state(store)
 }
@@ -205,5 +216,132 @@ async fn unregister(
     Json(r): Json<PasswordReq>,
 ) -> Result<StatusCode, ApiError> {
     s.unregister(&bearer(&h)?, &r.password)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- organizations and package ownership ----
+
+fn auth(s: &Store, h: &HeaderMap) -> Result<User, ApiError> {
+    Ok(s.user_for_token(&bearer(h)?)?)
+}
+
+fn pkgbase(s: &Store, name: &str) -> Result<i64, ApiError> {
+    s.pkgbase_id(name)?
+        .ok_or_else(|| ApiError(Error::NotFound(format!("package base {name}"))))
+}
+
+#[derive(Deserialize)]
+struct NameReq {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct RoleReq {
+    role: Role,
+}
+
+#[derive(Deserialize)]
+struct OwnerReq {
+    org: Option<String>,
+    user: Option<String>,
+}
+
+async fn list_orgs(State(s): St, h: HeaderMap) -> Result<Response, ApiError> {
+    let u = auth(&s, &h)?;
+    Ok(Json(s.orgs_for(u.id)?).into_response())
+}
+
+async fn create_org(
+    State(s): St,
+    h: HeaderMap,
+    Json(r): Json<NameReq>,
+) -> Result<Response, ApiError> {
+    let u = auth(&s, &h)?;
+    s.create_org(u.id, &r.name)?;
+    Ok((StatusCode::CREATED, Json(s.org_detail(u.id, &r.name)?)).into_response())
+}
+
+async fn show_org(
+    State(s): St,
+    h: HeaderMap,
+    Path(org): Path<String>,
+) -> Result<Response, ApiError> {
+    let u = auth(&s, &h)?;
+    Ok(Json(s.org_detail(u.id, &org)?).into_response())
+}
+
+async fn delete_org(
+    State(s): St,
+    h: HeaderMap,
+    Path(org): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.delete_org(u.id, s.org_id(&org)?)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn set_member(
+    State(s): St,
+    h: HeaderMap,
+    Path((org, user)): Path<(String, String)>,
+    Json(r): Json<RoleReq>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.set_member(u.id, s.org_id(&org)?, s.user_id(&user)?, r.role)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_member(
+    State(s): St,
+    h: HeaderMap,
+    Path((org, user)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.remove_member(u.id, s.org_id(&org)?, s.user_id(&user)?)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn my_packages(State(s): St, h: HeaderMap) -> Result<Response, ApiError> {
+    let u = auth(&s, &h)?;
+    Ok(Json(s.packages_for(u.id)?).into_response())
+}
+
+async fn set_owner(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(r): Json<OwnerReq>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    let pb = pkgbase(&s, &name)?;
+    match (r.org, r.user) {
+        (Some(org), None) => s.set_pkgbase_org(u.id, pb, Some(s.org_id(&org)?))?,
+        (None, Some(user)) => s.transfer_to_user(u.id, pb, s.user_id(&user)?)?,
+        _ => {
+            return Err(ApiError(Error::Invalid(
+                "give exactly one of \"org\" or \"user\"".into(),
+            )));
+        }
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn disown(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.disown(u.id, pkgbase(&s, &name)?)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn adopt(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.adopt(u.id, pkgbase(&s, &name)?)?;
     Ok(StatusCode::NO_CONTENT)
 }
