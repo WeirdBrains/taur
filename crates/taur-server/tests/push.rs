@@ -18,6 +18,9 @@ struct Srv {
 fn start() -> Srv {
     let home = tempfile::tempdir().unwrap();
     let store = Arc::new(Store::open(home.path()).unwrap());
+    store
+        .configure_mail(None, "taur@test", "http://taur.test")
+        .unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let hook_bin = PathBuf::from(env!("CARGO_BIN_EXE_taur"));
     let (http, ssh_port) = rt.block_on(async {
@@ -286,4 +289,41 @@ fn push_over_http_and_ssh() {
         &env,
     );
     assert!(!ok);
+}
+
+#[test]
+fn push_emails_subscribers() {
+    let s = start();
+    let alice = user(&s, "alice");
+    let _bob = user(&s, "bob");
+    let host = s.http.trim_start_matches("http://");
+    let url = format!("http://alice:{alice}@{host}/notify-me.git");
+    let w = s.work.path().join("notify-me");
+    write_pkg(&w, "notify-me", "1.0");
+    git(&w, &["init", "-q"], &[]);
+    git(&w, &["add", "-A"], &[]);
+    git(&w, &["commit", "-qm", "init"], &[]);
+    assert!(git(&w, &["push", &url, "master"], &[]).0);
+    let bob = s.store.user_id("bob").unwrap();
+    s.store.subscribe(bob, "notify-me", true).unwrap();
+    write_pkg(&w, "notify-me", "1.1");
+    git(&w, &["commit", "-qam", "bump"], &[]);
+    let (ok, out) = git(&w, &["push", &url, "master"], &[]);
+    assert!(ok, "{out}");
+    let mut mail = String::new();
+    for e in std::fs::read_dir(s.store.home().join("outbox"))
+        .unwrap()
+        .flatten()
+    {
+        let t = std::fs::read_to_string(e.path()).unwrap();
+        if t.contains("notify-me updated to 1.1-1") {
+            mail = t;
+        }
+    }
+    assert!(mail.contains("bob@x"), "no notification mail found");
+    assert!(
+        mail.contains("http://taur.test/packages/notify-me"),
+        "{mail}"
+    );
+    assert!(!mail.contains("alice@x"));
 }
