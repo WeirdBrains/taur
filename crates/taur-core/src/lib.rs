@@ -1,6 +1,7 @@
 //! TAUR core library: everything front ends (HTTP server, CLI, later MCP/gRPC) share.
 
 pub mod accounts;
+pub mod community;
 pub mod dump;
 pub mod error;
 pub mod keys;

@@ -1,0 +1,50 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-request 1  "taurctl-request " 
+.SH NAME
+taurctl\-request \- File and handle package requests (orphan, deletion, merge)
+.SH SYNOPSIS
+\fBtaurctl request\fR [\fB\-\-server\fR] [\fB\-\-config\-dir\fR] [\fB\-\-json\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+File and handle package requests (orphan, deletion, merge)
+.SH OPTIONS
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+taurctl\-request\-file(1)
+File a request against a package base
+.TP
+taurctl\-request\-list(1)
+List pending requests (all with \-\-all)
+.TP
+taurctl\-request\-show(1)
+Show one request
+.TP
+taurctl\-request\-accept(1)
+Accept and carry out a request (site admins)
+.TP
+taurctl\-request\-reject(1)
+Reject a request (site admins) or withdraw your own
+.TP
+taurctl\-request\-help(1)
+Print this message or the help of the given subcommand(s)

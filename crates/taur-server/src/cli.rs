@@ -36,6 +36,12 @@ pub enum Cmd {
     },
     /// Mark an account's email as verified (admin).
     VerifyUser { name: String },
+    /// Grant (or with --revoke, remove) site-admin rights: accept requests, manage any package.
+    Admin {
+        name: String,
+        #[arg(long)]
+        revoke: bool,
+    },
     /// Import a package directory containing .SRCINFO (and PKGBUILD).
     Import {
         dir: PathBuf,

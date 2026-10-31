@@ -129,6 +129,15 @@ impl Store {
         if maintainer == Some(user) {
             return Ok(true);
         }
+        let admin: bool = conn
+            .query_row("SELECT is_admin FROM users WHERE id = ?1", [user], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .unwrap_or(false);
+        if admin {
+            return Ok(true);
+        }
         let co: Option<i64> = conn
             .query_row(
                 "SELECT 1 FROM co_maintainers WHERE pkgbase_id = ?1 AND user_id = ?2",

@@ -266,3 +266,153 @@ fn email_verification_and_reset() {
         );
     }
 }
+
+#[test]
+fn community_features() {
+    let (d, s) = store();
+    let a = s.register("alice", "a@x", "longenough").unwrap().id;
+    let b = s.register("bob", "b@x", "longenough").unwrap().id;
+    let admin = s.register("root", "r@x", "longenough").unwrap().id;
+    s.set_admin(admin, true).unwrap();
+    s.import_dir(&fixture(), Some("alice")).unwrap();
+    let info = |s: &Store| s.info(&["hello-taur".into()]).unwrap().remove(0);
+
+    // votes and popularity
+    s.vote(a, "hello-taur").unwrap();
+    s.vote(b, "hello-taur").unwrap();
+    s.vote(b, "hello-taur").unwrap();
+    assert!(s.has_voted(b, "hello-taur").unwrap());
+    let p = info(&s);
+    assert_eq!(p.num_votes, 2);
+    assert!((p.popularity - 2.0).abs() < 0.01);
+    s.unvote(b, "hello-taur").unwrap();
+    assert_eq!(info(&s).num_votes, 1);
+    let v = rpc::handle(&s, Some("info"), &["hello-taur".into()], None);
+    assert_eq!(v["results"][0]["NumVotes"], 1);
+
+    // out-of-date flag (maintainer gets mail), cleared by unflag and by a new version
+    assert!(matches!(
+        s.flag_out_of_date(b, "hello-taur", " "),
+        Err(Error::Invalid(_))
+    ));
+    s.flag_out_of_date(b, "hello-taur", "2.0 is out").unwrap();
+    assert!(matches!(
+        s.flag_out_of_date(b, "hello-taur", "again"),
+        Err(Error::Conflict(_))
+    ));
+    assert!(info(&s).out_of_date.is_some());
+    assert_eq!(
+        s.flag_info("hello-taur").unwrap().flagger.as_deref(),
+        Some("bob")
+    );
+    let mails: String = std::fs::read_dir(d.path().join("outbox"))
+        .unwrap()
+        .flatten()
+        .map(|f| std::fs::read_to_string(f.path()).unwrap())
+        .collect();
+    assert!(mails.contains("To: a@x") && mails.contains("2.0 is out"));
+    let c = s.register("carol", "c@x", "longenough").unwrap().id;
+    assert!(matches!(s.unflag(c, "hello-taur"), Err(Error::Forbidden)));
+    s.unflag(b, "hello-taur").unwrap();
+    s.flag_out_of_date(c, "hello-taur", "new release").unwrap();
+    let mut srcinfo =
+        taur_core::srcinfo::parse(include_str!("../../../tests/fixtures/hello-taur/.SRCINFO"))
+            .unwrap();
+    srcinfo.base.insert("pkgver".into(), vec!["2.0".into()]);
+    s.import_srcinfo(&srcinfo, None).unwrap();
+    assert!(
+        info(&s).out_of_date.is_none(),
+        "new version clears the flag"
+    );
+
+    // co-maintainers
+    assert!(matches!(
+        s.set_comaintainers(b, "hello-taur", &["bob".into()]),
+        Err(Error::Forbidden)
+    ));
+    s.set_comaintainers(a, "hello-taur", &["bob".into(), "alice".into()])
+        .unwrap();
+    assert_eq!(info(&s).maintainer.as_deref(), Some("alice"));
+    assert_eq!(
+        s.info(&["hello-taur".into()]).unwrap()[0].comaintainers,
+        vec!["bob"]
+    );
+    let pb = s.pkgbase_id("hello-taur").unwrap().unwrap();
+    assert!(s.can_manage_pkgbase(b, pb).unwrap());
+    assert!(
+        s.can_manage_pkgbase(admin, pb).unwrap(),
+        "site admins manage everything"
+    );
+
+    // comments
+    let cm = s.add_comment(c, "hello-taur", "builds fine").unwrap();
+    assert_eq!(cm.author.as_deref(), Some("carol"));
+    assert!(matches!(
+        s.edit_comment(a, cm.id, "x"),
+        Err(Error::Forbidden)
+    ));
+    assert!(
+        s.edit_comment(c, cm.id, "builds fine on aarch64")
+            .unwrap()
+            .edited_at
+            .is_some()
+    );
+    s.add_comment(b, "hello-taur", "second").unwrap();
+    assert_eq!(s.comments("hello-taur").unwrap()[0].content, "second");
+    assert!(matches!(
+        s.delete_comment(c + 100, cm.id),
+        Err(Error::Forbidden)
+    ));
+    s.delete_comment(a, cm.id).unwrap();
+    assert_eq!(s.comments("hello-taur").unwrap().len(), 1);
+
+    // requests
+    assert!(matches!(
+        s.file_request(c, "hello-taur", "nope", None, "x"),
+        Err(Error::Invalid(_))
+    ));
+    assert!(matches!(
+        s.file_request(c, "hello-taur", "merge", None, "x"),
+        Err(Error::Invalid(_))
+    ));
+    let r = s
+        .file_request(c, "hello-taur", "orphan", None, "maintainer is gone")
+        .unwrap();
+    assert_eq!(s.list_requests(true).unwrap().len(), 1);
+    assert!(matches!(
+        s.accept_request(c, r.id, ""),
+        Err(Error::Forbidden)
+    ));
+    assert!(matches!(
+        s.reject_request(b, r.id, ""),
+        Err(Error::Forbidden)
+    ));
+    s.accept_request(admin, r.id, "ok").unwrap();
+    assert_eq!(info(&s).maintainer, None);
+    assert_eq!(s.request(r.id).unwrap().status, "accepted");
+    assert!(matches!(
+        s.accept_request(admin, r.id, ""),
+        Err(Error::Conflict(_))
+    ));
+    let r2 = s
+        .file_request(c, "hello-taur", "deletion", None, "dupe")
+        .unwrap();
+    s.reject_request(c, r2.id, "never mind").unwrap();
+    assert_eq!(s.request(r2.id).unwrap().status, "closed");
+    assert!(s.list_requests(true).unwrap().is_empty());
+    assert_eq!(s.list_requests(false).unwrap().len(), 2);
+
+    // merge moves votes and comments, then removes the source
+    let mut other = srcinfo.clone();
+    other.pkgbase = "hello-new".into();
+    other.packages = vec![("hello-new".into(), Default::default())];
+    s.import_srcinfo(&other, Some("alice")).unwrap();
+    let m = s
+        .file_request(a, "hello-taur", "merge", Some("hello-new"), "renamed")
+        .unwrap();
+    s.accept_request(admin, m.id, "").unwrap();
+    assert!(s.pkgbase_id("hello-taur").unwrap().is_none());
+    assert_eq!(s.comments("hello-new").unwrap().len(), 1);
+    assert_eq!(s.info(&["hello-new".into()]).unwrap()[0].num_votes, 1);
+    assert!(d.path().join("repos/.deleted").is_dir());
+}

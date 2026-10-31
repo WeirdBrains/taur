@@ -608,3 +608,222 @@ async fn verification_and_reset_api() {
         StatusCode::OK
     );
 }
+
+#[tokio::test]
+async fn community_api() {
+    let (d, app) = setup();
+    let a = token(&app, d.path(), "alice").await;
+    let b = token(&app, d.path(), "bob").await;
+    let n = json!(null);
+    let store = Store::open(d.path()).unwrap();
+    let alice = store.user_id("alice").unwrap();
+    store.set_admin(alice, true).unwrap();
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/vote",
+                Some(&b),
+                n.clone()
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get_json(&app, "/rpc/v5/info/hello-taur").await["results"][0]["NumVotes"],
+        1
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/packages/hello-taur/vote", None, n.clone())
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/flag",
+                Some(&b),
+                json!({"comment": "old"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(get_json(&app, "/rpc/v5/info/hello-taur").await["results"][0]["OutOfDate"].is_i64());
+    assert_eq!(
+        get_json(&app, "/api/v1/packages/hello-taur/flag").await["flagger"],
+        "bob"
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "DELETE",
+                "/api/v1/packages/hello-taur/flag",
+                Some(&b),
+                n.clone()
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (st, body) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/packages/hello-taur/comments",
+            Some(&b),
+            json!({"content": "hi"}),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let id = serde_json::from_slice::<Value>(&body).unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(
+        get_json(&app, "/api/v1/packages/hello-taur/comments").await[0]["content"],
+        "hi"
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PATCH",
+                &format!("/api/v1/comments/{id}"),
+                Some(&a),
+                json!({"content": "x"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PATCH",
+                &format!("/api/v1/comments/{id}"),
+                Some(&b),
+                json!({"content": "hello"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "DELETE",
+                &format!("/api/v1/comments/{id}"),
+                Some(&a),
+                n.clone()
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    // alice (site admin) sets co-maintainers on the orphaned fixture
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/packages/hello-taur/comaintainers",
+                Some(&b),
+                json!({"users": ["bob"]})
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/packages/hello-taur/comaintainers",
+                Some(&a),
+                json!({"users": ["bob"]})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get_json(&app, "/rpc/v5/info/hello-taur").await["results"][0]["CoMaintainers"],
+        json!(["bob"])
+    );
+    let (st, body) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/packages/hello-taur/requests",
+            Some(&b),
+            json!({"kind": "deletion", "comment": "obsolete"}),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let rid = serde_json::from_slice::<Value>(&body).unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let (_, body) = call(&app, send("GET", "/api/v1/requests", Some(&b), n.clone())).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()[0]["status"],
+        "pending"
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                &format!("/api/v1/requests/{rid}/accept"),
+                Some(&b),
+                json!({})
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                &format!("/api/v1/requests/{rid}/accept"),
+                Some(&a),
+                json!({"comment": "done"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get_json(&app, "/rpc/v5/info/hello-taur").await["resultcount"],
+        0
+    );
+    assert_eq!(
+        get(&app, "/hello-taur.git/info/refs").await.0,
+        StatusCode::NOT_FOUND
+    );
+}

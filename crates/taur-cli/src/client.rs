@@ -61,6 +61,20 @@ impl Client {
         serde_json::from_str(&text).map_err(|e| CliError::Transport(format!("bad response: {e}")))
     }
 
+    /// Generic authenticated request (path segments must already be encoded).
+    pub fn send(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, CliError> {
+        self.call(method, path, body, true)
+    }
+
+    /// Generic anonymous GET.
+    pub fn public_get(&self, path: &str) -> Result<Value, CliError> {
+        self.call("GET", path, None, false)
+    }
+
+    pub fn enc(s: &str) -> String {
+        enc(s)
+    }
+
     fn get(&self, path: &str) -> Result<Value, CliError> {
         self.call("GET", path, None, true)
     }

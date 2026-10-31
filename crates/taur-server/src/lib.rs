@@ -65,6 +65,28 @@ pub fn app_with(state: AppState) -> Router {
         .route("/api/v1/packages/{pkgbase}/owner", post(set_owner))
         .route("/api/v1/packages/{pkgbase}/disown", post(disown))
         .route("/api/v1/packages/{pkgbase}/adopt", post(adopt))
+        .route("/api/v1/packages/{pkgbase}/vote", post(vote).delete(unvote))
+        .route(
+            "/api/v1/packages/{pkgbase}/flag",
+            get(flag_info).post(flag).delete(unflag),
+        )
+        .route(
+            "/api/v1/packages/{pkgbase}/comments",
+            get(list_comments).post(add_comment),
+        )
+        .route(
+            "/api/v1/packages/{pkgbase}/comaintainers",
+            axum::routing::put(set_comaintainers),
+        )
+        .route("/api/v1/packages/{pkgbase}/requests", post(file_request))
+        .route(
+            "/api/v1/comments/{id}",
+            axum::routing::patch(edit_comment).delete(delete_comment),
+        )
+        .route("/api/v1/requests", get(list_requests))
+        .route("/api/v1/requests/{id}", get(show_request))
+        .route("/api/v1/requests/{id}/accept", post(accept_request))
+        .route("/api/v1/requests/{id}/reject", post(reject_request))
         .route("/api/v1/ssh-keys", get(list_keys).post(add_key))
         .route("/api/v1/ssh-keys/{id}", axum::routing::delete(remove_key))
         .fallback(githttp::handle)
@@ -443,5 +465,169 @@ async fn reset_request(State(s): St, Json(r): Json<EmailReq>) -> Result<StatusCo
 
 async fn reset_confirm(State(s): St, Json(r): Json<ResetReq>) -> Result<StatusCode, ApiError> {
     s.reset_password(&r.token, &r.password)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- community: votes, flags, comments, co-maintainers, requests ----
+
+#[derive(Deserialize)]
+struct CommentReq {
+    #[serde(default)]
+    comment: String,
+}
+
+#[derive(Deserialize)]
+struct ContentReq {
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct UsersReq {
+    users: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct FileRequestReq {
+    kind: String,
+    merge_into: Option<String>,
+    comment: String,
+}
+
+#[derive(Deserialize)]
+struct RequestsQuery {
+    #[serde(default)]
+    all: bool,
+}
+
+async fn vote(State(s): St, h: HeaderMap, Path(p): Path<String>) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.vote(u.id, &p)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn unvote(State(s): St, h: HeaderMap, Path(p): Path<String>) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.unvote(u.id, &p)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn flag_info(State(s): St, Path(p): Path<String>) -> Result<Response, ApiError> {
+    Ok(Json(s.flag_info(&p)?).into_response())
+}
+
+async fn flag(
+    State(s): St,
+    h: HeaderMap,
+    Path(p): Path<String>,
+    Json(r): Json<CommentReq>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.flag_out_of_date(u.id, &p, &r.comment)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn unflag(State(s): St, h: HeaderMap, Path(p): Path<String>) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.unflag(u.id, &p)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_comments(State(s): St, Path(p): Path<String>) -> Result<Response, ApiError> {
+    Ok(Json(s.comments(&p)?).into_response())
+}
+
+async fn add_comment(
+    State(s): St,
+    h: HeaderMap,
+    Path(p): Path<String>,
+    Json(r): Json<ContentReq>,
+) -> Result<Response, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(s.add_comment(u.id, &p, &r.content)?),
+    )
+        .into_response())
+}
+
+async fn edit_comment(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+    Json(r): Json<ContentReq>,
+) -> Result<Response, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    Ok(Json(s.edit_comment(u.id, id, &r.content)?).into_response())
+}
+
+async fn delete_comment(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.delete_comment(u.id, id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn set_comaintainers(
+    State(s): St,
+    h: HeaderMap,
+    Path(p): Path<String>,
+    Json(r): Json<UsersReq>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.set_comaintainers(u.id, &p, &r.users)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn file_request(
+    State(s): St,
+    h: HeaderMap,
+    Path(p): Path<String>,
+    Json(r): Json<FileRequestReq>,
+) -> Result<Response, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let req = s.file_request(u.id, &p, &r.kind, r.merge_into.as_deref(), &r.comment)?;
+    Ok((StatusCode::CREATED, Json(req)).into_response())
+}
+
+async fn list_requests(
+    State(s): St,
+    h: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<RequestsQuery>,
+) -> Result<Response, ApiError> {
+    auth(&s, &h)?;
+    Ok(Json(s.list_requests(!q.all)?).into_response())
+}
+
+async fn show_request(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<Response, ApiError> {
+    auth(&s, &h)?;
+    Ok(Json(s.request(id)?).into_response())
+}
+
+async fn accept_request(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+    Json(r): Json<CommentReq>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.accept_request(u.id, id, &r.comment)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn reject_request(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+    Json(r): Json<CommentReq>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.reject_request(u.id, id, &r.comment)?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -144,6 +144,80 @@ fn full_management_flow() {
     e.ok_as(bob.path(), &["--password-stdin", "login", "bob"], pw);
     e.ok_as(bob.path(), &["verify", &e.token("b@x", "verify")], "");
 
+    // community commands
+    e.ok_as(bob.path(), &["pkg", "vote", "hello-taur"], "");
+    assert!(
+        e.ok(&["info", "hello-taur"], "")
+            .contains("NumVotes      : 1")
+    );
+    e.ok_as(
+        bob.path(),
+        &["pkg", "flag", "hello-taur", "--comment", "2.0 released"],
+        "",
+    );
+    assert!(
+        !e.ok(&["info", "hello-taur"], "")
+            .contains("OutOfDate     : -")
+    );
+    e.ok(&["pkg", "unflag", "hello-taur"], "");
+    e.ok_as(
+        bob.path(),
+        &["pkg", "comment", "hello-taur", "works for me"],
+        "",
+    );
+    let comments = e.ok(&["pkg", "comments", "hello-taur"], "");
+    assert!(comments.contains("bob") && comments.contains("works for me"));
+    let cid = comments
+        .trim_start_matches('#')
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+    e.ok_as(bob.path(), &["comment", "edit", &cid, "works great"], "");
+    e.ok(&["comment", "delete", &cid], "");
+    e.ok(&["pkg", "comaintainers", "hello-taur", "bob"], "");
+    assert!(
+        e.ok(&["info", "hello-taur"], "")
+            .contains("CoMaintainers : bob")
+    );
+    e.ok(&["pkg", "comaintainers", "hello-taur"], "");
+    e.ok_as(bob.path(), &["pkg", "unvote", "hello-taur"], "");
+    let filed = e.ok_as(
+        bob.path(),
+        &[
+            "request",
+            "file",
+            "hello-taur",
+            "--kind",
+            "orphan",
+            "--comment",
+            "please",
+        ],
+        "",
+    );
+    let rid = filed
+        .split('#')
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(
+        e.ok(&["request", "list"], "")
+            .contains("orphan hello-taur by bob [pending]")
+    );
+    assert!(
+        e.fail(e.cfg.path(), &["request", "accept", &rid], "")
+            .1
+            .contains("403")
+    );
+    e.ok_as(bob.path(), &["request", "reject", &rid], "");
+    assert!(
+        e.ok(&["request", "show", &rid], "")
+            .contains("status          : closed")
+    );
+
     e.ok(&["org", "create", "brains"], "");
     e.ok(
         &["org", "add-member", "brains", "bob", "--role", "admin"],
