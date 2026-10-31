@@ -1,0 +1,56 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-org 1  "taurctl-org " 
+.SH NAME
+taurctl\-org \- Manage organizations and member roles
+.SH SYNOPSIS
+\fBtaurctl org\fR [\fB\-\-server\fR] [\fB\-\-config\-dir\fR] [\fB\-\-json\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Manage organizations and member roles
+.SH OPTIONS
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+taurctl\-org\-list(1)
+Organizations you belong to
+.TP
+taurctl\-org\-create(1)
+Create an organization (you become Owner)
+.TP
+taurctl\-org\-show(1)
+Show members and roles
+.TP
+taurctl\-org\-delete(1)
+Delete an organization (Owner only)
+.TP
+taurctl\-org\-add\-member(1)
+Add a member (Owner/Admin)
+.TP
+taurctl\-org\-set\-role(1)
+Change a member\*(Aqs role (owner, admin, contributor)
+.TP
+taurctl\-org\-remove\-member(1)
+Remove a member
+.TP
+taurctl\-org\-help(1)
+Print this message or the help of the given subcommand(s)

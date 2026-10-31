@@ -1,0 +1,26 @@
+[package]
+name = "taur-cli"
+description = "taurctl: manage a TAUR server over its HTTP API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "taurctl"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+clap = { version = "4", features = ["derive", "env"] }
+ureq = { version = "2", features = ["json"] }
+rpassword = "7"
+urlencoding = "2"
+clap_mangen = "0.2"
+
+[dev-dependencies]
+taur-core.workspace = true
+taur-server.workspace = true
+tempfile.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "net"] }
+axum = "0.8"

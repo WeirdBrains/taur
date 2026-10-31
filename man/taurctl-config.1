@@ -1,0 +1,41 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-config 1  "taurctl-config " 
+.SH NAME
+taurctl\-config \- Show or change CLI settings
+.SH SYNOPSIS
+\fBtaurctl config\fR [\fB\-\-server\fR] [\fB\-\-config\-dir\fR] [\fB\-\-json\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Show or change CLI settings
+.SH OPTIONS
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+taurctl\-config\-show(1)
+Print the effective settings
+.TP
+taurctl\-config\-set\-server(1)
+Save the default server URL
+.TP
+taurctl\-config\-help(1)
+Print this message or the help of the given subcommand(s)

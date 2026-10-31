@@ -9,3 +9,4 @@
 - [Organizations and roles](roles.md)
 - [Organization and package management API](management-api.md)
 - [Using with yay](yay.md)
+- [taurctl management CLI](cli.md)
