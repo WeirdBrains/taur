@@ -10,6 +10,9 @@ taur --home /tmp/taur serve --bind 127.0.0.1:8080
 yay --aururl http://127.0.0.1:8080 --aurrpcurl 'http://127.0.0.1:8080/rpc?' -Ss foo
 ```
 
+Configure the server with environment variables: copy [.env.example](.env.example) to `.env`
+(see [docs/configuration.md](docs/configuration.md)).
+
 Manage accounts, orgs and packages with `taurctl` (see [docs/cli.md](docs/cli.md)).
 
 See [docs/](docs/README.md), [PLAN.md](PLAN.md) and [AGENTS.md](AGENTS.md).

@@ -31,8 +31,9 @@ Notes:
 - Git hooks receive the mail settings from the server process, so they need no extra
   configuration.
 
-An example env file (for systemd `EnvironmentFile=`) is in
-[`packaging/taur.env.example`](../packaging/taur.env.example).
+[`.env.example`](../.env.example) at the repo root has a commented example entry for
+every variable (copy to `.env`, which git ignores). A minimal production file for systemd
+`EnvironmentFile=` is [`packaging/taur.env.example`](../packaging/taur.env.example).
 
 Man pages for `taur` and `taurctl` (with ENVIRONMENT sections) are in `man/`.
 `taurctl` reads `TAUR_SERVER` and `TAURCTL_CONFIG_DIR` ([cli.md](cli.md)).
