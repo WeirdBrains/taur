@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.11.1] - 2026-10-31
+### Added
+- `.env.example` with an example entry for every environment variable.
+
 ## [0.11.0] - 2026-10-31
 ### Added
 - Every `taur serve` setting configurable by environment variable (flags override), validated at startup.
