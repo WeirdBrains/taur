@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.11.0] - 2026-10-31
+### Added
+- Every `taur serve` setting configurable by environment variable (flags override), validated at startup.
+- `TAUR_ADMINS` site-admin bootstrap, SSH clone URL settings, and a server info endpoint.
+- Example env file and man page ENVIRONMENT sections.
+
 ## [0.10.0] - 2026-10-31
 ### Added
 - gRPC API (`taur serve --grpc-bind`) covering packages, accounts, organizations, package management, community features, requests and SSH keys, with bearer-token auth.
