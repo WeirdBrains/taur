@@ -107,6 +107,8 @@ pub struct PkgInfo {
     pub submitter: Option<String>,
     pub first_submitted: i64,
     pub last_modified: i64,
+    /// TAUR extension: owning organization.
+    pub organization: Option<String>,
     /// Filled by `info`, empty for search results.
     pub relations: BTreeMap<String, Vec<String>>,
     pub keywords: Vec<String>,
@@ -191,9 +193,10 @@ fn escape_like(s: &str) -> String {
 }
 
 const SELECT: &str = "SELECT p.id, p.name, b.id, b.name, p.version, p.description, p.url, \
-    b.num_votes, b.popularity, b.out_of_date, m.name, s.name, b.first_submitted, b.last_modified \
+    b.num_votes, b.popularity, b.out_of_date, m.name, s.name, b.first_submitted, b.last_modified, o.name \
     FROM packages p JOIN pkgbases b ON b.id = p.pkgbase_id \
-    LEFT JOIN users m ON m.id = b.maintainer_id LEFT JOIN users s ON s.id = b.submitter_id";
+    LEFT JOIN users m ON m.id = b.maintainer_id LEFT JOIN users s ON s.id = b.submitter_id \
+    LEFT JOIN orgs o ON o.id = b.org_id";
 
 fn row_to_info(r: &Row) -> rusqlite::Result<PkgInfo> {
     Ok(PkgInfo {
@@ -211,6 +214,7 @@ fn row_to_info(r: &Row) -> rusqlite::Result<PkgInfo> {
         submitter: r.get(11)?,
         first_submitted: r.get(12)?,
         last_modified: r.get(13)?,
+        organization: r.get(14)?,
         relations: BTreeMap::new(),
         keywords: Vec::new(),
         comaintainers: Vec::new(),

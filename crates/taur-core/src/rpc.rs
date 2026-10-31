@@ -41,6 +41,8 @@ pub fn info_value(p: &PkgInfo, full: bool) -> Value {
     m.insert("FirstSubmitted".into(), json!(p.first_submitted));
     m.insert("LastModified".into(), json!(p.last_modified));
     m.insert("URLPath".into(), json!(url_path(&p.pkgbase)));
+    // TAUR extension (not in aurweb); clients ignore unknown fields.
+    m.insert("Organization".into(), json!(p.organization));
     if full {
         for (kind, key) in LIST_KEYS {
             if let Some(v) = p.relations.get(kind).filter(|v| !v.is_empty()) {

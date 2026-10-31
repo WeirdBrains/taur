@@ -59,6 +59,7 @@ fn rpc_shapes() {
     assert_eq!(p["MakeDepends"][0], "rust>=1.80");
     assert!(p.get("Conflicts").is_none());
     assert_eq!(p["Keywords"], serde_json::json!([]));
+    assert_eq!(p["Organization"], serde_json::Value::Null);
     let v = rpc::handle(&s, Some("search"), &["h".into()], None);
     assert_eq!(v["error"], "Query arg too small.");
     let v = rpc::handle(&s, Some("search"), &["hello".into()], Some("bogus"));
@@ -207,6 +208,8 @@ fn org_and_package_management() {
     assert!(matches!(s.disown(b, pb), Err(Error::Forbidden)));
     s.set_pkgbase_org(a, pb, Some(org)).unwrap();
     assert_eq!(s.packages_for(b).unwrap()[0].org.as_deref(), Some("brains"));
+    let v = rpc::handle(&s, Some("search"), &["hello".into()], Some("name"));
+    assert_eq!(v["results"][0]["Organization"], "brains");
     s.disown(b, pb).unwrap();
     assert!(matches!(
         s.adopt(s.register("carol", "c@x", "longenough").unwrap().id, pb),
