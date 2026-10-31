@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.6.0] - 2026-10-31
+### Added
+- Votes with aurweb-style popularity.
+- Out-of-date flags with maintainer notifications.
+- Package comments.
+- Co-maintainers.
+- Orphan, deletion and merge requests, handled by site admins (`taur admin`).
+
 ## [0.5.0] - 2026-10-31
 ### Added
 - `Organization` field in RPC results (TAUR extension).
