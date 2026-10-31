@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.7.0] - 2026-10-31
+### Added
+- Static web UI: package search and details, registration, sign-in, verification, password reset, account and SSH keys, organizations and roles, requests.
+- Vote status endpoint.
+
 ## [0.6.0] - 2026-10-31
 ### Added
 - Votes with aurweb-style popularity.
