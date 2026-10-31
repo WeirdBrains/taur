@@ -344,3 +344,28 @@ fn man_pages_up_to_date() {
         }
     }
 }
+
+#[test]
+fn mcp_stdio_proxy() {
+    let e = start();
+    e.store.import_dir(&fixture(), None).unwrap();
+    let input = [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#,
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"package_info","arguments":{"names":["hello-taur"]}}}"#,
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"whoami","arguments":{}}}"#,
+    ]
+    .join("\n");
+    let out = e.ok(&["mcp"], &(input + "\n"));
+    let lines: Vec<serde_json::Value> = out
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 3, "{out}");
+    assert_eq!(lines[0]["result"]["serverInfo"]["name"], "taur");
+    assert_eq!(
+        lines[1]["result"]["structuredContent"]["results"][0]["Name"],
+        "hello-taur"
+    );
+    assert_eq!(lines[2]["result"]["isError"], true);
+}

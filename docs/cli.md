@@ -32,6 +32,7 @@ taurctl pkg transfer PKGBASE (--org ORG | --user USER)
 taurctl key list | add FILE|- | remove ID
 taurctl pkg vote|unvote|notify|unnotify|flag|unflag|comments|comment|comaintainers …   # see community.md
 taurctl comment edit|delete|pin|unpin …
+taurctl mcp                                     # MCP over stdio, see mcp.md
 taurctl request file|list|show|accept|reject …
 ```
 `unregister`, `org delete` and `pkg disown` ask for confirmation; without a terminal

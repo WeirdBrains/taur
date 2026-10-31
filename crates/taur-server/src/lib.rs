@@ -15,6 +15,7 @@ type St = State<Arc<Store>>;
 
 pub mod cli;
 pub mod githttp;
+pub mod mcp;
 pub mod ssh;
 pub mod web;
 
@@ -55,6 +56,7 @@ pub fn app_with(state: AppState) -> Router {
         .route("/pkgbase.gz", get(dump_pkgbases))
         .route("/packages-meta-v1.json.gz", get(dump_meta))
         .route("/packages-meta-ext-v1.json.gz", get(dump_meta_ext))
+        .route("/mcp", post(mcp_post).get(mcp_get).delete(mcp_get))
         .route("/api/v1/register", post(register))
         .route("/api/v1/login", post(login))
         .route("/api/v1/logout", post(logout))
@@ -204,6 +206,33 @@ async fn dump_meta(State(s): St) -> Response {
 
 async fn dump_meta_ext(State(s): St) -> Response {
     gz(s.dump_packages_meta_ext())
+}
+
+// ---- MCP ----
+
+async fn mcp_post(State(s): St, h: HeaderMap, body: axum::body::Bytes) -> Response {
+    let msg: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => {
+            return Json(json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": "parse error"}}))
+                .into_response();
+        }
+    };
+    let token = bearer(&h).ok();
+    let store = s.clone();
+    let out = tokio::task::spawn_blocking(move || mcp::handle(&store, token.as_deref(), msg))
+        .await
+        .ok()
+        .flatten();
+    match out {
+        Some(v) => Json(v).into_response(),
+        None => StatusCode::ACCEPTED.into_response(),
+    }
+}
+
+/// Stateless server: no server-initiated SSE stream and no sessions to delete.
+async fn mcp_get() -> StatusCode {
+    StatusCode::METHOD_NOT_ALLOWED
 }
 
 // ---- accounts ----
