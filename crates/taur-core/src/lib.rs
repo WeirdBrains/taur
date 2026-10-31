@@ -3,7 +3,9 @@
 pub mod accounts;
 pub mod dump;
 pub mod error;
+pub mod keys;
 pub mod orgs;
+pub mod push;
 pub mod repo;
 pub mod roles;
 pub mod rpc;

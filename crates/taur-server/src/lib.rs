@@ -1,7 +1,7 @@
 //! HTTP front end: a thin axum layer over `taur_core`.
 
-use axum::extract::{Path, RawQuery, State};
-use axum::http::{HeaderMap, StatusCode, Uri, header};
+use axum::extract::{DefaultBodyLimit, FromRef, Path, RawQuery, State};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -13,7 +13,31 @@ use taur_core::{Error, Role, Store, rpc};
 
 type St = State<Arc<Store>>;
 
+pub mod cli;
+pub mod githttp;
+pub mod ssh;
+
+/// Server settings shared by handlers.
+#[derive(Clone)]
+pub struct AppState {
+    pub store: Arc<Store>,
+    /// Binary that implements `hook pre-receive|post-receive` (normally `taur` itself).
+    pub hook_bin: std::path::PathBuf,
+}
+
+impl FromRef<AppState> for Arc<Store> {
+    fn from_ref(s: &AppState) -> Arc<Store> {
+        s.store.clone()
+    }
+}
+
+/// Router using the current executable as hook binary.
 pub fn app(store: Arc<Store>) -> Router {
+    let hook_bin = std::env::current_exe().unwrap_or_else(|_| "taur".into());
+    app_with(AppState { store, hook_bin })
+}
+
+pub fn app_with(state: AppState) -> Router {
     Router::new()
         .route("/rpc", get(rpc_legacy).post(rpc_legacy_post))
         .route("/rpc/", get(rpc_legacy).post(rpc_legacy_post))
@@ -37,8 +61,11 @@ pub fn app(store: Arc<Store>) -> Router {
         .route("/api/v1/packages/{pkgbase}/owner", post(set_owner))
         .route("/api/v1/packages/{pkgbase}/disown", post(disown))
         .route("/api/v1/packages/{pkgbase}/adopt", post(adopt))
-        .fallback(git_dumb)
-        .with_state(store)
+        .route("/api/v1/ssh-keys", get(list_keys).post(add_key))
+        .route("/api/v1/ssh-keys/{id}", axum::routing::delete(remove_key))
+        .fallback(githttp::handle)
+        .layer(DefaultBodyLimit::max(githttp::MAX_BODY))
+        .with_state(state)
 }
 
 // ---- RPC ----
@@ -130,13 +157,6 @@ async fn dump_meta(State(s): St) -> Response {
     gz(s.dump_packages_meta())
 }
 
-async fn git_dumb(State(s): St, uri: Uri) -> Response {
-    match s.git_file(uri.path()) {
-        Some((bytes, ctype)) => ([(header::CONTENT_TYPE, ctype)], bytes).into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
 // ---- accounts ----
 
 pub struct ApiError(pub Error);
@@ -165,7 +185,7 @@ impl IntoResponse for ApiError {
     }
 }
 
-fn bearer(h: &HeaderMap) -> Result<String, ApiError> {
+pub(crate) fn bearer(h: &HeaderMap) -> Result<String, ApiError> {
     h.get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
@@ -343,5 +363,36 @@ async fn adopt(
 ) -> Result<StatusCode, ApiError> {
     let u = auth(&s, &h)?;
     s.adopt(u.id, pkgbase(&s, &name)?)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- ssh keys ----
+
+#[derive(Deserialize)]
+struct KeyReq {
+    public_key: String,
+}
+
+async fn list_keys(State(s): St, h: HeaderMap) -> Result<Response, ApiError> {
+    let u = auth(&s, &h)?;
+    Ok(Json(s.list_ssh_keys(u.id)?).into_response())
+}
+
+async fn add_key(State(s): St, h: HeaderMap, Json(r): Json<KeyReq>) -> Result<Response, ApiError> {
+    let u = auth(&s, &h)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(s.add_ssh_key(u.id, &r.public_key)?),
+    )
+        .into_response())
+}
+
+async fn remove_key(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.remove_ssh_key(u.id, id)?;
     Ok(StatusCode::NO_CONTENT)
 }

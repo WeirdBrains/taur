@@ -1,0 +1,44 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-key 1  "taurctl-key " 
+.SH NAME
+taurctl\-key \- Manage SSH public keys used for git pushes over SSH
+.SH SYNOPSIS
+\fBtaurctl key\fR [\fB\-\-server\fR] [\fB\-\-config\-dir\fR] [\fB\-\-json\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Manage SSH public keys used for git pushes over SSH
+.SH OPTIONS
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+taurctl\-key\-list(1)
+List your SSH keys
+.TP
+taurctl\-key\-add(1)
+Add a public key from a file (e.g. ~/.ssh/id_ed25519.pub) or `\-` for stdin
+.TP
+taurctl\-key\-remove(1)
+Remove a key by id
+.TP
+taurctl\-key\-help(1)
+Print this message or the help of the given subcommand(s)

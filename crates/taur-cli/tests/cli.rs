@@ -173,6 +173,16 @@ fn full_management_flow() {
     );
     e.ok(&["-y", "org", "delete", "brains"], "");
 
+    let pubkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl test@host";
+    assert!(
+        e.ok_as(bob.path(), &["key", "add", "-"], pubkey)
+            .contains("SHA256:")
+    );
+    let list = e.ok_as(bob.path(), &["key", "list"], "");
+    assert!(list.contains("ssh-ed25519") && list.contains("test@host"));
+    let id = list.split_whitespace().next().unwrap().to_string();
+    e.ok_as(bob.path(), &["key", "remove", &id], "");
+    assert!(e.ok_as(bob.path(), &["key", "list"], "").is_empty());
     e.ok_as(bob.path(), &["logout"], "");
     assert!(!bob.path().join("token").exists());
 

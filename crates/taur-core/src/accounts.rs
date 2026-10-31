@@ -211,6 +211,11 @@ impl Store {
         Ok(())
     }
 
+    /// Placeholder until email verification lands; every account counts as verified.
+    pub fn require_verified(&self, _user: &User) -> Result<()> {
+        Ok(())
+    }
+
     pub fn user_by_name(&self, name: &str) -> Result<Option<User>> {
         Ok(self.credentials(name)?.map(|(u, _)| u))
     }

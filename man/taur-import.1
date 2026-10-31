@@ -1,0 +1,22 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taur-import 1  "taur-import " 
+.SH NAME
+taur\-import \- Import a package directory containing .SRCINFO (and PKGBUILD)
+.SH SYNOPSIS
+\fBtaur import\fR [\fB\-\-home\fR] [\fB\-\-maintainer\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIDIR\fR> 
+.SH DESCRIPTION
+Import a package directory containing .SRCINFO (and PKGBUILD)
+.SH OPTIONS
+.TP
+\fB\-\-home\fR \fI<HOME>\fR
+Data directory (default: $TAUR_HOME, else ~/.local/share/taur)
+.TP
+\fB\-\-maintainer\fR \fI<MAINTAINER>\fR
+Existing user to set as maintainer (orphan if omitted)
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+<\fIDIR\fR>
+

@@ -1,0 +1,31 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taur 1  "taur 0.3.0" 
+.SH NAME
+taur \- TAUR: an AUR\-compatible package server
+.SH SYNOPSIS
+\fBtaur\fR [\fB\-\-home\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+TAUR: an AUR\-compatible package server
+.SH OPTIONS
+.TP
+\fB\-\-home\fR \fI<HOME>\fR
+Data directory (default: $TAUR_HOME, else ~/.local/share/taur)
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH SUBCOMMANDS
+.TP
+taur\-serve(1)
+Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH server
+.TP
+taur\-import(1)
+Import a package directory containing .SRCINFO (and PKGBUILD)
+.TP
+taur\-help(1)
+Print this message or the help of the given subcommand(s)
+.SH VERSION
+v0.3.0

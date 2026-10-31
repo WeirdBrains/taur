@@ -454,3 +454,21 @@ async fn org_and_package_api() {
         StatusCode::NOT_FOUND
     );
 }
+
+#[test]
+fn taur_man_pages_up_to_date() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../man");
+    let update = std::env::var_os("TAUR_UPDATE_MAN").is_some();
+    for (name, roff) in taur_server::cli::man_pages() {
+        let path = dir.join(&name);
+        if update {
+            std::fs::write(&path, &roff).unwrap();
+        } else {
+            let current = std::fs::read(&path).unwrap_or_default();
+            assert!(
+                current == roff,
+                "{name} is out of date: run TAUR_UPDATE_MAN=1 cargo test"
+            );
+        }
+    }
+}

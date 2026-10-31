@@ -1,0 +1,22 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taur-serve 1  "taur-serve " 
+.SH NAME
+taur\-serve \- Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH server
+.SH SYNOPSIS
+\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-ssh\-bind\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH server
+.SH OPTIONS
+.TP
+\fB\-\-bind\fR \fI<BIND>\fR [default: 127.0.0.1:8080]
+
+.TP
+\fB\-\-home\fR \fI<HOME>\fR
+Data directory (default: $TAUR_HOME, else ~/.local/share/taur)
+.TP
+\fB\-\-ssh\-bind\fR \fI<SSH_BIND>\fR
+Also serve git over SSH on this address (e.g. 0.0.0.0:2222)
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
