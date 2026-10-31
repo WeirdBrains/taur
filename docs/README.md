@@ -13,3 +13,4 @@
 - [Votes, flags, comments, co-maintainers and requests](community.md)
 - [Using with yay](yay.md)
 - [taurctl management CLI](cli.md)
+- [Web UI](web-ui.md)

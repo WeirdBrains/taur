@@ -16,6 +16,7 @@ type St = State<Arc<Store>>;
 pub mod cli;
 pub mod githttp;
 pub mod ssh;
+pub mod web;
 
 /// Server settings shared by handlers.
 #[derive(Clone)]
@@ -38,7 +39,13 @@ pub fn app(store: Arc<Store>) -> Router {
 }
 
 pub fn app_with(state: AppState) -> Router {
-    Router::new()
+    let mut router = Router::new()
+        .route("/static/app.js", get(web::app_js))
+        .route("/static/style.css", get(web::style));
+    for page in web::PAGES {
+        router = router.route(page, get(web::index));
+    }
+    router
         .route("/rpc", get(rpc_legacy).post(rpc_legacy_post))
         .route("/rpc/", get(rpc_legacy).post(rpc_legacy_post))
         .route("/rpc/v5/{kind}", get(rpc_v5).post(rpc_v5_post))
@@ -65,7 +72,10 @@ pub fn app_with(state: AppState) -> Router {
         .route("/api/v1/packages/{pkgbase}/owner", post(set_owner))
         .route("/api/v1/packages/{pkgbase}/disown", post(disown))
         .route("/api/v1/packages/{pkgbase}/adopt", post(adopt))
-        .route("/api/v1/packages/{pkgbase}/vote", post(vote).delete(unvote))
+        .route(
+            "/api/v1/packages/{pkgbase}/vote",
+            get(vote_status).post(vote).delete(unvote),
+        )
         .route(
             "/api/v1/packages/{pkgbase}/flag",
             get(flag_info).post(flag).delete(unflag),
@@ -503,6 +513,15 @@ async fn vote(State(s): St, h: HeaderMap, Path(p): Path<String>) -> Result<Statu
     let u = auth_verified(&s, &h)?;
     s.vote(u.id, &p)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn vote_status(
+    State(s): St,
+    h: HeaderMap,
+    Path(p): Path<String>,
+) -> Result<Response, ApiError> {
+    let u = auth(&s, &h)?;
+    Ok(Json(json!({ "voted": s.has_voted(u.id, &p)? })).into_response())
 }
 
 async fn unvote(State(s): St, h: HeaderMap, Path(p): Path<String>) -> Result<StatusCode, ApiError> {
