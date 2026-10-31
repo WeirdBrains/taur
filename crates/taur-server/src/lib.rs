@@ -15,6 +15,7 @@ type St = State<Arc<Store>>;
 
 pub mod cli;
 pub mod githttp;
+pub mod grpc;
 pub mod mcp;
 pub mod ssh;
 pub mod web;

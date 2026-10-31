@@ -46,7 +46,7 @@
 8. **v0.8.0 (done):** notification subscriptions, comment pinning, orphan auto-accept,
    extended metadata dump.
 9. **v0.9.0 (done):** MCP server (streamable HTTP `/mcp`, `taurctl mcp` stdio).
-10. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
+10. **v0.10.0 (done):** gRPC API (tonic, bundled protoc) mirroring the JSON API.
 
 ## Owner decisions (2026-10-31)
 - Pushes via both git smart HTTP (account token) and SSH keys.
