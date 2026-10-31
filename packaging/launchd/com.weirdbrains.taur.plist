@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.weirdbrains.taur</string>
+  <!-- The wrapper loads /usr/local/etc/taur/taur.env (TAUR_* settings), then runs `taur serve`. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/libexec/taur-launchd</string>
+  </array>
+  <key>UserName</key>
+  <string>_taur</string>
+  <key>GroupName</key>
+  <string>_taur</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TAUR_HOME</key>
+    <string>/usr/local/var/taur</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>StandardOutPath</key>
+  <string>/usr/local/var/log/taur/taur.log</string>
+  <key>StandardErrorPath</key>
+  <string>/usr/local/var/log/taur/taur.log</string>
+</dict>
+</plist>

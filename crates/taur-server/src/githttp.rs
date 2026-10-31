@@ -94,9 +94,9 @@ pub async fn handle(
     let mut cmd = Command::new("git");
     cmd.arg("http-backend")
         .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .envs(taur_core::base_child_env())
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", taur_core::NULL_DEVICE)
         .env("GIT_PROJECT_ROOT", &repos)
         .env("GIT_HTTP_EXPORT_ALL", "1")
         .env("PATH_INFO", &path)

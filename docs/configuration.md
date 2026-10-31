@@ -35,6 +35,9 @@ Notes:
 every variable (copy to `.env`, which git ignores). A minimal production file for systemd
 `EnvironmentFile=` is [`packaging/taur.env.example`](../packaging/taur.env.example).
 
+Service configs for systemd, SysV init, OpenRC, runit, launchd and Windows are described
+in [services.md](services.md).
+
 Man pages for `taur` and `taurctl` (with ENVIRONMENT sections) are in `man/`.
 `taurctl` reads `TAUR_SERVER` and `TAURCTL_CONFIG_DIR` ([cli.md](cli.md)).
 

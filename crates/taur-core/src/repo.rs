@@ -10,7 +10,7 @@ use std::process::Command;
 pub(crate) fn git() -> Command {
     let mut c = Command::new("git");
     c.env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", crate::NULL_DEVICE)
         .env("GIT_TERMINAL_PROMPT", "0");
     c
 }
@@ -68,7 +68,6 @@ const HOOK: &str = "#!/bin/sh\n# Installed by TAUR. Pushes are only accepted thr
 
 /// Create the bare repo for `pkgbase` if needed and (re)install TAUR's hooks.
 pub fn ensure_repo(repos: &Path, pkgbase: &str) -> Result<std::path::PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
     validate_name(pkgbase)?;
     std::fs::create_dir_all(repos)?;
     let repo = repos.join(format!("{pkgbase}.git"));
@@ -88,7 +87,7 @@ pub fn ensure_repo(repos: &Path, pkgbase: &str) -> Result<std::path::PathBuf> {
     for name in ["pre-receive", "post-receive"] {
         let path = hooks.join(name);
         std::fs::write(&path, HOOK.replace("NAME", name))?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+        crate::set_mode(&path, 0o755)?;
     }
     Ok(repo)
 }

@@ -1,0 +1,7 @@
+#!/bin/sh
+# runit service: link this directory into your service dir (e.g. /etc/sv -> /var/service).
+exec 2>&1
+TAUR_HOME=/var/lib/taur
+export TAUR_HOME
+if [ -r /etc/taur/taur.env ]; then set -a; . /etc/taur/taur.env; set +a; fi
+exec chpst -u taur:taur /usr/bin/taur serve

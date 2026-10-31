@@ -1,0 +1,2 @@
+# Install as /usr/lib/sysusers.d/taur.conf
+u taur - "TAUR package server" /var/lib/taur /usr/bin/nologin

@@ -16,3 +16,4 @@
 - [Web UI](web-ui.md)
 - [MCP server](mcp.md)
 - [gRPC API](grpc.md)
+- [Running as a service (systemd, SysV init, OpenRC, runit, launchd, Windows)](services.md)
