@@ -827,3 +827,118 @@ async fn community_api() {
         StatusCode::NOT_FOUND
     );
 }
+
+#[tokio::test]
+async fn web_ui_is_served() {
+    let (d, app) = setup();
+    for page in [
+        "/",
+        "/packages/hello-taur",
+        "/login",
+        "/register",
+        "/verify?token=abc",
+        "/reset?token=abc",
+        "/account",
+        "/orgs",
+        "/orgs/x",
+        "/requests",
+        "/?q=hello",
+    ] {
+        let r = app
+            .clone()
+            .oneshot(Request::get(page).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "{page}");
+        assert!(
+            r.headers()[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with("text/html")
+        );
+        assert!(r.headers().contains_key(header::CONTENT_SECURITY_POLICY));
+        let body = r.into_body().collect().await.unwrap().to_bytes();
+        assert!(String::from_utf8_lossy(&body).contains(r#"<script src="/static/app.js">"#));
+    }
+    for (path, ctype) in [
+        ("/static/app.js", "text/javascript"),
+        ("/static/style.css", "text/css"),
+    ] {
+        let r = app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::OK);
+        assert!(
+            r.headers()[header::CONTENT_TYPE]
+                .to_str()
+                .unwrap()
+                .starts_with(ctype)
+        );
+    }
+    let (_, js) = get(&app, "/static/app.js").await;
+    let js = String::from_utf8(js).unwrap();
+    // every API path the UI calls exists
+    for p in [
+        "/api/v1/login",
+        "/api/v1/register",
+        "/api/v1/verify",
+        "/api/v1/password-reset/confirm",
+        "/api/v1/ssh-keys",
+        "/api/v1/orgs",
+        "/api/v1/requests",
+    ] {
+        assert!(js.contains(p), "{p}");
+    }
+    assert!(!js.contains("innerHTML"), "UI must not inject HTML");
+    assert!(
+        !js.contains("document.cookie"),
+        "UI uses bearer tokens, not cookies"
+    );
+    // vote status endpoint used by the package page
+    let t = token(&app, d.path(), "alice").await;
+    let (_, b) = call(
+        &app,
+        send(
+            "GET",
+            "/api/v1/packages/hello-taur/vote",
+            Some(&t),
+            json!(null),
+        ),
+    )
+    .await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&b).unwrap(),
+        json!({"voted": false})
+    );
+    call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/packages/hello-taur/vote",
+            Some(&t),
+            json!(null),
+        ),
+    )
+    .await;
+    let (_, b) = call(
+        &app,
+        send(
+            "GET",
+            "/api/v1/packages/hello-taur/vote",
+            Some(&t),
+            json!(null),
+        ),
+    )
+    .await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&b).unwrap(),
+        json!({"voted": true})
+    );
+    // git and RPC still win over page routes
+    assert_eq!(
+        get(&app, "/hello-taur.git/info/refs").await.0,
+        StatusCode::OK
+    );
+}

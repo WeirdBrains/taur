@@ -3,7 +3,8 @@
 AUR community features. All writes need a verified account (Bearer token).
 
 ## Votes and popularity
-`POST` / `DELETE /api/v1/packages/{pkgbase}/vote` (idempotent). RPC `NumVotes` is the vote
+`POST` / `DELETE /api/v1/packages/{pkgbase}/vote` (idempotent); `GET …/vote` →
+`{"voted": bool}` for the signed-in user. RPC `NumVotes` is the vote
 count; `Popularity` follows aurweb: each vote counts 0.98^(days since it was cast).
 Updated on every vote and refreshed hourly by `taur serve`.
 

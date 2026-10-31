@@ -191,6 +191,41 @@ fn push_over_http_and_ssh() {
         &[],
     );
     assert!(!ok && out.contains("missing .SRCINFO"), "{out}");
+    // subdirectories and oversized files are rejected
+    let sub = s.work.path().join("subdir-pkg");
+    write_pkg(&sub, "subdir-pkg", "1");
+    std::fs::create_dir_all(sub.join("nested")).unwrap();
+    std::fs::write(sub.join("nested/file"), "x").unwrap();
+    git(&sub, &["init", "-q"], &[]);
+    git(&sub, &["add", "-A"], &[]);
+    git(&sub, &["commit", "-qm", "x"], &[]);
+    let (ok, out) = git(
+        &sub,
+        &[
+            "push",
+            &format!("http://alice:{alice}@{host}/subdir-pkg.git"),
+            "master",
+        ],
+        &[],
+    );
+    assert!(!ok && out.contains("subdirectories"), "{out}");
+    let big = s.work.path().join("big-pkg");
+    write_pkg(&big, "big-pkg", "1");
+    std::fs::write(big.join("blob.bin"), vec![7u8; 300 * 1024]).unwrap();
+    git(&big, &["init", "-q"], &[]);
+    git(&big, &["add", "-A"], &[]);
+    git(&big, &["commit", "-qm", "x"], &[]);
+    let (ok, out) = git(
+        &big,
+        &[
+            "push",
+            &format!("http://alice:{alice}@{host}/big-pkg.git"),
+            "master",
+        ],
+        &[],
+    );
+    assert!(!ok && out.contains("size limit"), "{out}");
+    assert!(s.store.pkgbase_id("big-pkg").unwrap().is_none());
     let (ok, out) = git(&w, &["push", &alice_url, "master:refs/heads/dev"], &[]);
     assert!(!ok && out.contains("other than master"), "{out}");
 

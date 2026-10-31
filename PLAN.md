@@ -42,13 +42,11 @@
 6. **v0.6.0 (done):** votes/popularity, flags, comments, co-maintainers, requests,
    site admins. Remaining from phase 2: notification subscriptions, comment pinning,
    auto-accepting orphan requests, `packages-meta-ext-v1.json.gz`.
-7. **Phase 2 (rest):** notification subscriptions, comment pinning, orphan auto-accept,
+7. **v0.7.0 (done):** static web UI over the JSON API (bearer tokens).
+8. **Phase 2 (rest):** notification subscriptions, comment pinning, orphan auto-accept,
    extended metadata dump.
-8. **Phase 3 — web UI:** static site for registration, sign-in, package management, over
-   the JSON API.
-9. **Phase 4 — organizations:** org UI on the web site (API done in v0.2.0).
-10. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
-11. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
+9. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
+10. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
 
 ## Owner decisions (2026-10-31)
 - Pushes via both git smart HTTP (account token) and SSH keys.
@@ -82,3 +80,5 @@
   when unset. Provider still to be chosen.
 - *Proposal:* site admins (`users.is_admin`, granted with `taur admin`) play the AUR
   Package Maintainer role: accept requests and manage any package.
+- *Proposal:* the web UI is plain HTML/CSS/JS embedded with `include_str!`, routed
+  client-side; bearer token in localStorage; strict CSP.
