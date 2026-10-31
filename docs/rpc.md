@@ -18,7 +18,8 @@ constraints or optdepends descriptions.
 
 Package fields: `ID, Name, PackageBaseID, PackageBase, Version, Description, URL,
 NumVotes, Popularity, OutOfDate, Maintainer, Submitter, FirstSubmitted, LastModified,
-URLPath`. `info` adds `Depends, MakeDepends, OptDepends, CheckDepends, Conflicts,
+URLPath`, plus the TAUR extension `Organization` (owning organization or null; AUR
+clients ignore it). `info` adds `Depends, MakeDepends, OptDepends, CheckDepends, Conflicts,
 Provides, Replaces, Groups` (omitted when empty) and `License, Keywords, CoMaintainers`.
 
 Errors: `No request type/data specified.`, `Incorrect request type specified.`,
