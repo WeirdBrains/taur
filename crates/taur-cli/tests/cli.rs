@@ -8,7 +8,7 @@ use std::sync::Arc;
 use taur_core::Store;
 
 struct Env {
-    _home: tempfile::TempDir,
+    home: tempfile::TempDir,
     cfg: tempfile::TempDir,
     url: String,
     store: Arc<Store>,
@@ -26,7 +26,7 @@ fn start() -> Env {
     let app = taur_server::app(store.clone());
     rt.spawn(async move { axum::serve(listener, app).await.unwrap() });
     Env {
-        _home: home,
+        home,
         cfg: tempfile::tempdir().unwrap(),
         url,
         store,
@@ -55,6 +55,10 @@ impl Env {
             .write_all(stdin.as_bytes())
             .unwrap();
         child.wait_with_output().unwrap()
+    }
+    fn token(&self, email: &str, kind: &str) -> String {
+        taur_core::mail::FileMailer::find_token(&self.home.path().join("outbox"), email, kind)
+            .unwrap()
     }
     fn ok(&self, args: &[&str], stdin: &str) -> String {
         self.ok_as(self.cfg.path(), args, stdin)
@@ -94,6 +98,15 @@ fn full_management_flow() {
     let (code, _) = e.fail(e.cfg.path(), &["whoami"], "");
     assert_eq!(code, 3);
     let out = e.ok(&["--password-stdin", "login", "alice"], pw);
+    assert!(e.ok(&["whoami"], "").contains("(unverified)"));
+    assert!(
+        e.fail(e.cfg.path(), &["org", "create", "early"], "")
+            .1
+            .contains("not verified")
+    );
+    e.ok(&["resend-verification"], "");
+    let vt = e.token("a@x", "verify");
+    e.ok(&["verify", &vt], "");
     let token = std::fs::read_to_string(e.cfg.path().join("token")).unwrap();
     assert!(!out.contains(token.trim()), "token must not be printed");
     let mode = std::fs::metadata(e.cfg.path().join("token"))
@@ -101,7 +114,7 @@ fn full_management_flow() {
         .permissions()
         .mode();
     assert_eq!(mode & 0o777, 0o600);
-    assert!(e.ok(&["whoami"], "").contains("alice <a@x>"));
+    assert!(e.ok(&["whoami"], "").contains("alice <a@x> (verified)"));
 
     e.store.import_dir(&fixture(), Some("alice")).unwrap();
     assert!(
@@ -129,6 +142,7 @@ fn full_management_flow() {
         pw,
     );
     e.ok_as(bob.path(), &["--password-stdin", "login", "bob"], pw);
+    e.ok_as(bob.path(), &["verify", &e.token("b@x", "verify")], "");
 
     e.ok(&["org", "create", "brains"], "");
     e.ok(
@@ -184,7 +198,25 @@ fn full_management_flow() {
     e.ok_as(bob.path(), &["key", "remove", &id], "");
     assert!(e.ok_as(bob.path(), &["key", "list"], "").is_empty());
     e.ok_as(bob.path(), &["logout"], "");
-    assert!(!bob.path().join("token").exists());
+    e.ok(&["reset-password", "request", "b@x"], "");
+    let rt = e.token("b@x", "reset");
+    e.ok_as(
+        bob.path(),
+        &[
+            "--password-stdin",
+            "reset-password",
+            "confirm",
+            "--token",
+            &rt,
+        ],
+        "new password!\n",
+    );
+    e.ok_as(
+        bob.path(),
+        &["--password-stdin", "login", "bob"],
+        "new password!\n",
+    );
+    assert!(bob.path().join("token").exists());
 
     assert!(
         e.fail(e.cfg.path(), &["--password-stdin", "unregister"], pw)

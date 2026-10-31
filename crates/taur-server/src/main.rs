@@ -19,7 +19,33 @@ async fn main() {
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let store = Store::open(&resolve_home(cli.home))?;
     match cli.cmd {
-        Cmd::Serve { bind, ssh_bind } => {
+        Cmd::Serve {
+            bind,
+            ssh_bind,
+            base_url,
+            smtp_url,
+            mail_from,
+        } => {
+            store.set_base_url(&base_url);
+            match smtp_url {
+                Some(url) => {
+                    store.set_mailer(Arc::new(taur_core::mail::SmtpMailer::new(
+                        &url, &mail_from,
+                    )?));
+                    eprintln!("taur: sending mail via SMTP");
+                }
+                None => {
+                    let outbox = store.home().join("outbox");
+                    store.set_mailer(Arc::new(taur_core::mail::FileMailer::new(
+                        outbox.clone(),
+                        &mail_from,
+                    )));
+                    eprintln!(
+                        "taur: no SMTP configured; writing mail to {}",
+                        outbox.display()
+                    );
+                }
+            }
             let store = Arc::new(store);
             if let Some(addr) = ssh_bind {
                 let hook_bin = std::env::current_exe()?;
@@ -34,6 +60,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Cmd::Import { dir, maintainer } => {
             let info = store.import_dir(&dir, maintainer.as_deref())?;
             println!("imported {} {}", info.pkgbase, info.version());
+        }
+        Cmd::VerifyUser { name } => {
+            let user = store
+                .user_by_name(&name)?
+                .ok_or_else(|| taur_core::Error::NotFound(format!("user {name}")))?;
+            store.mark_verified(user.id)?;
+            println!("verified {name}");
         }
         Cmd::Hook { .. } => unreachable!(),
     }

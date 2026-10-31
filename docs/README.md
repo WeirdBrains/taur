@@ -7,6 +7,7 @@
 - [SSH keys](ssh-keys.md)
 - [Metadata dumps](metadata-dumps.md)
 - [User accounts](accounts.md)
+- [Email, verification and password reset](email.md)
 - [Organizations and roles](roles.md)
 - [Organization and package management API](management-api.md)
 - [Using with yay](yay.md)

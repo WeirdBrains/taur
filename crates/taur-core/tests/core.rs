@@ -224,3 +224,42 @@ fn org_and_package_management() {
     s.delete_org(a, org).unwrap();
     assert!(s.orgs_for(b).unwrap().is_empty());
 }
+
+#[test]
+fn email_verification_and_reset() {
+    use taur_core::mail::FileMailer;
+    let (d, s) = store();
+    let outbox = d.path().join("outbox");
+    let u = s.register("erin", "e@x", "longenough").unwrap();
+    assert!(!u.verified);
+    assert!(matches!(s.require_verified(&u), Err(Error::Unverified)));
+    let t = FileMailer::find_token(&outbox, "e@x", "verify").unwrap();
+    assert!(matches!(s.verify_email("deadbeef"), Err(Error::Invalid(_))));
+    let v = s.verify_email(&t).unwrap();
+    assert!(v.verified);
+    assert!(s.verify_email(&t).is_err(), "single use");
+    assert!(matches!(s.resend_verification(&v), Err(Error::Conflict(_))));
+    let sess = s.login("erin", "longenough").unwrap();
+    s.request_password_reset("nobody@x").unwrap();
+    s.request_password_reset("e@x").unwrap();
+    let rt = FileMailer::find_token(&outbox, "e@x", "reset").unwrap();
+    assert!(matches!(
+        s.reset_password(&rt, "short"),
+        Err(Error::Invalid(_))
+    ));
+    s.reset_password(&rt, "another password").unwrap();
+    assert!(s.reset_password(&rt, "another password").is_err());
+    assert!(s.user_for_token(&sess.token).is_err(), "sessions revoked");
+    assert!(s.login("erin", "longenough").is_err());
+    s.login("erin", "another password").unwrap();
+    // outbox files are private and never contain the password
+    for f in std::fs::read_dir(&outbox).unwrap().flatten() {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(f.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+        assert!(
+            !std::fs::read_to_string(f.path())
+                .unwrap()
+                .contains("another password")
+        );
+    }
+}

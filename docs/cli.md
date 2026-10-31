@@ -19,6 +19,8 @@ client machine never needs the server's SQLite/git dependencies or data dir.
 taurctl config show | config set-server URL
 taurctl register NAME --email EMAIL      # prompts for password twice
 taurctl login NAME | logout | whoami
+taurctl verify TOKEN | resend-verification
+taurctl reset-password request EMAIL | reset-password confirm --token TOKEN
 taurctl unregister                       # password + confirmation (or -y)
 taurctl search TERM [--by FIELD]
 taurctl info PKG...

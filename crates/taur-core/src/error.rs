@@ -19,6 +19,10 @@ pub enum Error {
     Unauthorized,
     #[error("forbidden")]
     Forbidden,
+    #[error("email address not verified")]
+    Unverified,
+    #[error("mail delivery failed: {0}")]
+    Mail(String),
     #[error("password hashing failed")]
     Hash,
     #[error("git error: {0}")]

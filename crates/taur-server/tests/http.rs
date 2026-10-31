@@ -195,9 +195,18 @@ async fn account_api() {
     );
 }
 
-async fn token(app: &axum::Router, name: &str) -> String {
-    let reg = json!({"name": name, "email": format!("{name}@x"), "password": "longenough"});
+async fn token(app: &axum::Router, home: &std::path::Path, name: &str) -> String {
+    let email = format!("{name}@x");
+    let reg = json!({"name": name, "email": email, "password": "longenough"});
     call(app, send("POST", "/api/v1/register", None, reg)).await;
+    let t =
+        taur_core::mail::FileMailer::find_token(&home.join("outbox"), &email, "verify").unwrap();
+    let (st, _) = call(
+        app,
+        send("POST", "/api/v1/verify", None, json!({"token": t})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
     let (_, b) = call(
         app,
         send(
@@ -216,10 +225,10 @@ async fn token(app: &axum::Router, name: &str) -> String {
 
 #[tokio::test]
 async fn org_and_package_api() {
-    let (_d, app) = setup();
-    let a = token(&app, "alice").await;
-    let b = token(&app, "bob").await;
-    let c = token(&app, "carol").await;
+    let (d, app) = setup();
+    let a = token(&app, d.path(), "alice").await;
+    let b = token(&app, d.path(), "bob").await;
+    let c = token(&app, d.path(), "carol").await;
     let n = json!(null);
     let (st, body) = call(
         &app,
@@ -471,4 +480,131 @@ fn taur_man_pages_up_to_date() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn verification_and_reset_api() {
+    let (d, app) = setup();
+    let outbox = d.path().join("outbox");
+    let reg = json!({"name": "dave", "email": "dave@x", "password": "longenough"});
+    call(&app, send("POST", "/api/v1/register", None, reg)).await;
+    let (_, b) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/login",
+            None,
+            json!({"name": "dave", "password": "longenough"}),
+        ),
+    )
+    .await;
+    let t = serde_json::from_slice::<Value>(&b).unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // unverified accounts can't manage anything
+    let (st, b) = call(
+        &app,
+        send("POST", "/api/v1/orgs", Some(&t), json!({"name": "x-org"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    assert!(String::from_utf8_lossy(&b).contains("not verified"));
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/verify/resend", Some(&t), json!(null))
+        )
+        .await
+        .0,
+        StatusCode::ACCEPTED
+    );
+    let vt = taur_core::mail::FileMailer::find_token(&outbox, "dave@x", "verify").unwrap();
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/verify", None, json!({"token": vt.clone()}))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/verify", None, json!({"token": vt}))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/orgs", Some(&t), json!({"name": "x-org"}))
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    // reset: unknown email still 202; real one mails a token
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/password-reset",
+                None,
+                json!({"email": "nobody@x"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/password-reset",
+                None,
+                json!({"email": "dave@x"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::ACCEPTED
+    );
+    let rt = taur_core::mail::FileMailer::find_token(&outbox, "dave@x", "reset").unwrap();
+    let body = json!({"token": rt.clone(), "password": "brand new pass"});
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/password-reset/confirm", None, body.clone())
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/password-reset/confirm", None, body)
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(&app, send("GET", "/api/v1/account", Some(&t), json!(null)))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let ok = json!({"name": "dave", "password": "brand new pass"});
+    assert_eq!(
+        call(&app, send("POST", "/api/v1/login", None, ok)).await.0,
+        StatusCode::OK
+    );
 }

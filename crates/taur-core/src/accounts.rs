@@ -20,6 +20,26 @@ pub struct User {
     pub id: i64,
     pub name: String,
     pub email: String,
+    pub verified: bool,
+}
+
+/// Email verification links are valid for 24 hours; password reset links for 1 hour.
+pub const VERIFY_TTL_SECS: i64 = 24 * 3600;
+pub const RESET_TTL_SECS: i64 = 3600;
+
+fn user_row(r: &rusqlite::Row) -> rusqlite::Result<User> {
+    Ok(User {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        email: r.get(2)?,
+        verified: r.get::<_, Option<i64>>(3)?.is_some(),
+    })
+}
+
+fn random_token() -> String {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    hex(&bytes)
 }
 
 /// A freshly issued session. Deliberately not `Debug` so the token is not logged by accident.
@@ -99,29 +119,155 @@ impl Store {
             "INSERT INTO users (name, email, password_hash, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![name, email, hash, now()],
         )?;
-        Ok(User {
+        let user = User {
             id: conn.last_insert_rowid(),
             name: name.to_string(),
             email: email.to_string(),
-        })
+            verified: false,
+        };
+        drop(conn);
+        // A delivery failure doesn't undo registration; the user can ask for a resend.
+        if let Err(e) = self.send_verification(&user) {
+            eprintln!(
+                "taur: could not send verification mail to user {}: {e}",
+                user.name
+            );
+        }
+        Ok(user)
+    }
+
+    fn issue_email_token(&self, user: i64, purpose: &str, ttl: i64) -> Result<String> {
+        let token = random_token();
+        let conn = self.lock();
+        conn.execute(
+            "DELETE FROM email_tokens WHERE (user_id = ?1 AND purpose = ?2) OR expires_at <= ?3",
+            params![user, purpose, now()],
+        )?;
+        conn.execute(
+            "INSERT INTO email_tokens (token_hash, user_id, purpose, expires_at) VALUES (?1, ?2, ?3, ?4)",
+            params![token_hash(&token), user, purpose, now() + ttl],
+        )?;
+        Ok(token)
+    }
+
+    /// Consume a single-use email token; returns its user id.
+    fn take_email_token(&self, token: &str, purpose: &str) -> Result<i64> {
+        let conn = self.lock();
+        let h = token_hash(token);
+        let uid: Option<i64> = conn
+            .query_row(
+                "SELECT user_id FROM email_tokens WHERE token_hash = ?1 AND purpose = ?2 AND expires_at > ?3",
+                params![h, purpose, now()],
+                |r| r.get(0),
+            )
+            .optional()?;
+        conn.execute("DELETE FROM email_tokens WHERE token_hash = ?1", [h])?;
+        uid.ok_or_else(|| Error::Invalid("invalid or expired token".into()))
+    }
+
+    fn send_verification(&self, user: &User) -> Result<()> {
+        let token = self.issue_email_token(user.id, "verify", VERIFY_TTL_SECS)?;
+        let base = self.base_url();
+        let body = format!(
+            "Hi {},\n\nConfirm your TAUR account email address:\n\n  {base}/verify?token={token}\n\nor run: taurctl verify <token from the link>\n\nThe link expires in 24 hours. If you didn't register, ignore this message.\n",
+            user.name
+        );
+        self.mailer()
+            .send(&user.email, "Verify your TAUR account", &body)
+    }
+
+    /// Re-send the verification email.
+    pub fn resend_verification(&self, user: &User) -> Result<()> {
+        if user.verified {
+            return Err(Error::Conflict("email address already verified".into()));
+        }
+        self.send_verification(user)
+    }
+
+    /// Confirm an email address with a token from the verification mail.
+    pub fn verify_email(&self, token: &str) -> Result<User> {
+        let uid = self.take_email_token(token, "verify")?;
+        self.mark_verified(uid)?;
+        self.user_by_id(uid)
+    }
+
+    /// Mark an account verified (admin/maintenance use).
+    pub fn mark_verified(&self, user: i64) -> Result<()> {
+        self.lock().execute(
+            "UPDATE users SET verified_at = COALESCE(verified_at, ?1) WHERE id = ?2",
+            params![now(), user],
+        )?;
+        Ok(())
+    }
+
+    /// Start a password reset. Always succeeds so callers can't probe for accounts.
+    pub fn request_password_reset(&self, email: &str) -> Result<()> {
+        let user = self
+            .lock()
+            .query_row(
+                "SELECT id, name, email, verified_at FROM users WHERE email = ?1",
+                [email.trim()],
+                user_row,
+            )
+            .optional()?;
+        if let Some(user) = user {
+            let token = self.issue_email_token(user.id, "reset", RESET_TTL_SECS)?;
+            let base = self.base_url();
+            let body = format!(
+                "Hi {},\n\nSomeone asked to reset your TAUR password. To choose a new one, open:\n\n  {base}/reset?token={token}\n\nor run: taurctl reset-password confirm --token <token from the link>\n\nThe link expires in 1 hour and works once. If this wasn't you, ignore this message.\n",
+                user.name
+            );
+            if let Err(e) = self
+                .mailer()
+                .send(&user.email, "Reset your TAUR password", &body)
+            {
+                eprintln!("taur: could not send reset mail to user {}: {e}", user.name);
+            }
+        }
+        Ok(())
+    }
+
+    /// Finish a password reset: sets the password, ends every session. Resetting via
+    /// the emailed link also proves the address, so the account becomes verified.
+    pub fn reset_password(&self, token: &str, new_password: &str) -> Result<()> {
+        if new_password.chars().count() < MIN_PASSWORD_LEN {
+            return Err(Error::Invalid(format!(
+                "password must be at least {MIN_PASSWORD_LEN} characters"
+            )));
+        }
+        let uid = self.take_email_token(token, "reset")?;
+        let hash = hash_password(new_password)?;
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE users SET password_hash = ?1, verified_at = COALESCE(verified_at, ?2) WHERE id = ?3",
+            params![hash, now(), uid],
+        )?;
+        conn.execute("DELETE FROM sessions WHERE user_id = ?1", [uid])?;
+        conn.execute(
+            "DELETE FROM email_tokens WHERE user_id = ?1 AND purpose = 'reset'",
+            [uid],
+        )?;
+        Ok(())
+    }
+
+    pub fn user_by_id(&self, id: i64) -> Result<User> {
+        self.lock()
+            .query_row(
+                "SELECT id, name, email, verified_at FROM users WHERE id = ?1",
+                [id],
+                user_row,
+            )
+            .optional()?
+            .ok_or_else(|| Error::NotFound("user".into()))
     }
 
     fn credentials(&self, name: &str) -> Result<Option<(User, String)>> {
         Ok(self
             .lock()
             .query_row(
-                "SELECT id, name, email, password_hash FROM users WHERE name = ?1",
+                "SELECT id, name, email, verified_at, password_hash FROM users WHERE name = ?1",
                 [name],
-                |r| {
-                    Ok((
-                        User {
-                            id: r.get(0)?,
-                            name: r.get(1)?,
-                            email: r.get(2)?,
-                        },
-                        r.get(3)?,
-                    ))
-                },
+                |r| Ok((user_row(r)?, r.get(4)?)),
             )
             .optional()?)
     }
@@ -134,9 +280,7 @@ impl Store {
         if !verify_password(password, &hash) {
             return Err(Error::Unauthorized);
         }
-        let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
-        let token = hex(&bytes);
+        let token = random_token();
         let now = now();
         let expires_at = now + SESSION_TTL_SECS;
         let conn = self.lock();
@@ -152,16 +296,10 @@ impl Store {
     pub fn user_for_token(&self, token: &str) -> Result<User> {
         self.lock()
             .query_row(
-                "SELECT u.id, u.name, u.email FROM sessions s JOIN users u ON u.id = s.user_id \
+                "SELECT u.id, u.name, u.email, u.verified_at FROM sessions s JOIN users u ON u.id = s.user_id \
                  WHERE s.token_hash = ?1 AND s.expires_at > ?2",
                 params![token_hash(token), now()],
-                |r| {
-                    Ok(User {
-                        id: r.get(0)?,
-                        name: r.get(1)?,
-                        email: r.get(2)?,
-                    })
-                },
+                user_row,
             )
             .optional()?
             .ok_or(Error::Unauthorized)
@@ -211,9 +349,13 @@ impl Store {
         Ok(())
     }
 
-    /// Placeholder until email verification lands; every account counts as verified.
-    pub fn require_verified(&self, _user: &User) -> Result<()> {
-        Ok(())
+    /// Unverified accounts can sign in but can't push or manage anything.
+    pub fn require_verified(&self, user: &User) -> Result<()> {
+        if user.verified {
+            Ok(())
+        } else {
+            Err(Error::Unverified)
+        }
     }
 
     pub fn user_by_name(&self, name: &str) -> Result<Option<User>> {

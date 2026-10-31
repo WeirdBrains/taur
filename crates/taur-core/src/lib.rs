@@ -4,6 +4,7 @@ pub mod accounts;
 pub mod dump;
 pub mod error;
 pub mod keys;
+pub mod mail;
 pub mod orgs;
 pub mod push;
 pub mod repo;
@@ -31,6 +32,10 @@ pub fn resolve_home(flag: Option<PathBuf>) -> PathBuf {
         .unwrap_or_default();
     home.join(".local/share/taur")
 }
+
+/// Default public base URL used in emails.
+pub const DEFAULT_BASE_URL: &str = "https://taur.weirdbrains.com";
+pub const DEFAULT_MAIL_FROM: &str = "TAUR <noreply@taur.weirdbrains.com>";
 
 pub(crate) fn now() -> i64 {
     std::time::SystemTime::now()

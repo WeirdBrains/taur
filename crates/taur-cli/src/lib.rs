@@ -87,6 +87,13 @@ pub enum Cmd {
     Whoami,
     /// Delete your account (packages you maintain become orphans).
     Unregister,
+    /// Confirm your email address with the token from the verification mail.
+    Verify { token: String },
+    /// Send the verification mail again.
+    ResendVerification,
+    /// Reset a forgotten password.
+    #[command(subcommand)]
+    ResetPassword(ResetCmd),
     /// Search packages (AUR RPC).
     Search {
         term: String,
@@ -109,6 +116,17 @@ pub enum Cmd {
     /// Manage SSH public keys used for git pushes over SSH.
     #[command(subcommand)]
     Key(KeyCmd),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ResetCmd {
+    /// Email a reset link to the account's address.
+    Request { email: String },
+    /// Set a new password with the token from the reset mail (prompts for the password).
+    Confirm {
+        #[arg(long)]
+        token: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -314,7 +332,12 @@ fn execute(cli: Cli) -> Result<(), CliError> {
         Cmd::Whoami => {
             let v = c.whoami()?;
             print(g, &v, |v| {
-                println!("{} <{}>", s(&v["name"]), s(&v["email"]))
+                let state = if v["verified"] == true {
+                    "verified"
+                } else {
+                    "unverified"
+                };
+                println!("{} <{}> ({state})", s(&v["name"]), s(&v["email"]))
             });
         }
         Cmd::Unregister => {
@@ -327,6 +350,35 @@ fn execute(cli: Cli) -> Result<(), CliError> {
             c.unregister(&p)?;
             config::clear_token(&dir);
             done(g, format!("account {} deleted", s(&me["name"])));
+        }
+        Cmd::Verify { token } => {
+            let v = c.verify(token)?;
+            print(g, &v, |v| println!("verified {}", s(&v["name"])));
+        }
+        Cmd::ResendVerification => {
+            c.resend_verification()?;
+            done(g, "verification mail sent".into());
+        }
+        Cmd::ResetPassword(ResetCmd::Request { email }) => {
+            c.reset_request(email)?;
+            done(
+                g,
+                format!("if {email} has an account, a reset link is on its way"),
+            );
+        }
+        Cmd::ResetPassword(ResetCmd::Confirm { token }) => {
+            let p = password(g, "New password: ")?;
+            if !g.password_stdin
+                && rpassword::prompt_password("Repeat password: ")
+                    .ok()
+                    .as_deref()
+                    != Some(p.as_str())
+            {
+                return Err(CliError::Input("passwords do not match".into()));
+            }
+            c.reset_confirm(token, &p)?;
+            config::clear_token(&dir);
+            done(g, "password changed; all sessions were signed out".into());
         }
         Cmd::Search { term, by } => {
             let v = c.search(term, by)?;

@@ -23,7 +23,19 @@ pub enum Cmd {
         /// Also serve git over SSH on this address (e.g. 0.0.0.0:2222).
         #[arg(long)]
         ssh_bind: Option<String>,
+        /// Public base URL used in email links.
+        #[arg(long, env = "TAUR_BASE_URL", default_value = taur_core::DEFAULT_BASE_URL)]
+        base_url: String,
+        /// SMTP server URL, e.g. smtps://user:pass@smtp.example.com (never logged).
+        /// Without it, mail is written to <home>/outbox.
+        #[arg(long, env = "TAUR_SMTP_URL", hide_env_values = true)]
+        smtp_url: Option<String>,
+        /// Sender address for outgoing mail.
+        #[arg(long, env = "TAUR_MAIL_FROM", default_value = taur_core::DEFAULT_MAIL_FROM)]
+        mail_from: String,
     },
+    /// Mark an account's email as verified (admin).
+    VerifyUser { name: String },
     /// Import a package directory containing .SRCINFO (and PKGBUILD).
     Import {
         dir: PathBuf,

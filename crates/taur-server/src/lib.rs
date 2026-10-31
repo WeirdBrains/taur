@@ -51,6 +51,10 @@ pub fn app_with(state: AppState) -> Router {
         .route("/api/v1/login", post(login))
         .route("/api/v1/logout", post(logout))
         .route("/api/v1/account", get(account).delete(unregister))
+        .route("/api/v1/verify", post(verify))
+        .route("/api/v1/verify/resend", post(resend_verification))
+        .route("/api/v1/password-reset", post(reset_request))
+        .route("/api/v1/password-reset/confirm", post(reset_confirm))
         .route("/api/v1/orgs", get(list_orgs).post(create_org))
         .route("/api/v1/orgs/{org}", get(show_org).delete(delete_org))
         .route(
@@ -171,7 +175,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (code, msg) = match &self.0 {
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, self.0.to_string()),
-            Error::Forbidden => (StatusCode::FORBIDDEN, self.0.to_string()),
+            Error::Forbidden | Error::Unverified => (StatusCode::FORBIDDEN, self.0.to_string()),
             Error::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
             Error::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
             Error::Invalid(m) | Error::Parse(m) => (StatusCode::BAD_REQUEST, m.clone()),
@@ -245,6 +249,13 @@ fn auth(s: &Store, h: &HeaderMap) -> Result<User, ApiError> {
     Ok(s.user_for_token(&bearer(h)?)?)
 }
 
+/// Like `auth`, but the account's email must be verified.
+fn auth_verified(s: &Store, h: &HeaderMap) -> Result<User, ApiError> {
+    let u = auth(s, h)?;
+    s.require_verified(&u)?;
+    Ok(u)
+}
+
 fn pkgbase(s: &Store, name: &str) -> Result<i64, ApiError> {
     s.pkgbase_id(name)?
         .ok_or_else(|| ApiError(Error::NotFound(format!("package base {name}"))))
@@ -276,7 +287,7 @@ async fn create_org(
     h: HeaderMap,
     Json(r): Json<NameReq>,
 ) -> Result<Response, ApiError> {
-    let u = auth(&s, &h)?;
+    let u = auth_verified(&s, &h)?;
     s.create_org(u.id, &r.name)?;
     Ok((StatusCode::CREATED, Json(s.org_detail(u.id, &r.name)?)).into_response())
 }
@@ -295,7 +306,7 @@ async fn delete_org(
     h: HeaderMap,
     Path(org): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let u = auth(&s, &h)?;
+    let u = auth_verified(&s, &h)?;
     s.delete_org(u.id, s.org_id(&org)?)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -306,7 +317,7 @@ async fn set_member(
     Path((org, user)): Path<(String, String)>,
     Json(r): Json<RoleReq>,
 ) -> Result<StatusCode, ApiError> {
-    let u = auth(&s, &h)?;
+    let u = auth_verified(&s, &h)?;
     s.set_member(u.id, s.org_id(&org)?, s.user_id(&user)?, r.role)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -316,7 +327,7 @@ async fn remove_member(
     h: HeaderMap,
     Path((org, user)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
-    let u = auth(&s, &h)?;
+    let u = auth_verified(&s, &h)?;
     s.remove_member(u.id, s.org_id(&org)?, s.user_id(&user)?)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -332,7 +343,7 @@ async fn set_owner(
     Path(name): Path<String>,
     Json(r): Json<OwnerReq>,
 ) -> Result<StatusCode, ApiError> {
-    let u = auth(&s, &h)?;
+    let u = auth_verified(&s, &h)?;
     let pb = pkgbase(&s, &name)?;
     match (r.org, r.user) {
         (Some(org), None) => s.set_pkgbase_org(u.id, pb, Some(s.org_id(&org)?))?,
@@ -351,7 +362,7 @@ async fn disown(
     h: HeaderMap,
     Path(name): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let u = auth(&s, &h)?;
+    let u = auth_verified(&s, &h)?;
     s.disown(u.id, pkgbase(&s, &name)?)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -361,7 +372,7 @@ async fn adopt(
     h: HeaderMap,
     Path(name): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let u = auth(&s, &h)?;
+    let u = auth_verified(&s, &h)?;
     s.adopt(u.id, pkgbase(&s, &name)?)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -379,7 +390,7 @@ async fn list_keys(State(s): St, h: HeaderMap) -> Result<Response, ApiError> {
 }
 
 async fn add_key(State(s): St, h: HeaderMap, Json(r): Json<KeyReq>) -> Result<Response, ApiError> {
-    let u = auth(&s, &h)?;
+    let u = auth_verified(&s, &h)?;
     Ok((
         StatusCode::CREATED,
         Json(s.add_ssh_key(u.id, &r.public_key)?),
@@ -394,5 +405,43 @@ async fn remove_key(
 ) -> Result<StatusCode, ApiError> {
     let u = auth(&s, &h)?;
     s.remove_ssh_key(u.id, id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---- email verification and password reset ----
+
+#[derive(Deserialize)]
+struct TokenReq {
+    token: String,
+}
+
+#[derive(Deserialize)]
+struct EmailReq {
+    email: String,
+}
+
+#[derive(Deserialize)]
+struct ResetReq {
+    token: String,
+    password: String,
+}
+
+async fn verify(State(s): St, Json(r): Json<TokenReq>) -> Result<Response, ApiError> {
+    Ok(Json(s.verify_email(&r.token)?).into_response())
+}
+
+async fn resend_verification(State(s): St, h: HeaderMap) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.resend_verification(&u)?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn reset_request(State(s): St, Json(r): Json<EmailReq>) -> Result<StatusCode, ApiError> {
+    s.request_password_reset(&r.email)?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn reset_confirm(State(s): St, Json(r): Json<ResetReq>) -> Result<StatusCode, ApiError> {
+    s.reset_password(&r.token, &r.password)?;
     Ok(StatusCode::NO_CONTENT)
 }
