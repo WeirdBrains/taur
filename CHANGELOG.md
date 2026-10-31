@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.4.0] - 2026-10-31
+### Added
+- Email verification on registration; unverified accounts can't push or manage.
+- Password reset by email.
+- SMTP or file-outbox mail delivery.
+- `taur verify-user` admin command.
+
 ## [0.3.0] - 2026-10-31
 ### Added
 - Git pushes over smart HTTP (token auth) and an embedded SSH server, validated like aurweb.
