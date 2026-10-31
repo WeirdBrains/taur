@@ -15,6 +15,7 @@
   - Contributors can manage packages
 - Allow organizations to own packages
 - Add user registration, login, logout, and unregistering
+- A CLI that can interact with the server to manage everything
 
 ## What "AUR-level support" means
 - RPC v5: `info`/`multiinfo`, `search` with every `by=` field (name, name-desc,
@@ -32,13 +33,15 @@
 1. **Phase 1 (v0.1.0, done):** workspace, core library, `.SRCINFO` parser, storage,
    RPC v5, dumb-HTTP git clone, snapshots, dumps, `taur import`, accounts
    (register/login/logout/unregister) JSON API, roles/orgs model.
-2. **Phase 2 — pushing & community:** smart-HTTP and ssh push with `.SRCINFO` validation,
+2. **v0.2.0 (done):** `taurctl` management CLI; org, membership and package ownership
+   API (adopt, disown, transfer).
+3. **Phase 2 — pushing & community:** smart-HTTP and ssh push with `.SRCINFO` validation,
    votes, comments, flag out-of-date, co-maintainers, adopt/disown, requests, keywords API.
-3. **Phase 3 — web UI:** static site for registration, sign-in, package management, over
+4. **Phase 3 — web UI:** static site for registration, sign-in, package management, over
    the JSON API.
-4. **Phase 4 — organizations:** org CRUD and membership API/UI, org-owned packages.
-5. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
-6. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
+5. **Phase 4 — organizations:** org CRUD and membership API/UI, org-owned packages.
+6. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
+7. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
 
 ## Decisions
 - *Proposal:* axum 0.8 + tokio for HTTP; clap for the CLI.
@@ -54,3 +57,6 @@
   the user is the only Owner of an organization.
 - *Proposal:* Admins cannot grant or modify the Owner role; every org needs an Owner.
 - *Proposal:* gRPC via tonic with `protoc-bin-vendored` so no system protoc is needed.
+- *Proposal:* the management CLI is a separate binary `taurctl` (crate `taur-cli`) that
+  only talks HTTP; `taur` stays the server/admin binary. Blocking `ureq` client, token in
+  a 0600 file in the CLI config dir.

@@ -12,12 +12,13 @@ Adapted from `~/Projects/WeirdBrains/muninn/AGENTS.md`.
 ## Source of truth
 - `PLAN.md` holds the owner's plan and the phased roadmap. Items marked *proposal* are
   agent decisions the owner may override; record changes there and in `docs/`.
-- `taur-core` holds all business logic. The HTTP server, CLI and future front ends
-  (static site, MCP, gRPC) are thin layers over it.
+- `taur-core` holds all business logic. The HTTP server (`taur`), the management CLI
+  (`taurctl`, a client of the HTTP API) and future front ends (static site, MCP, gRPC)
+  are thin layers over it.
 
 ## Safety
-- Never touch a real TAUR data dir. Tests, examples and manual runs use a temp dir via
-  `--home` / `TAUR_HOME`.
+- Never touch a real TAUR data dir or the real `~/.config/taurctl`. Tests, examples and manual runs use a temp dir via
+  `--home` / `TAUR_HOME` and `--config-dir` / `TAURCTL_CONFIG_DIR`.
 - Never touch the owner's real tool configs (e.g. yay); use temp `XDG_CONFIG_HOME` /
   `XDG_CACHE_HOME` for manual checks, and never install packages while testing.
 - Never edit files outside this project folder (cargo caches excepted).
@@ -29,7 +30,8 @@ Adapted from `~/Projects/WeirdBrains/muninn/AGENTS.md`.
 
 ## Versioning and releases
 - Semantic versioning. Pre-1.0: MINOR bump per new feature, PATCH for fixes/docs-only.
-- Each release: bump the workspace version in `Cargo.toml` (+ `Cargo.lock`), add a
+- Each release: bump the workspace version in `Cargo.toml` (+ `Cargo.lock`), regenerate
+  man pages, add a
   `CHANGELOG.md` entry, commit as `release: vX.Y.Z`, create an annotated tag `vX.Y.Z`,
   then push main with the tag.
 - `CHANGELOG.md` (Keep a Changelog format) stays **summary level**: a few short one-line
@@ -40,6 +42,9 @@ Adapted from `~/Projects/WeirdBrains/muninn/AGENTS.md`.
 - Every feature is documented in `docs/` (one Markdown file per feature, indexed in
   `docs/README.md`): how it works, flags/defaults, examples, failure modes. Update docs in
   the same change as the code.
+- Man pages for `taurctl` are generated from the clap definitions (clap_mangen) into
+  `man/`. Regenerate whenever the CLI or version changes
+  (`TAUR_UPDATE_MAN=1 cargo test -p taur-cli man_pages`); the out-of-date test must pass.
 
 ## Quality bar (before every commit)
 - `cargo fmt --check`, `cargo build`, `cargo clippy --all-targets` (no warnings),

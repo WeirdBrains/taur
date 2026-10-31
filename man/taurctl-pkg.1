@@ -1,0 +1,47 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-pkg 1  "taurctl-pkg " 
+.SH NAME
+taurctl\-pkg \- Manage package ownership
+.SH SYNOPSIS
+\fBtaurctl pkg\fR [\fB\-\-server\fR] [\fB\-\-config\-dir\fR] [\fB\-\-json\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Manage package ownership
+.SH OPTIONS
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+taurctl\-pkg\-list(1)
+Package bases you can manage
+.TP
+taurctl\-pkg\-adopt(1)
+Adopt an orphaned package base
+.TP
+taurctl\-pkg\-disown(1)
+Give up maintainership (package becomes orphaned)
+.TP
+taurctl\-pkg\-transfer(1)
+Transfer a package base to an organization or a user
+.TP
+taurctl\-pkg\-help(1)
+Print this message or the help of the given subcommand(s)
