@@ -270,6 +270,7 @@ pub struct Store {
     mailer: std::sync::RwLock<std::sync::Arc<dyn crate::mail::Mailer>>,
     base_url: std::sync::RwLock<String>,
     hook_env: std::sync::RwLock<Vec<(String, String)>>,
+    ssh_clone_base: std::sync::RwLock<Option<String>>,
 }
 
 impl Store {
@@ -313,6 +314,7 @@ impl Store {
             mailer: std::sync::RwLock::new(std::sync::Arc::new(mailer)),
             base_url: std::sync::RwLock::new(crate::DEFAULT_BASE_URL.to_string()),
             hook_env: std::sync::RwLock::new(Vec::new()),
+            ssh_clone_base: std::sync::RwLock::new(None),
         })
     }
 
@@ -355,6 +357,21 @@ impl Store {
         }
         *self.hook_env.write().unwrap_or_else(|e| e.into_inner()) = env;
         Ok(())
+    }
+
+    /// Public SSH clone prefix (e.g. `ssh://taur@host:2222`), if SSH is enabled.
+    pub fn set_ssh_clone_base(&self, base: Option<String>) {
+        *self
+            .ssh_clone_base
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = base;
+    }
+
+    pub fn ssh_clone_base(&self) -> Option<String> {
+        self.ssh_clone_base
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Environment passed to git hook processes.

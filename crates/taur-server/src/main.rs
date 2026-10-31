@@ -19,22 +19,20 @@ async fn main() {
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let store = Store::open(&resolve_home(cli.home))?;
     match cli.cmd {
-        Cmd::Serve {
-            bind,
-            ssh_bind,
-            grpc_bind,
-            base_url,
-            smtp_url,
-            mail_from,
-        } => {
-            store.configure_mail(smtp_url.as_deref(), &mail_from, &base_url)?;
-            if smtp_url.is_some() {
+        Cmd::Serve(args) => {
+            let cfg = args.validate()?;
+            store.configure_mail(cfg.smtp_url.as_deref(), &cfg.mail_from, &cfg.base_url)?;
+            store.set_ssh_clone_base(cfg.ssh_clone_base.clone());
+            if cfg.smtp_url.is_some() {
                 eprintln!("taur: sending mail via SMTP");
             } else {
                 eprintln!(
                     "taur: no SMTP configured; writing mail to {}",
                     store.home().join("outbox").display()
                 );
+            }
+            for w in taur_server::cli::bootstrap_admins(&store, &cfg.admins) {
+                eprintln!("taur: warning: {w}");
             }
             let store = Arc::new(store);
             let s2 = store.clone();
@@ -48,13 +46,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             });
-            if let Some(addr) = ssh_bind {
+            if let Some(addr) = cfg.ssh_bind {
                 let hook_bin = std::env::current_exe()?;
                 let listener = tokio::net::TcpListener::bind(&addr).await?;
                 eprintln!("taur: ssh on {}", listener.local_addr()?);
                 tokio::spawn(taur_server::ssh::serve(listener, store.clone(), hook_bin));
             }
-            if let Some(addr) = grpc_bind {
+            if let Some(addr) = cfg.grpc_bind {
                 let listener = tokio::net::TcpListener::bind(&addr).await?;
                 eprintln!("taur: grpc on {}", listener.local_addr()?);
                 let s3 = store.clone();
@@ -64,7 +62,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 });
             }
-            let listener = tokio::net::TcpListener::bind(&bind).await?;
+            let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
             eprintln!("taur: listening on http://{}", listener.local_addr()?);
             axum::serve(listener, taur_server::app(store)).await?;
         }

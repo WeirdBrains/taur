@@ -10,7 +10,10 @@ TAUR: an AUR\-compatible package server
 .SH OPTIONS
 .TP
 \fB\-\-home\fR \fI<HOME>\fR
-Data directory (default: $TAUR_HOME, else ~/.local/share/taur)
+Data directory (default: ~/.local/share/taur)
+.RS
+May also be specified with the \fBTAUR_HOME\fR environment variable. 
+.RE
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help
@@ -20,7 +23,7 @@ Print version
 .SH SUBCOMMANDS
 .TP
 taur\-serve(1)
-Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH server
+Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .TP
 taur\-verify\-user(1)
 Mark an account\*(Aqs email as verified (admin)
@@ -33,5 +36,37 @@ Import a package directory containing .SRCINFO (and PKGBUILD)
 .TP
 taur\-help(1)
 Print this message or the help of the given subcommand(s)
+.SH ENVIRONMENT
+Command\-line flags take precedence over environment variables, which take precedence over defaults.
+.TP
+\fBTAUR_HOME\fR
+Data directory (database, git repos, outbox, SSH host key). Default: ~/.local/share/taur.
+.TP
+\fBTAUR_BIND\fR
+HTTP listen address (IP:PORT). Put a TLS reverse proxy in front. Default: 127.0.0.1:8080.
+.TP
+\fBTAUR_BASE_URL\fR
+Public base URL used in email links and clone URLs. Default: https://taur.weirdbrains.com.
+.TP
+\fBTAUR_SSH_BIND\fR
+Git\-over\-SSH listen address, e.g. 0.0.0.0:2222. Default: unset (SSH off).
+.TP
+\fBTAUR_SSH_PUBLIC_HOST\fR
+Host shown in SSH clone URLs. Default: host of TAUR_BASE_URL.
+.TP
+\fBTAUR_SSH_PUBLIC_PORT\fR
+Port shown in SSH clone URLs (e.g. when NAT maps 22 to 2222). Default: port of TAUR_SSH_BIND.
+.TP
+\fBTAUR_GRPC_BIND\fR
+gRPC listen address (plaintext HTTP/2), e.g. 127.0.0.1:50051. Default: unset (gRPC off).
+.TP
+\fBTAUR_SMTP_URL\fR
+SMTP URL smtp:// or smtps://user:pass@host[:port]. Secret; never logged. Default: unset (mail to <home>/outbox).
+.TP
+\fBTAUR_MAIL_FROM\fR
+Sender address for outgoing mail. Default: TAUR <noreply@taur.weirdbrains.com>.
+.TP
+\fBTAUR_ADMINS\fR
+Comma\-separated user names granted site admin at startup (grant only, never revokes). Default: unset.
 .SH VERSION
 v0.10.0

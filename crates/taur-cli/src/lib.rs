@@ -826,6 +826,17 @@ fn execute(cli: Cli) -> Result<(), CliError> {
 }
 
 /// Render man pages for `taurctl` and every subcommand: `(file name, roff)`.
+fn add_env_section(page: Vec<u8>) -> Vec<u8> {
+    let sec = ".SH ENVIRONMENT\nFlags take precedence over environment variables.\n\
+.TP\n\\fBTAUR_SERVER\\fR\nTAUR server URL (overrides the config file).\n\
+.TP\n\\fBTAURCTL_CONFIG_DIR\\fR\nConfig directory (default: $XDG_CONFIG_HOME/taurctl or ~/.config/taurctl).\n";
+    let text = String::from_utf8(page).unwrap_or_default();
+    match text.find(".SH VERSION") {
+        Some(i) => format!("{}{sec}{}", &text[..i], &text[i..]).into_bytes(),
+        None => (text + sec).into_bytes(),
+    }
+}
+
 pub fn man_pages() -> Vec<(String, Vec<u8>)> {
     fn walk(cmd: clap::Command, prefix: &str, out: &mut Vec<(String, Vec<u8>)>) {
         let name = if prefix.is_empty() {
@@ -838,6 +849,9 @@ pub fn man_pages() -> Vec<(String, Vec<u8>)> {
             .disable_help_subcommand(true);
         let mut buf = Vec::new();
         let _ = clap_mangen::Man::new(cmd.clone()).render(&mut buf);
+        if prefix.is_empty() {
+            buf = add_env_section(buf);
+        }
         out.push((format!("{name}.1"), buf));
         for sub in cmd.get_subcommands().filter(|s| s.get_name() != "help") {
             walk(sub.clone(), &name, out);

@@ -14,7 +14,7 @@ Each package base has a bare repo at `<home>/repos/<pkgbase>.git` (branch `maste
 - **SSH:** register a key ([SSH keys](ssh-keys.md)), then
   `git push ssh://taur@taur.weirdbrains.com:2222/foo.git master`. The SSH user name
   is ignored; the key identifies the account. Start the SSH server with
-  `taur serve --ssh-bind 0.0.0.0:2222`; its host key is created at
+  `taur serve --ssh-bind 0.0.0.0:2222` (or `TAUR_SSH_BIND`; see [configuration](configuration.md)); its host key is created at
   `<home>/ssh_host_ed25519_key` (0600) on first start.
 
 Pushing to a name that doesn't exist yet creates the package base; the pusher becomes
