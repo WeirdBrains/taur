@@ -14,9 +14,12 @@ taur-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "sync"] }
 clap = { version = "4", features = ["derive", "env"] }
 serde_urlencoded = "0.7"
+clap_mangen = "0.2"
+russh = { version = "0.65", default-features = false, features = ["ring", "rsa", "flate2"] }
+rand = { version = "0.10", features = ["thread_rng"] }
 
 [dev-dependencies]
 tempfile.workspace = true

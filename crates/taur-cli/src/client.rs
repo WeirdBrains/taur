@@ -130,6 +130,19 @@ impl Client {
         self.call("DELETE", &path, None, true).map(drop)
     }
 
+    // ssh keys
+    pub fn keys(&self) -> Result<Value, CliError> {
+        self.get("/api/v1/ssh-keys")
+    }
+    pub fn key_add(&self, public_key: &str) -> Result<Value, CliError> {
+        let b = serde_json::json!({"public_key": public_key});
+        self.call("POST", "/api/v1/ssh-keys", Some(b), true)
+    }
+    pub fn key_remove(&self, id: i64) -> Result<(), CliError> {
+        self.call("DELETE", &format!("/api/v1/ssh-keys/{id}"), None, true)
+            .map(drop)
+    }
+
     // packages
     pub fn my_packages(&self) -> Result<Value, CliError> {
         self.get("/api/v1/packages")

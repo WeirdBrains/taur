@@ -7,7 +7,7 @@ use crate::{Error, Result, Store};
 use std::path::Path;
 use std::process::Command;
 
-fn git() -> Command {
+pub(crate) fn git() -> Command {
     let mut c = Command::new("git");
     c.env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -15,7 +15,7 @@ fn git() -> Command {
     c
 }
 
-fn run(mut c: Command) -> Result<Vec<u8>> {
+pub(crate) fn run(mut c: Command) -> Result<Vec<u8>> {
     let out = c
         .output()
         .map_err(|e| Error::Git(format!("cannot run git: {e}")))?;
@@ -32,13 +32,7 @@ pub fn commit_dir(repos: &Path, pkgbase: &str, dir: &Path, message: &str) -> Res
     validate_name(pkgbase)?;
     let dir = &dir.canonicalize()?;
     std::fs::create_dir_all(repos)?;
-    let repo = repos.join(format!("{pkgbase}.git"));
-    if !repo.exists() {
-        let mut c = git();
-        c.args(["init", "--quiet", "--bare", "-b", "master"])
-            .arg(&repo);
-        run(c)?;
-    }
+    let repo = ensure_repo(repos, pkgbase)?;
     let with_tree = || {
         let mut c = git();
         c.arg("--git-dir")
@@ -68,6 +62,35 @@ pub fn commit_dir(repos: &Path, pkgbase: &str, dir: &Path, message: &str) -> Res
     c.arg("--git-dir").arg(&repo).arg("update-server-info");
     run(c)?;
     Ok(())
+}
+
+const HOOK: &str = "#!/bin/sh\n# Installed by TAUR. Pushes are only accepted through the TAUR server.\n[ -n \"$TAUR_HOOK_BIN\" ] || { echo 'error: pushes must go through the TAUR server' >&2; exit 1; }\nexec \"$TAUR_HOOK_BIN\" hook NAME\n";
+
+/// Create the bare repo for `pkgbase` if needed and (re)install TAUR's hooks.
+pub fn ensure_repo(repos: &Path, pkgbase: &str) -> Result<std::path::PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    validate_name(pkgbase)?;
+    std::fs::create_dir_all(repos)?;
+    let repo = repos.join(format!("{pkgbase}.git"));
+    if !repo.exists() {
+        let mut c = git();
+        c.args(["init", "--quiet", "--bare", "-b", "master"])
+            .arg(&repo);
+        run(c)?;
+        let mut c = git();
+        c.arg("--git-dir")
+            .arg(&repo)
+            .args(["config", "receive.denyNonFastForwards", "true"]);
+        run(c)?;
+    }
+    let hooks = repo.join("hooks");
+    std::fs::create_dir_all(&hooks)?;
+    for name in ["pre-receive", "post-receive"] {
+        let path = hooks.join(name);
+        std::fs::write(&path, HOOK.replace("NAME", name))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(repo)
 }
 
 /// `git archive` of HEAD as `<pkgbase>/...` in a gzipped tarball.

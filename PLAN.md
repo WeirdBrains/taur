@@ -35,13 +35,23 @@
    (register/login/logout/unregister) JSON API, roles/orgs model.
 2. **v0.2.0 (done):** `taurctl` management CLI; org, membership and package ownership
    API (adopt, disown, transfer).
-3. **Phase 2 — pushing & community:** smart-HTTP and ssh push with `.SRCINFO` validation,
+3. **v0.3.0 (done):** pushes over smart HTTP and SSH with aurweb-style validation,
+   SSH keys, smart-HTTP clone.
+4. **Phase 2 — pushing & community:** smart-HTTP and ssh push with `.SRCINFO` validation,
    votes, comments, flag out-of-date, co-maintainers, adopt/disown, requests, keywords API.
-4. **Phase 3 — web UI:** static site for registration, sign-in, package management, over
+5. **Phase 3 — web UI:** static site for registration, sign-in, package management, over
    the JSON API.
-5. **Phase 4 — organizations:** org CRUD and membership API/UI, org-owned packages.
-6. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
-7. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
+6. **Phase 4 — organizations:** org CRUD and membership API/UI, org-owned packages.
+7. **Phase 5 — MCP:** MCP server exposing search/info and authenticated management.
+8. **Phase 6 — gRPC:** tonic service mirroring the JSON API.
+
+## Owner decisions (2026-10-31)
+- Pushes via both git smart HTTP (account token) and SSH keys.
+- Public domain: taur.weirdbrains.com (hosting and TLS proxy TBD).
+- Web UI uses bearer tokens; add email verification and password reset.
+- Bundled protoc is fine for gRPC.
+- Order: phase 2 AUR features, web UI, (org API done), MCP, gRPC.
+- Keep AUR fields as-is and add a TAUR-specific owning-organization field to RPC.
 
 ## Decisions
 - *Proposal:* axum 0.8 + tokio for HTTP; clap for the CLI.
@@ -60,3 +70,6 @@
 - *Proposal:* the management CLI is a separate binary `taurctl` (crate `taur-cli`) that
   only talks HTTP; `taur` stays the server/admin binary. Blocking `ureq` client, token in
   a 0600 file in the CLI config dir.
+- *Proposal:* SSH is an embedded russh server (`taur serve --ssh-bind`), never system sshd.
+- *Proposal:* git smart HTTP runs through the system `git http-backend`; push validation
+  runs in repo hooks that call `taur hook …`.

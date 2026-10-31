@@ -106,6 +106,19 @@ pub enum Cmd {
     /// Manage package ownership.
     #[command(subcommand)]
     Pkg(PkgCmd),
+    /// Manage SSH public keys used for git pushes over SSH.
+    #[command(subcommand)]
+    Key(KeyCmd),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum KeyCmd {
+    /// List your SSH keys.
+    List,
+    /// Add a public key from a file (e.g. ~/.ssh/id_ed25519.pub) or `-` for stdin.
+    Add { file: PathBuf },
+    /// Remove a key by id.
+    Remove { id: i64 },
 }
 
 #[derive(Subcommand, Debug)]
@@ -395,6 +408,41 @@ fn execute(cli: Cli) -> Result<(), CliError> {
             OrgCmd::RemoveMember { org, user } => {
                 c.remove_member(org, user)?;
                 done(g, format!("removed {user} from {org}"));
+            }
+        },
+        Cmd::Key(k) => match k {
+            KeyCmd::List => {
+                let v = c.keys()?;
+                print(g, &v, |v| {
+                    for k in v.as_array().into_iter().flatten() {
+                        println!(
+                            "{}  {}  {}  {}",
+                            s(&k["id"]),
+                            s(&k["fingerprint"]),
+                            s(&k["algorithm"]),
+                            s(&k["comment"])
+                        );
+                    }
+                });
+            }
+            KeyCmd::Add { file } => {
+                let text = if file.as_os_str() == "-" {
+                    let mut t = String::new();
+                    std::io::Read::read_to_string(&mut std::io::stdin(), &mut t)
+                        .map_err(|e| CliError::Input(e.to_string()))?;
+                    t
+                } else {
+                    std::fs::read_to_string(file)
+                        .map_err(|e| CliError::Input(format!("{}: {e}", file.display())))?
+                };
+                let v = c.key_add(text.trim())?;
+                print(g, &v, |v| {
+                    println!("added key {} ({})", s(&v["id"]), s(&v["fingerprint"]))
+                });
+            }
+            KeyCmd::Remove { id } => {
+                c.key_remove(*id)?;
+                done(g, format!("removed key {id}"));
             }
         },
         Cmd::Pkg(p) => match p {

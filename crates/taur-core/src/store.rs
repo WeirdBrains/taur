@@ -70,6 +70,14 @@ CREATE TABLE IF NOT EXISTS keywords (
   pkgbase_id INTEGER NOT NULL REFERENCES pkgbases(id) ON DELETE CASCADE,
   keyword TEXT NOT NULL,
   PRIMARY KEY (pkgbase_id, keyword));
+CREATE TABLE IF NOT EXISTS ssh_keys (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  fingerprint TEXT NOT NULL UNIQUE,
+  algorithm TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  comment TEXT NOT NULL,
+  created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS co_maintainers (
   pkgbase_id INTEGER NOT NULL REFERENCES pkgbases(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -27,6 +27,7 @@ taurctl org add-member ORG USER [--role contributor|admin|owner]
 taurctl org set-role ORG USER ROLE | remove-member ORG USER
 taurctl pkg list | adopt PKGBASE | disown PKGBASE
 taurctl pkg transfer PKGBASE (--org ORG | --user USER)
+taurctl key list | add FILE|- | remove ID
 ```
 `unregister`, `org delete` and `pkg disown` ask for confirmation; without a terminal
 they refuse unless `-y` is given.
@@ -42,7 +43,7 @@ when they are out of date.
 
 ## Example
 ```sh
-taurctl config set-server https://taur.example.com
+taurctl config set-server https://taur.weirdbrains.com
 taurctl register alice --email alice@example.com
 taurctl login alice
 taurctl org create weirdbrains
