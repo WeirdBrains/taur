@@ -91,6 +91,29 @@ impl Client {
             .map(drop)
     }
 
+    pub fn verify(&self, token: &str) -> Result<Value, CliError> {
+        self.call(
+            "POST",
+            "/api/v1/verify",
+            Some(serde_json::json!({"token": token})),
+            false,
+        )
+    }
+    pub fn resend_verification(&self) -> Result<(), CliError> {
+        self.call("POST", "/api/v1/verify/resend", None, true)
+            .map(drop)
+    }
+    pub fn reset_request(&self, email: &str) -> Result<(), CliError> {
+        let b = serde_json::json!({"email": email});
+        self.call("POST", "/api/v1/password-reset", Some(b), false)
+            .map(drop)
+    }
+    pub fn reset_confirm(&self, token: &str, password: &str) -> Result<(), CliError> {
+        let b = serde_json::json!({"token": token, "password": password});
+        self.call("POST", "/api/v1/password-reset/confirm", Some(b), false)
+            .map(drop)
+    }
+
     // RPC
     pub fn search(&self, term: &str, by: &str) -> Result<Value, CliError> {
         let path = format!("/rpc/v5/search/{}?by={}", enc(term), enc(by));

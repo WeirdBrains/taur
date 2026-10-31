@@ -86,9 +86,11 @@ fn write_pkg(dir: &Path, pkgbase: &str, ver: &str) {
 }
 
 fn user(s: &Srv, name: &str) -> String {
-    s.store
-        .register(name, &format!("{name}@x"), "longenough")
-        .unwrap();
+    let email = format!("{name}@x");
+    s.store.register(name, &email, "longenough").unwrap();
+    let outbox = s.store.home().join("outbox");
+    let t = taur_core::mail::FileMailer::find_token(&outbox, &email, "verify").unwrap();
+    s.store.verify_email(&t).unwrap();
     s.store.login(name, "longenough").unwrap().token
 }
 
@@ -104,6 +106,22 @@ fn push_over_http_and_ssh() {
     git(&w, &["add", "-A"], &[]);
     git(&w, &["commit", "-qm", "init"], &[]);
 
+    // unverified accounts can't push
+    s.store.register("eve", "eve@x", "longenough").unwrap();
+    let eve = s.store.login("eve", "longenough").unwrap().token;
+    let (ok, out) = git(
+        &w,
+        &[
+            "push",
+            &format!(
+                "http://eve:{eve}@{}/push-me.git",
+                s.http.trim_start_matches("http://")
+            ),
+            "master",
+        ],
+        &[],
+    );
+    assert!(!ok && out.contains("not verified"), "{out}");
     // anonymous push is refused
     let (ok, _) = git(
         &w,

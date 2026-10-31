@@ -4,7 +4,7 @@
 .SH NAME
 taur\-serve \- Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH server
 .SH SYNOPSIS
-\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-ssh\-bind\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH server
 .SH OPTIONS
@@ -17,6 +17,24 @@ Data directory (default: $TAUR_HOME, else ~/.local/share/taur)
 .TP
 \fB\-\-ssh\-bind\fR \fI<SSH_BIND>\fR
 Also serve git over SSH on this address (e.g. 0.0.0.0:2222)
+.TP
+\fB\-\-base\-url\fR \fI<BASE_URL>\fR [default: https://taur.weirdbrains.com]
+Public base URL used in email links
+.RS
+May also be specified with the \fBTAUR_BASE_URL\fR environment variable. 
+.RE
+.TP
+\fB\-\-smtp\-url\fR \fI<SMTP_URL>\fR
+SMTP server URL, e.g. smtps://user:pass@smtp.example.com (never logged). Without it, mail is written to <home>/outbox
+.RS
+May also be specified with the \fBTAUR_SMTP_URL\fR environment variable. 
+.RE
+.TP
+\fB\-\-mail\-from\fR \fI<MAIL_FROM>\fR [default: TAUR <noreply@taur.weirdbrains.com>]
+Sender address for outgoing mail
+.RS
+May also be specified with the \fBTAUR_MAIL_FROM\fR environment variable. 
+.RE
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help

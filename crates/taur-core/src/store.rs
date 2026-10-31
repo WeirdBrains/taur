@@ -26,7 +26,13 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL UNIQUE COLLATE NOCASE,
   email TEXT NOT NULL UNIQUE COLLATE NOCASE,
   password_hash TEXT NOT NULL,
-  created_at INTEGER NOT NULL);
+  created_at INTEGER NOT NULL,
+  verified_at INTEGER);
+CREATE TABLE IF NOT EXISTS email_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL,
+  expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -227,6 +233,8 @@ fn strings(conn: &Connection, sql: &str, arg: i64) -> Result<Vec<String>> {
 pub struct Store {
     conn: Mutex<Connection>,
     home: PathBuf,
+    mailer: std::sync::RwLock<std::sync::Arc<dyn crate::mail::Mailer>>,
+    base_url: std::sync::RwLock<String>,
 }
 
 impl Store {
@@ -236,10 +244,45 @@ impl Store {
         let conn = Connection::open(home.join("taur.db"))?;
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
         conn.execute_batch(SCHEMA)?;
+        // v0.4.0: users.verified_at
+        let has_verified: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'verified_at'")?
+            .exists([])?;
+        if !has_verified {
+            conn.execute_batch("ALTER TABLE users ADD COLUMN verified_at INTEGER")?;
+        }
+        let mailer = crate::mail::FileMailer::new(home.join("outbox"), crate::DEFAULT_MAIL_FROM);
         Ok(Store {
             conn: Mutex::new(conn),
             home: home.to_path_buf(),
+            mailer: std::sync::RwLock::new(std::sync::Arc::new(mailer)),
+            base_url: std::sync::RwLock::new(crate::DEFAULT_BASE_URL.to_string()),
         })
+    }
+
+    /// Replace the mailer (default: file outbox at `<home>/outbox`).
+    pub fn set_mailer(&self, mailer: std::sync::Arc<dyn crate::mail::Mailer>) {
+        *self.mailer.write().unwrap_or_else(|e| e.into_inner()) = mailer;
+    }
+
+    pub fn mailer(&self) -> std::sync::Arc<dyn crate::mail::Mailer> {
+        self.mailer
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Public base URL used for links in emails.
+    pub fn set_base_url(&self, url: &str) {
+        *self.base_url.write().unwrap_or_else(|e| e.into_inner()) =
+            url.trim_end_matches('/').to_string();
+    }
+
+    pub fn base_url(&self) -> String {
+        self.base_url
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn home(&self) -> &Path {

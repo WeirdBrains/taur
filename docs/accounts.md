@@ -7,7 +7,7 @@ JSON API (logic in `taur_core::accounts`):
 | POST | `/api/v1/register` | `{"name","email","password"}` | 201 `{"id","name","email"}` |
 | POST | `/api/v1/login` | `{"name","password"}` | 200 `{"token","expires_at"}` |
 | POST | `/api/v1/logout` | — (Bearer token) | 204 |
-| GET | `/api/v1/account` | — (Bearer token) | 200 `{"id","name","email"}` |
+| GET | `/api/v1/account` | — (Bearer token) | 200 `{"id","name","email","verified"}` |
 | DELETE | `/api/v1/account` | `{"password"}` (Bearer token) | 204 |
 
 Authenticate with `Authorization: Bearer <token>`.
@@ -30,3 +30,6 @@ Errors: 400 invalid input, 401 bad credentials/session, 409 taken name/email or 
 curl -X POST localhost:8080/api/v1/login -H 'content-type: application/json' \
   -d '{"name":"alice","password":"..."}'
 ```
+
+New accounts must verify their email address before pushing or managing anything; see
+[email](email.md) for verification and password reset.
