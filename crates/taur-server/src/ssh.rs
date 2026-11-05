@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use taur_core::Store;
-use taur_core::srcinfo::validate_name;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::process::ChildStdin;
@@ -29,6 +28,53 @@ pub fn host_key(home: &Path) -> std::io::Result<PrivateKey> {
     std::fs::write(&path, pem.as_bytes())?;
     taur_core::set_mode(&path, 0o600)?;
     Ok(key)
+}
+
+/// `taur git-serve`: run `SSH_ORIGINAL_COMMAND` for `user` and, for clone/push,
+/// exec `git upload-pack` / `git receive-pack`. Returns the process exit code.
+pub fn exec_for_sshd(store: &Store, user: &str) -> i32 {
+    let command = std::env::var("SSH_ORIGINAL_COMMAND").unwrap_or_default();
+    let outcome = taur_core::gitserve::serve(store, user, &command);
+    let Some(op) = outcome.git else {
+        print!("{}", outcome.stdout);
+        eprint!("{}", outcome.stderr);
+        return outcome.code;
+    };
+    let repo = if op.verb == "receive-pack" {
+        match taur_core::repo::ensure_repo(&store.repos_dir(), &op.pkgbase) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("git-receive-pack: {e}");
+                return 1;
+            }
+        }
+    } else {
+        let p = store.repos_dir().join(format!("{}.git", op.pkgbase));
+        if !p.is_dir() {
+            eprintln!("git-upload-pack: repository {}.git not found", op.pkgbase);
+            return 1;
+        }
+        p
+    };
+    let hook_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("taur"));
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg(op.verb)
+        .arg(&repo)
+        .env_clear()
+        .envs(taur_core::base_child_env())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", taur_core::NULL_DEVICE)
+        .env("TAUR_HOOK_BIN", &hook_bin)
+        .env("TAUR_HOME", store.home())
+        .env("TAUR_PUSHER", user)
+        .envs(store.hook_env());
+    match cmd.status() {
+        Ok(s) => s.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("git-serve: cannot run git: {e}");
+            1
+        }
+    }
 }
 
 /// Serve SSH on `listener` until it fails.
@@ -72,21 +118,32 @@ impl Server for GitSsh {
     }
 }
 
-/// Parse `git-upload-pack '/foo.git'` → (`upload-pack`, `foo`).
-pub fn parse_command(cmd: &str) -> Option<(&'static str, String)> {
-    let (verb, arg) = cmd.trim().split_once(' ')?;
-    let verb = match verb {
-        "git-upload-pack" | "git upload-pack" => "upload-pack",
-        "git-receive-pack" | "git receive-pack" => "receive-pack",
-        _ => return None,
+/// One `authorized_keys` line for OpenSSH `AuthorizedKeysCommand`, or `None`
+/// when the offered key is not registered. The forced command is
+/// `taur git-serve --user NAME`, which reads `SSH_ORIGINAL_COMMAND`.
+pub fn authorized_keys_line(
+    store: &Store,
+    key_type: &str,
+    key_b64: &str,
+) -> std::io::Result<Option<String>> {
+    let offered = format!("{key_type} {key_b64}");
+    let found = store
+        .user_for_openssh(&offered)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let Some((user, canonical)) = found else {
+        return Ok(None);
     };
-    let arg = arg.trim().trim_matches(|c| c == '\'' || c == '"');
-    let name = arg
-        .trim_start_matches('/')
-        .strip_suffix(".git")
-        .unwrap_or(arg.trim_start_matches('/'));
-    validate_name(name).ok()?;
-    Some((verb, name.to_string()))
+    let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("taur"));
+    let bin = bin.display().to_string();
+    if bin.contains(['"', '\n', '\r']) {
+        return Err(std::io::Error::other(
+            "taur path cannot be embedded in authorized_keys",
+        ));
+    }
+    Ok(Some(format!(
+        "restrict,command=\"{bin} git-serve --user {}\" {canonical}\n",
+        user.name
+    )))
 }
 
 async fn pump(
@@ -163,27 +220,29 @@ impl Handler for GitSsh {
         let handle = session.handle();
         session.channel_success(ch)?;
         let user = self.user.clone().unwrap_or_default();
-        let Some((verb, name)) = parse_command(&String::from_utf8_lossy(data)) else {
-            tokio::spawn(fail(
-                handle,
-                ch,
-                "only git clone/pull/push of <pkgbase>.git is allowed".into(),
-            ));
+        let outcome =
+            taur_core::gitserve::serve(&self.store, &user, &String::from_utf8_lossy(data));
+        let Some(op) = outcome.git else {
+            let code = outcome.code as u32;
+            tokio::spawn(async move {
+                if !outcome.stdout.is_empty() {
+                    let _ = handle.data(ch, outcome.stdout.into_bytes()).await;
+                }
+                if !outcome.stderr.is_empty() {
+                    let _ = handle
+                        .extended_data(ch, 1, outcome.stderr.into_bytes())
+                        .await;
+                }
+                let _ = handle.exit_status_request(ch, code).await;
+                let _ = handle.eof(ch).await;
+                let _ = handle.close(ch).await;
+            });
             return Ok(());
         };
+        let verb = op.verb;
+        let name = op.pkgbase;
         let repos = self.store.repos_dir();
         let repo = if verb == "receive-pack" {
-            let ok = self
-                .store
-                .user_by_name(&user)
-                .ok()
-                .flatten()
-                .map(|u| self.store.require_verified(&u).is_ok())
-                .unwrap_or(false);
-            if !ok {
-                tokio::spawn(fail(handle, ch, "account not allowed to push".into()));
-                return Ok(());
-            }
             match taur_core::repo::ensure_repo(&repos, &name) {
                 Ok(r) => r,
                 Err(e) => {
@@ -260,19 +319,21 @@ impl Handler for GitSsh {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_command;
+    use super::*;
+    use taur_core::gitserve;
 
     #[test]
     fn parses_git_commands() {
-        assert_eq!(
-            parse_command("git-upload-pack '/foo.git'"),
-            Some(("upload-pack", "foo".into()))
-        );
-        assert_eq!(
-            parse_command("git-receive-pack 'foo.git'"),
-            Some(("receive-pack", "foo".into()))
-        );
-        assert_eq!(parse_command("git-upload-pack '/../etc.git'"), None);
-        assert_eq!(parse_command("rm -rf /"), None);
+        let d = tempfile::tempdir().unwrap();
+        let s = Store::open(d.path()).unwrap();
+        let u = s.register("alice", "a@x", "longenough").unwrap();
+        s.mark_verified(u.id).unwrap();
+        let up = gitserve::serve(&s, "alice", "git-upload-pack '/foo.git'");
+        assert_eq!(up.git.unwrap().verb, "upload-pack");
+        let bad = gitserve::serve(&s, "alice", "git-upload-pack '/../etc.git'");
+        assert!(bad.git.is_none());
+        assert_ne!(bad.code, 0);
+        let shell = gitserve::serve(&s, "alice", "rm -rf /");
+        assert!(shell.stderr.contains("invalid command"));
     }
 }

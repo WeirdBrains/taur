@@ -82,6 +82,16 @@ impl Store {
         Ok(())
     }
 
+    /// Account and canonical OpenSSH line for an offered `ssh-ed25519 AAAA…` key.
+    /// An unparseable line is "no such key", not an error.
+    pub fn user_for_openssh(&self, line: &str) -> Result<Option<(User, String)>> {
+        let (fp, _, canonical, _) = match parse_public_key(line) {
+            Ok(v) => v,
+            Err(_) => return Ok(None),
+        };
+        Ok(self.user_for_fingerprint(&fp)?.map(|u| (u, canonical)))
+    }
+
     /// The account owning a key fingerprint (`SHA256:...`).
     pub fn user_for_fingerprint(&self, fp: &str) -> Result<Option<User>> {
         let name: Option<String> = self

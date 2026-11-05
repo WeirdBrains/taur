@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [0.13.0] - 2026-11-05
+### Added
+- JSONP callbacks, aurweb `arg`/`arg[]` handling, and JSON bodies on the RPC.
+- cgit plain-file URLs and maintainer pages at `/users/<name>`.
+- `taur ssh-auth` and `taur git-serve` for OpenSSH, including maintainer SSH commands.
+
 ## [0.12.1] - 2026-10-31
 ### Fixed
 - Tests compile on Windows: Unix file-mode assertions are gated with `cfg(unix)`.

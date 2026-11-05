@@ -38,6 +38,25 @@ pub enum Cmd {
     /// Git hook entry point (run by git during pushes; not for manual use).
     #[command(hide = true)]
     Hook { name: String },
+    /// OpenSSH `AuthorizedKeysCommand`: `taur ssh-auth %t %k`.
+    ///
+    /// Prints one `authorized_keys` line forcing `taur git-serve` when the key is
+    /// registered, or nothing (exit 0) when it is not.
+    SshAuth {
+        /// Key type offered by the client (`%t`).
+        key_type: String,
+        /// Base64 key blob offered by the client (`%k`).
+        key: String,
+    },
+    /// aurweb-style SSH command handler. Reads `SSH_ORIGINAL_COMMAND`.
+    ///
+    /// OpenSSH forces this via the `command=` option printed by `ssh-auth`.
+    /// The account comes from `--user` (the key lookup), not from the SSH login name.
+    GitServe {
+        /// Account that owns the key OpenSSH accepted.
+        #[arg(long)]
+        user: String,
+    },
 }
 
 /// Settings for `taur serve` (flag > environment variable > default).

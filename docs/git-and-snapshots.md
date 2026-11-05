@@ -34,5 +34,10 @@ After an accepted push the metadata (versions, dependencies, …) is refreshed f
 `.SRCINFO`. The hooks run `taur hook pre-receive|post-receive`; they refuse pushes that
 don't come through the TAUR server.
 
-## Snapshots
+## Snapshots and plain files
 `GET /cgit/aur.git/snapshot/<pkgbase>.tar.gz` (the RPC `URLPath`): `git archive` of HEAD.
+
+`GET /cgit/aur.git/plain/<path>?h=<pkgbase>` returns one file from that package base
+(`PKGBUILD`, `.SRCINFO`, …). `h` is the package base name — TAUR keeps a separate
+repository per base, rather than aurweb's single repo with git namespaces. Optional
+`id` selects a revision (default `HEAD`); `..` path segments are rejected.
