@@ -4,6 +4,7 @@ pub mod accounts;
 pub mod community;
 pub mod dump;
 pub mod error;
+pub mod gitserve;
 pub mod keys;
 pub mod mail;
 pub mod orgs;

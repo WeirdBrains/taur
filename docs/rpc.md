@@ -24,7 +24,20 @@ Provides, Replaces, Groups` (omitted when empty) and `License, Keywords, CoMaint
 
 Errors: `No request type/data specified.`, `Incorrect request type specified.`,
 `Incorrect by field specified.`, `Query arg too small.` (name searches < 2 chars),
-`Too many package results.` (> 5000), `Invalid version specified.`.
+`Too many package results.` (> 5000), `Invalid version specified.`,
+`Please specify an API version.`, `Invalid callback name.`.
+
+`callback` (query or form) returns JSONP: `text/javascript` body `/**/callback(…)`.
+The name must match aurweb's `^[A-Za-z0-9()_.]{1,128}$`.
+
+On `/rpc` and `/rpc/v5/{type}` (no name in the path), argument handling follows aurweb:
+a final `arg` is the only argument; a final `arg[]` keeps only the trailing `arg[]`
+values, last to first. `/rpc/v5/info/{name}` keeps the path name first and then query
+arguments in URL order.
+
+`POST /rpc/v5/info` and `POST /rpc/v5/search` also accept `application/json`. `info`
+requires `"arg"` to be an array (`the 'arg' parameter must be of array type`, HTTP 400).
+`search` requires string `"arg"` and `"by"`.
 
 ```sh
 curl 'http://127.0.0.1:8080/rpc/v5/search/foo?by=name'

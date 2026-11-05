@@ -8,7 +8,8 @@ client of the JSON API, like `taurctl`.
 | Path | What |
 |---|---|
 | `/`, `/packages?q=&by=` | Search packages (all RPC `by` fields), sorted by popularity |
-| `/packages/<name>` | Package details (deps, maintainers, org, votes, popularity, flag, clone URL, snapshot), comments; when signed in: vote, flag/unflag, adopt/disown, comment/edit/delete, file requests; maintainers also edit co-maintainers and transfer to an org or user. Same URL yay shows as "AUR URL". |
+| `/packages/<name>` | Package details (deps, maintainers, org, votes, popularity, flag, clone URL, snapshot), comments; when signed in: vote, flag/unflag, adopt/disown, comment/edit/delete, file requests; maintainers also edit co-maintainers and transfer to an org or user. Same URL yay shows as "AUR URL". Maintainer and co-maintainer names link to `/users/<name>`. |
+| `/users/<name>` | Packages that account maintains and co-maintains. |
 | `/register`, `/login` | Account creation and sign-in |
 | `/verify?token=` | Target of the verification email |
 | `/reset`, `/reset?token=` | Request a reset link; target of the reset email |

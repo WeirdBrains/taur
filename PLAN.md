@@ -82,3 +82,8 @@
   Package Maintainer role: accept requests and manage any package.
 - *Proposal:* the web UI is plain HTML/CSS/JS embedded with `include_str!`, routed
   client-side; bearer token in localStorage; strict CSP.
+- *Proposal (2026-11-05):* keep that client-side UI when filling AUR page gaps
+  (maintainer pages at `/users/<name>`). Do not replace it with server-rendered HTML.
+- *Proposal (2026-11-05):* OpenSSH integration is `taur ssh-auth` + `taur git-serve`
+  beside the embedded SSH server. `adopt` takes the orphan immediately; `disown`
+  leaves the package orphaned; there is no `restore` of deleted package bases.
