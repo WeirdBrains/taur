@@ -79,6 +79,117 @@ async fn rpc_endpoints() {
 }
 
 #[tokio::test]
+async fn rpc_jsonp_quirk_json_post_and_cgit_plain() {
+    let (_d, app) = setup();
+    // JSONP (aurweb wraps the payload as `/**/callback(...)`).
+    let r = app
+        .clone()
+        .oneshot(
+            Request::get("/rpc?v=5&type=info&arg[]=hello-taur&callback=cb")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(
+        r.headers()[header::CONTENT_TYPE],
+        "text/javascript; charset=utf-8"
+    );
+    let body =
+        String::from_utf8(r.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
+    assert!(body.starts_with("/**/cb("), "{body}");
+    assert!(body.contains("hello-taur"), "{body}");
+    let v = get_json(
+        &app,
+        "/rpc?v=5&type=info&arg=hello-taur&callback=bad%20name",
+    )
+    .await;
+    assert_eq!(v["error"], "Invalid callback name.");
+
+    // aurweb: a final `arg` replaces every earlier arg[]; a final `arg[]` keeps
+    // only the trailing arg[] run.
+    let v = get_json(
+        &app,
+        "/rpc?v=5&type=info&arg[]=hello-taur-docs&arg=hello-taur",
+    )
+    .await;
+    assert_eq!(v["resultcount"], 1);
+    assert_eq!(v["results"][0]["Name"], "hello-taur");
+    let v = get_json(
+        &app,
+        "/rpc?v=5&type=info&arg=hello-taur&arg[]=hello-taur-docs",
+    )
+    .await;
+    assert_eq!(v["resultcount"], 1);
+    assert_eq!(v["results"][0]["Name"], "hello-taur-docs");
+
+    // The query strings yay sends (`--aurrpcurl …/rpc?`).
+    let v = get_json(&app, "/rpc?v=5&type=search&by=name-desc&arg=hello").await;
+    assert_eq!(v["type"], "search");
+    assert_eq!(v["resultcount"], 2);
+    let v = get_json(&app, "/rpc?v=5&type=info&arg[]=hello-taur").await;
+    assert_eq!(v["results"][0]["PackageBase"], "hello-taur");
+    let v = get_json(&app, "/rpc?v=5&type=suggest&arg=hello").await;
+    assert_eq!(v[0], "hello-taur");
+
+    let req = Request::post("/rpc/v5/search")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"arg":"hello","by":"name"}"#))
+        .unwrap();
+    let (st, b) = call(&app, req).await;
+    assert_eq!(st, StatusCode::OK);
+    let v: Value = serde_json::from_slice(&b).unwrap();
+    assert_eq!(v["resultcount"], 2);
+    let req = Request::post("/rpc/v5/info")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"arg":"hello-taur"}"#))
+        .unwrap();
+    let (st, b) = call(&app, req).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    let v: Value = serde_json::from_slice(&b).unwrap();
+    assert_eq!(v["error"], "the 'arg' parameter must be of array type");
+    let req = Request::post("/rpc/v5/info")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"arg":["hello-taur","hello-taur-docs"]}"#))
+        .unwrap();
+    let (st, b) = call(&app, req).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&b).unwrap()["resultcount"],
+        2
+    );
+
+    let (st, b) = get(&app, "/cgit/aur.git/plain/PKGBUILD?h=hello-taur").await;
+    assert_eq!(st, StatusCode::OK);
+    let text = String::from_utf8(b).unwrap();
+    assert!(text.contains("pkgbase=hello-taur"), "{text}");
+    let (st, b) = get(&app, "/cgit/aur.git/plain/.SRCINFO?h=hello-taur&id=HEAD").await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(
+        String::from_utf8(b)
+            .unwrap()
+            .contains("pkgbase = hello-taur")
+    );
+    assert_eq!(
+        get(&app, "/cgit/aur.git/plain/PKGBUILD").await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        get(&app, "/cgit/aur.git/plain/missing?h=hello-taur")
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        get(&app, "/cgit/aur.git/plain/foo/../../PKGBUILD?h=hello-taur")
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
 async fn git_snapshot_and_dumps() {
     let (_d, app) = setup();
     let (st, b) = get(&app, "/cgit/aur.git/snapshot/hello-taur.tar.gz").await;
@@ -893,6 +1004,7 @@ async fn web_ui_is_served() {
     for page in [
         "/",
         "/packages/hello-taur",
+        "/users/alice",
         "/login",
         "/register",
         "/verify?token=abc",

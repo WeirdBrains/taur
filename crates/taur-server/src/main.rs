@@ -10,6 +10,13 @@ async fn main() {
     if let Cmd::Hook { name } = &cli.cmd {
         std::process::exit(hook(name));
     }
+    if let Cmd::GitServe { user } = &cli.cmd {
+        let store = Store::open(&resolve_home(cli.home.clone())).unwrap_or_else(|e| {
+            eprintln!("taur: {e}");
+            std::process::exit(1);
+        });
+        std::process::exit(taur_server::ssh::exec_for_sshd(&store, user));
+    }
     if let Err(e) = run(cli).await {
         eprintln!("taur: {e}");
         std::process::exit(1);
@@ -85,7 +92,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             store.mark_verified(user.id)?;
             println!("verified {name}");
         }
-        Cmd::Hook { .. } => unreachable!(),
+        Cmd::Hook { .. } | Cmd::GitServe { .. } => unreachable!(),
+        Cmd::SshAuth { key_type, key } => {
+            match taur_server::ssh::authorized_keys_line(&store, &key_type, &key) {
+                Ok(Some(line)) => print!("{line}"),
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("taur: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
     }
     Ok(())
 }

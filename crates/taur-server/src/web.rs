@@ -10,10 +10,11 @@ const APP_JS: &str = include_str!("../web/app.js");
 const STYLE: &str = include_str!("../web/style.css");
 
 /// Paths rendered by the web UI (`{x}` = one segment).
-pub const PAGES: [&str; 11] = [
+pub const PAGES: [&str; 12] = [
     "/",
     "/packages",
     "/packages/{name}",
+    "/users/{name}",
     "/login",
     "/register",
     "/verify",

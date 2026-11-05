@@ -105,7 +105,7 @@ async function pageSearch(params) {
             h("td", {}, link(`/packages/${enc(p.Name)}`, p.Name)),
             h("td", { class: p.OutOfDate ? "flagged" : "" }, p.Version),
             h("td", {}, p.NumVotes), h("td", {}, p.Popularity.toFixed(2)),
-            h("td", {}, p.Description || ""), h("td", {}, p.Maintainer || "orphan")))))));
+            h("td", {}, p.Description || ""), h("td", {}, maintainerLink(p.Maintainer)))))));
     } catch (e) { out.push(msg(e.message)); }
   } else if (q) {
     out.push(msg("Enter at least two characters."));
@@ -136,7 +136,7 @@ async function pagePackage(name) {
     ["Licenses", list("License")], ["Keywords", list("Keywords")], ["Depends", list("Depends")],
     ["Make depends", list("MakeDepends")], ["Check depends", list("CheckDepends")], ["Optional depends", list("OptDepends")],
     ["Provides", list("Provides")], ["Conflicts", list("Conflicts")], ["Replaces", list("Replaces")], ["Groups", list("Groups")],
-    ["Maintainer", info.Maintainer || "orphan"], ["Co-maintainers", list("CoMaintainers")],
+    ["Maintainer", maintainerLink(info.Maintainer)], ["Co-maintainers", peopleLinks(info.CoMaintainers)],
     ["Organization", info.Organization || "—"], ["Submitter", info.Submitter || "—"],
     ["Votes", info.NumVotes], ["Popularity", info.Popularity.toFixed(2)],
     ["First submitted", fmtTime(info.FirstSubmitted)], ["Last updated", fmtTime(info.LastModified)],
@@ -211,6 +211,35 @@ async function pagePackage(name) {
   render(...out);
 }
 
+function maintainerLink(name) {
+  return name ? link(`/users/${enc(name)}`, name) : "orphan";
+}
+function peopleLinks(names) {
+  if (!names || !names.length) return "—";
+  const out = [];
+  names.forEach((n, i) => { if (i) out.push(", "); out.push(link(`/users/${enc(n)}`, n)); });
+  return out;
+}
+function pkgTable(rows) {
+  if (!rows.length) return h("p", { class: "muted" }, "None.");
+  return h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Version", "Votes", "Description"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, rows.map((p) => h("tr", {},
+      h("td", {}, link(`/packages/${enc(p.Name)}`, p.Name)),
+      h("td", { class: p.OutOfDate ? "flagged" : "" }, p.Version),
+      h("td", {}, p.NumVotes), h("td", {}, p.Description || "")))));
+}
+async function pageUser(name) {
+  const load = async (by) => {
+    try {
+      const r = await api("GET", `/rpc/v5/search/${enc(name)}?by=${enc(by)}`, undefined, false);
+      return r.type === "error" ? [] : (r.results || []);
+    } catch (e) { return []; }
+  };
+  const [maintained, co] = await Promise.all([load("maintainer"), load("comaintainers")]);
+  render(h("h1", {}, name),
+    h("h2", {}, "Maintains"), h("div", { class: "card" }, pkgTable(maintained)),
+    h("h2", {}, "Co-maintains"), h("div", { class: "card" }, pkgTable(co)));
+}
 function pageLogin() {
   const f = h("form", { class: "stack", onsubmit: async (e) => {
     e.preventDefault();
@@ -377,6 +406,7 @@ async function route() {
   let m;
   if (path === "/" || path === "/packages" || path === "/packages/") return pageSearch(params);
   if ((m = path.match(/^\/packages\/([^/]+)\/?$/))) return pagePackage(m[1]);
+  if ((m = path.match(/^\/users\/([^/]+)\/?$/))) return pageUser(m[1]);
   if (path === "/login") return pageLogin();
   if (path === "/register") return pageRegister();
   if (path === "/verify") return pageVerify(params);

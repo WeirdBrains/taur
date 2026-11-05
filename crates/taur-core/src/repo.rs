@@ -92,6 +92,38 @@ pub fn ensure_repo(repos: &Path, pkgbase: &str) -> Result<std::path::PathBuf> {
     Ok(repo)
 }
 
+/// Blob bytes at `rev:path` inside the package base repo (cgit `plain` URLs).
+/// `rev` defaults to `HEAD` when empty. `path` is a file inside the tree, not a URL.
+pub fn plain(repos: &Path, pkgbase: &str, rev: &str, path: &str) -> Result<Vec<u8>> {
+    validate_name(pkgbase)?;
+    let rev = if rev.is_empty() { "HEAD" } else { rev };
+    if !rev
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+        || rev.contains("..")
+    {
+        return Err(Error::Invalid("invalid revision".into()));
+    }
+    if path.is_empty()
+        || path.starts_with('/')
+        || path
+            .split('/')
+            .any(|c| c.is_empty() || c == "." || c == ".." || c.contains('\\'))
+    {
+        return Err(Error::Invalid("invalid path".into()));
+    }
+    let repo = repos.join(format!("{pkgbase}.git"));
+    if !repo.is_dir() {
+        return Err(Error::NotFound(format!("package base {pkgbase}")));
+    }
+    let spec = format!("{rev}:{path}");
+    let mut c = git();
+    c.arg("--git-dir")
+        .arg(&repo)
+        .args(["cat-file", "blob", &spec]);
+    run(c).map_err(|_| Error::NotFound(format!("{path} in {pkgbase}")))
+}
+
 /// `git archive` of HEAD as `<pkgbase>/...` in a gzipped tarball.
 pub fn snapshot(repos: &Path, pkgbase: &str) -> Result<Vec<u8>> {
     validate_name(pkgbase)?;
@@ -145,6 +177,11 @@ pub fn git_file(repos: &Path, path: &str) -> Option<(Vec<u8>, &'static str)> {
 impl Store {
     pub fn snapshot(&self, pkgbase: &str) -> Result<Vec<u8>> {
         snapshot(&self.repos_dir(), pkgbase)
+    }
+
+    /// File from a package base tree. `h` is the package base (aurweb cgit `?h=`).
+    pub fn plain(&self, pkgbase: &str, rev: &str, path: &str) -> Result<Vec<u8>> {
+        plain(&self.repos_dir(), pkgbase, rev, path)
     }
 
     pub fn git_file(&self, path: &str) -> Option<(Vec<u8>, &'static str)> {
