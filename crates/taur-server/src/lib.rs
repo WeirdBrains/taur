@@ -53,6 +53,7 @@ pub fn app_with(state: AppState) -> Router {
         .route("/rpc/v5/{kind}", get(rpc_v5).post(rpc_v5_post))
         .route("/rpc/v5/{kind}/{arg}", get(rpc_v5_arg))
         .route("/cgit/aur.git/snapshot/{file}", get(snapshot))
+        .route("/cgit/aur.git/plain/{*path}", get(plain_file))
         .route("/packages.gz", get(dump_packages))
         .route("/pkgbase.gz", get(dump_pkgbases))
         .route("/packages-meta-v1.json.gz", get(dump_meta))
@@ -128,53 +129,194 @@ fn param<'a>(p: &'a [(String, String)], key: &str) -> Option<&'a str> {
     p.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
 }
 
-fn run(
+/// aurweb `JSONP_EXPR`: callback names of 1–128 `[A-Za-z0-9()_.]`.
+fn jsonp_ok(cb: &str) -> bool {
+    (1..=128).contains(&cb.len())
+        && cb
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '(' | ')' | '_' | '.'))
+}
+
+fn rpc_body(value: Value, callback: Option<&str>) -> Response {
+    if let Some(cb) = callback.filter(|c| !c.is_empty()) {
+        if !jsonp_ok(cb) {
+            return Json(rpc::error("Invalid callback name.")).into_response();
+        }
+        let body = format!(
+            "/**/{cb}({})",
+            serde_json::to_string(&value).unwrap_or_else(|_| "null".into())
+        );
+        return (
+            [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+            body,
+        )
+            .into_response();
+    }
+    Json(value).into_response()
+}
+
+/// aurweb's legacy `arg` / `arg[]` rule: the last key wins the shape.
+/// A final `arg` is the only argument. A final `arg[]` keeps the trailing
+/// `arg[]` values (in reverse query order, matching aurweb). A path argument
+/// (`/rpc/v5/info/{name}`) is prepended and query args stay in URL order.
+fn collect_args(p: &[(String, String)], first: Option<String>) -> Vec<String> {
+    if let Some(first) = first {
+        let mut args = vec![first];
+        args.extend(
+            p.iter()
+                .filter(|(k, _)| k == "arg" || k == "arg[]")
+                .map(|(_, v)| v.clone()),
+        );
+        return args;
+    }
+    let indexed: Vec<(usize, &str)> = p
+        .iter()
+        .enumerate()
+        .filter(|(_, (k, _))| k == "arg" || k == "arg[]")
+        .map(|(i, (_, v))| (i, v.as_str()))
+        .collect();
+    let Some(&(last, _)) = indexed.last() else {
+        return Vec::new();
+    };
+    if p[last].0 == "arg" {
+        return vec![p[last].1.clone()];
+    }
+    let mut args = Vec::new();
+    for i in indexed.into_iter().map(|(i, _)| i).rev() {
+        if p[i].0 != "arg[]" {
+            break;
+        }
+        args.push(p[i].1.clone());
+    }
+    args
+}
+
+fn finish(
     store: &Store,
     kind: Option<&str>,
     p: &[(String, String)],
     first: Option<String>,
-) -> Json<Value> {
-    let mut args: Vec<String> = first.into_iter().collect();
-    args.extend(
-        p.iter()
-            .filter(|(k, _)| k == "arg" || k == "arg[]")
-            .map(|(_, v)| v.clone()),
-    );
-    Json(rpc::handle(store, kind, &args, param(p, "by")))
+) -> Response {
+    let value = rpc::handle(store, kind, &collect_args(p, first), param(p, "by"));
+    rpc_body(value, param(p, "callback"))
 }
 
-fn legacy(store: &Store, p: &[(String, String)]) -> Json<Value> {
+fn legacy(store: &Store, p: &[(String, String)]) -> Response {
     match param(p, "v") {
-        Some("5") => run(store, param(p, "type"), p, None),
-        None => Json(rpc::error("Please specify an API version.")),
-        Some(_) => Json(rpc::error("Invalid version specified.")),
+        Some("5") => finish(store, param(p, "type"), p, None),
+        None => rpc_body(
+            rpc::error("Please specify an API version."),
+            param(p, "callback"),
+        ),
+        Some(_) => rpc_body(
+            rpc::error("Invalid version specified."),
+            param(p, "callback"),
+        ),
     }
 }
 
-async fn rpc_legacy(State(s): St, RawQuery(q): RawQuery) -> Json<Value> {
+async fn rpc_legacy(State(s): St, RawQuery(q): RawQuery) -> Response {
     legacy(&s, &pairs(q.as_deref()))
 }
 
-async fn rpc_legacy_post(State(s): St, RawQuery(q): RawQuery, body: String) -> Json<Value> {
+async fn rpc_legacy_post(State(s): St, RawQuery(q): RawQuery, body: String) -> Response {
     let mut p = pairs(q.as_deref());
     p.extend(pairs(Some(&body)));
     legacy(&s, &p)
 }
 
-async fn rpc_v5(State(s): St, Path(kind): Path<String>, RawQuery(q): RawQuery) -> Json<Value> {
-    run(&s, Some(&kind), &pairs(q.as_deref()), None)
+async fn rpc_v5(State(s): St, Path(kind): Path<String>, RawQuery(q): RawQuery) -> Response {
+    finish(&s, Some(&kind), &pairs(q.as_deref()), None)
 }
 
-async fn rpc_v5_post(State(s): St, Path(kind): Path<String>, body: String) -> Json<Value> {
-    run(&s, Some(&kind), &pairs(Some(&body)), None)
+async fn rpc_v5_post(
+    State(s): St,
+    Path(kind): Path<String>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
+    let ctype = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if ctype.contains("application/json") {
+        return rpc_json(&s, &kind, &body);
+    }
+    finish(&s, Some(&kind), &pairs(Some(&body)), None)
 }
 
 async fn rpc_v5_arg(
     State(s): St,
     Path((kind, arg)): Path<(String, String)>,
     RawQuery(q): RawQuery,
-) -> Json<Value> {
-    run(&s, Some(&kind), &pairs(q.as_deref()), Some(arg))
+) -> Response {
+    finish(&s, Some(&kind), &pairs(q.as_deref()), Some(arg))
+}
+
+/// aurweb OpenAPI JSON bodies: `info` takes `arg` as an array; `search` takes
+/// string `arg` and `by`.
+fn rpc_json(store: &Store, kind: &str, body: &str) -> Response {
+    let v: Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(rpc::error("request body is not valid JSON")),
+            )
+                .into_response();
+        }
+    };
+    if kind == "info" || kind == "multiinfo" {
+        let Some(arr) = v.get("arg").and_then(|a| a.as_array()) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(rpc::error("the 'arg' parameter must be of array type")),
+            )
+                .into_response();
+        };
+        let args: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(str::to_string))
+            .collect();
+        if args.len() != arr.len() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(rpc::error("the 'arg' parameter must be of array type")),
+            )
+                .into_response();
+        }
+        return rpc_body(rpc::handle(store, Some(kind), &args, None), None);
+    }
+    if kind == "search" || kind == "msearch" {
+        let by = match v.get("by") {
+            None => None,
+            Some(b) => match b.as_str() {
+                Some(s) => Some(s),
+                None => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(rpc::error("the 'by' parameter must be of string type")),
+                    )
+                        .into_response();
+                }
+            },
+        };
+        let arg = match v.get("arg") {
+            None => String::new(),
+            Some(a) => match a.as_str() {
+                Some(s) => s.to_string(),
+                None => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(rpc::error("the 'arg' parameter must be of string type")),
+                    )
+                        .into_response();
+                }
+            },
+        };
+        return rpc_body(rpc::handle(store, Some(kind), &[arg], by), None);
+    }
+    finish(store, Some(kind), &[], None)
 }
 
 // ---- git, snapshots, dumps ----
@@ -191,6 +333,37 @@ async fn snapshot(State(s): St, Path(file): Path<String>) -> Response {
     match file.strip_suffix(".tar.gz") {
         Some(name) => gz(s.snapshot(name)),
         None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct PlainQuery {
+    /// Package base (aurweb cgit `?h=`). Each base is its own repository.
+    h: Option<String>,
+    /// Git revision inside that repository (default `HEAD`).
+    id: Option<String>,
+}
+
+/// `/cgit/aur.git/plain/<path>?h=<pkgbase>` — one file from the package tree.
+async fn plain_file(
+    State(s): St,
+    Path(path): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<PlainQuery>,
+) -> Response {
+    let Some(pkgbase) = q.h.filter(|h| !h.is_empty()) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match s.plain(&pkgbase, q.id.as_deref().unwrap_or("HEAD"), &path) {
+        Ok(bytes) => {
+            let ctype = if bytes.contains(&0) {
+                "application/octet-stream"
+            } else {
+                "text/plain; charset=utf-8"
+            };
+            ([(header::CONTENT_TYPE, ctype)], bytes).into_response()
+        }
+        Err(Error::NotFound(_)) | Err(Error::Invalid(_)) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => ApiError(e).into_response(),
     }
 }
 
