@@ -11,7 +11,7 @@
 - [Organizations and roles](roles.md)
 - [Organization and package management API](management-api.md)
 - [Votes, flags, comments, co-maintainers and requests](community.md)
-- [Using with yay](yay.md)
+- [Using with yay and paru](yay.md)
 - [taurctl management CLI](cli.md)
 - [Web UI](web-ui.md)
 - [MCP server](mcp.md)

@@ -4,6 +4,8 @@ Each package base has a bare repo at `<home>/repos/<pkgbase>.git` (branch `maste
 
 ## Clone (anonymous)
 - Smart HTTP: `git clone https://taur.weirdbrains.com/<pkgbase>.git` (via `git http-backend`).
+  `git clone https://taur.weirdbrains.com/<pkgbase>` is the same repository. paru requests that
+  shorter path; the on-disk repo is still `<pkgbase>.git`.
 - SSH: `git clone ssh://taur@taur.weirdbrains.com:2222/<pkgbase>.git` (needs a registered key).
 
 ## Push

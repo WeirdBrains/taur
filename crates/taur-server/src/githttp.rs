@@ -1,5 +1,7 @@
 //! Git smart HTTP via `git http-backend` (CGI). Clones are anonymous; pushes need HTTP
 //! Basic auth with the account name and a session token as password (or a Bearer token).
+//! The on-disk repo is `{pkgbase}.git`. Clients may request that path or `/{pkgbase}/…`
+//! (paru's fetcher omits the `.git` suffix). `git http-backend` always sees the suffixed path.
 
 use crate::AppState;
 use axum::body::Bytes;
@@ -62,13 +64,12 @@ pub async fn handle(
     body: Bytes,
 ) -> Response {
     let path = uri.path().to_string();
-    let Some((name, rest)) = path.trim_start_matches('/').split_once(".git/") else {
+    let Some((name, rest, path_info)) = git_target(&path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if validate_name(name).is_err() || rest.split('/').any(|c| c == ".." || c.is_empty()) {
+    if validate_name(&name).is_err() || rest.split('/').any(|c| c == ".." || c.is_empty()) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let name = name.to_string();
     let query = uri.query().unwrap_or("").to_string();
     let is_push = rest == "git-receive-pack" || query.contains("service=git-receive-pack");
     let repos = state.store.repos_dir();
@@ -99,7 +100,7 @@ pub async fn handle(
         .env("GIT_CONFIG_GLOBAL", taur_core::NULL_DEVICE)
         .env("GIT_PROJECT_ROOT", &repos)
         .env("GIT_HTTP_EXPORT_ALL", "1")
-        .env("PATH_INFO", &path)
+        .env("PATH_INFO", &path_info)
         .env("QUERY_STRING", &query)
         .env("REQUEST_METHOD", method.as_str())
         .env("CONTENT_TYPE", hdr("content-type"))
@@ -133,6 +134,35 @@ pub async fn handle(
         _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     cgi_response(&raw)
+}
+
+/// `(pkgbase, path inside the repo, PATH_INFO git http-backend expects)`.
+/// `/{pkgbase}.git/…` is the canonical URL. `/{pkgbase}/…` is accepted only for
+/// git endpoints so a bare package name is not treated as a repository.
+fn git_target(path: &str) -> Option<(String, String, String)> {
+    let path = path.trim_start_matches('/');
+    let (name, rest) = if let Some((name, rest)) = path.split_once(".git/") {
+        (name, rest)
+    } else {
+        let (name, rest) = path.split_once('/')?;
+        if !is_git_endpoint(rest) {
+            return None;
+        }
+        (name, rest)
+    };
+    if name.is_empty() || rest.is_empty() {
+        return None;
+    }
+    let path_info = format!("/{name}.git/{rest}");
+    Some((name.to_string(), rest.to_string(), path_info))
+}
+
+fn is_git_endpoint(rest: &str) -> bool {
+    matches!(
+        rest,
+        "info/refs" | "git-upload-pack" | "git-receive-pack" | "HEAD"
+    ) || rest.starts_with("objects/")
+        || rest.starts_with("refs/")
 }
 
 /// Turn CGI output (headers, blank line, body) into a response.

@@ -201,7 +201,19 @@ async fn git_snapshot_and_dumps() {
     );
     let (st, b) = get(&app, "/hello-taur.git/info/refs?service=git-upload-pack").await;
     assert_eq!(st, StatusCode::OK);
-    assert!(String::from_utf8(b).unwrap().contains("refs/heads/master"));
+    assert!(
+        String::from_utf8(b.clone())
+            .unwrap()
+            .contains("refs/heads/master")
+    );
+    // paru clones `/{pkgbase}` with no `.git` suffix; advertisement must match.
+    let (st, bare) = get(&app, "/hello-taur/info/refs?service=git-upload-pack").await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(bare, b);
+    assert_eq!(
+        get(&app, "/hello-taur/not-a-git-path").await.0,
+        StatusCode::NOT_FOUND
+    );
     assert_eq!(
         get(&app, "/hello-taur.git/config").await.0,
         StatusCode::NOT_FOUND
