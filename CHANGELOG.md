@@ -8,6 +8,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - cgit plain-file URLs and maintainer pages at `/users/<name>`.
 - `taur ssh-auth` and `taur git-serve` for OpenSSH, including maintainer SSH commands.
 
+### Fixed
+- Smart HTTP clone accepts `/{pkgbase}` as well as `/{pkgbase}.git`.
+
 ## [0.12.1] - 2026-10-31
 ### Fixed
 - Tests compile on Windows: Unix file-mode assertions are gated with `cfg(unix)`.

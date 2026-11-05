@@ -39,6 +39,9 @@ arguments in URL order.
 requires `"arg"` to be an array (`the 'arg' parameter must be of array type`, HTTP 400).
 `search` requires string `"arg"` and `"by"`.
 
+yay GETs `/rpc?v=5&type=…` (the `--aurrpcurl` value already ends in `?`). paru POSTs the
+same fields as `application/x-www-form-urlencoded` to `/rpc`.
+
 ```sh
 curl 'http://127.0.0.1:8080/rpc/v5/search/foo?by=name'
 ```
