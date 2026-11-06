@@ -33,6 +33,13 @@ network namespace, no home directory, and a 20 second limit. If `bwrap` is not
 installed the push is refused. Bubblewrap is not a virtual machine; a bug in `bwrap`
 or `makepkg` is still a risk. Leave the variable unset unless you want that check.
 
+`cargo test -p taur-server --test fixture_isolation` builds and installs
+`tests/fixtures/hello-taur` inside that sandbox (`makepkg --nodeps`, then `pacman -dd`
+into a temp root as uid 0 in a user namespace). It skips when `bwrap` or `makepkg` is
+missing unless `TAUR_REQUIRE_ISOLATION=1`. The sandbox still reads the host `/usr` and
+`/etc/makepkg.conf`. It does not install dependencies and does not prove a hostile
+PKGBUILD cannot escape bubblewrap.
+
 ## Residual risks
 
 - HTTP and gRPC are plaintext. Put TLS on a proxy. The server does not terminate TLS.
