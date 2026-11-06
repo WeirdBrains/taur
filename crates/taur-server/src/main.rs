@@ -41,6 +41,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             for w in taur_server::cli::bootstrap_admins(&store, &cfg.admins) {
                 eprintln!("taur: warning: {w}");
             }
+            store.configure_rpc_rate_limit(cfg.rpc_rate_limit, cfg.rpc_rate_window_secs);
             let store = Arc::new(store);
             let s2 = store.clone();
             tokio::spawn(async move {
@@ -71,7 +72,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
             eprintln!("taur: listening on http://{}", listener.local_addr()?);
-            axum::serve(listener, taur_server::app(store)).await?;
+            axum::serve(
+                listener,
+                taur_server::app(store)
+                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await?;
         }
         Cmd::Import { dir, maintainer } => {
             let info = store.import_dir(&dir, maintainer.as_deref())?;

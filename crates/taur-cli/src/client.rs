@@ -214,10 +214,9 @@ impl Client {
         pkgbase: &str,
         action: &str,
         body: Option<Value>,
-    ) -> Result<(), CliError> {
+    ) -> Result<Value, CliError> {
         let path = format!("/api/v1/packages/{}/{action}", enc(pkgbase));
         self.call("POST", &path, Some(body.unwrap_or(Value::Null)), true)
-            .map(drop)
     }
 }
 

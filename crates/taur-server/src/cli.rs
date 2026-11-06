@@ -91,6 +91,13 @@ pub struct ServeArgs {
     /// a name does not revoke; use `taur admin NAME --revoke`).
     #[arg(long, env = "TAUR_ADMINS", value_delimiter = ',')]
     pub admins: Vec<String>,
+    /// RPC requests allowed per window for each socket peer. 0 disables the limiter.
+    /// The peer address is the TCP connection; forwarded headers are ignored.
+    #[arg(long, env = "TAUR_RPC_RATE_LIMIT", default_value_t = 0)]
+    pub rpc_rate_limit: u32,
+    /// Window length in seconds for `TAUR_RPC_RATE_LIMIT`.
+    #[arg(long, env = "TAUR_RPC_RATE_WINDOW", default_value_t = 60)]
+    pub rpc_rate_window_secs: u64,
 }
 
 /// Validated `taur serve` settings.
@@ -98,13 +105,15 @@ pub struct ServeArgs {
 pub struct ServeConfig {
     pub bind: std::net::SocketAddr,
     pub ssh_bind: Option<std::net::SocketAddr>,
-    /// e.g. `ssh://taur@taur.weirdbrains.com:2222` when SSH is on.
+    /// e.g. `ssh://taur@packages.taur.weirdbrains.com:2222` when SSH is on.
     pub ssh_clone_base: Option<String>,
     pub grpc_bind: Option<std::net::SocketAddr>,
     pub base_url: String,
     pub smtp_url: Option<String>,
     pub mail_from: String,
     pub admins: Vec<String>,
+    pub rpc_rate_limit: u32,
+    pub rpc_rate_window_secs: u64,
 }
 
 fn addr(var: &str, v: &str) -> Result<std::net::SocketAddr, String> {
@@ -214,6 +223,8 @@ impl ServeArgs {
             smtp_url,
             mail_from,
             admins,
+            rpc_rate_limit: self.rpc_rate_limit,
+            rpc_rate_window_secs: self.rpc_rate_window_secs.max(1),
         })
     }
 }
@@ -289,6 +300,16 @@ pub const ENV_VARS: &[(&str, &str, &str)] = &[
         "TAUR_ADMINS",
         "unset",
         "Comma-separated user names granted site admin at startup (grant only, never revokes).",
+    ),
+    (
+        "TAUR_RPC_RATE_LIMIT",
+        "0 (off)",
+        "RPC requests allowed per window for each TCP peer. Forwarded IP headers are ignored.",
+    ),
+    (
+        "TAUR_RPC_RATE_WINDOW",
+        "60",
+        "Rate-limit window in seconds.",
     ),
 ];
 

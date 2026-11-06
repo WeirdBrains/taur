@@ -119,7 +119,7 @@ pub enum Cmd {
     /// Edit or delete package comments.
     #[command(subcommand)]
     Comment(CommentCmd),
-    /// File and handle package requests (orphan, deletion, merge).
+    /// File and handle package requests (orphan, deletion, merge, adoption).
     #[command(subcommand)]
     Request(RequestCmd),
     /// Run an MCP server on stdio that forwards to the TAUR server's /mcp endpoint
@@ -144,7 +144,7 @@ pub enum RequestCmd {
     /// File a request against a package base.
     File {
         pkgbase: String,
-        /// orphan, deletion or merge
+        /// orphan, deletion, merge, or adoption
         #[arg(long)]
         kind: String,
         /// Target package base for merge requests.
@@ -234,7 +234,7 @@ pub enum OrgCmd {
 pub enum PkgCmd {
     /// Package bases you can manage.
     List,
-    /// Adopt an orphaned package base.
+    /// Take an orphan (site admin) or file an adoption request.
     Adopt { pkgbase: String },
     /// Give up maintainership (package becomes orphaned).
     Disown { pkgbase: String },
@@ -729,8 +729,12 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                 });
             }
             PkgCmd::Adopt { pkgbase } => {
-                c.pkg_action(pkgbase, "adopt", None)?;
-                done(g, format!("adopted {pkgbase}"));
+                let v = c.pkg_action(pkgbase, "adopt", None)?;
+                if let Some(id) = v.get("request").and_then(|n| n.as_i64()) {
+                    done(g, format!("filed adoption request {id} for {pkgbase}"));
+                } else {
+                    done(g, format!("adopted {pkgbase}"));
+                }
             }
             PkgCmd::Disown { pkgbase } => {
                 confirm(g, &format!("Disown {pkgbase}?"))?;

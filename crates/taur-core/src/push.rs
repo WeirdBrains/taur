@@ -54,6 +54,7 @@ fn check_commit(repo: &Path, pkgbase: &str, commit: &str) -> Result<SrcInfo> {
     let short = &commit[..commit.len().min(8)];
     let tree = git_out(repo, &["ls-tree", "-l", commit])?;
     let mut srcinfo_blob = None;
+    let mut pkgbuild_blob = None;
     let mut has_pkgbuild = false;
     for line in tree.lines() {
         let Some((meta, path)) = line.split_once('\t') else {
@@ -73,7 +74,10 @@ fn check_commit(repo: &Path, pkgbase: &str, commit: &str) -> Result<SrcInfo> {
         }
         match path {
             ".SRCINFO" => srcinfo_blob = Some(id.to_string()),
-            "PKGBUILD" => has_pkgbuild = true,
+            "PKGBUILD" => {
+                has_pkgbuild = true;
+                pkgbuild_blob = Some(id.to_string());
+            }
             _ => {}
         }
     }
@@ -89,7 +93,150 @@ fn check_commit(repo: &Path, pkgbase: &str, commit: &str) -> Result<SrcInfo> {
             info.pkgbase
         )));
     }
+    if let Some(id) = pkgbuild_blob {
+        let pkgbuild = git_out(repo, &["cat-file", "blob", &id])?;
+        let mismatches = srcinfo::literal_mismatches(&info, &pkgbuild);
+        if !mismatches.is_empty() {
+            return Err(deny(format!(
+                "{short}: {} (simple PKGBUILD assignments only; shell was not executed)",
+                mismatches.join("; ")
+            )));
+        }
+        isolated_pkgbuild(repo, &pkgbuild, &info)?;
+    }
     Ok(info)
+}
+
+/// Opt-in `TAUR_PKGBUILD_ISOLATION=bwrap` runs `makepkg --printsrcinfo` in a
+/// bubblewrap sandbox (no home, no network, read-only package files). Any other
+/// value is refused. Unset skips the check. This executes the PKGBUILD.
+fn isolated_pkgbuild(repo: &Path, pkgbuild: &str, info: &SrcInfo) -> Result<()> {
+    let mode = match std::env::var("TAUR_PKGBUILD_ISOLATION") {
+        Err(_) => return Ok(()),
+        Ok(v) if v == "bwrap" => v,
+        Ok(v) => {
+            return Err(deny(format!(
+                "TAUR_PKGBUILD_ISOLATION={v} is not supported (only bwrap runs PKGBUILDs, and only inside a sandbox)"
+            )));
+        }
+    };
+    let _ = mode;
+    if std::process::Command::new("bwrap")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        return Err(deny(
+            "TAUR_PKGBUILD_ISOLATION=bwrap but bwrap is not installed; refusing to run the PKGBUILD on the host",
+        ));
+    }
+    let dir = tempfile_dir()?;
+    std::fs::write(dir.join("PKGBUILD"), pkgbuild)?;
+    let mut cmd = std::process::Command::new("bwrap");
+    cmd.args([
+        "--unshare-all",
+        "--die-with-parent",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--symlink",
+        "usr/bin",
+        "/bin",
+        "--symlink",
+        "usr/lib",
+        "/lib",
+        "--symlink",
+        "usr/lib64",
+        "/lib64",
+        "--ro-bind",
+        "/etc/makepkg.conf",
+        "/etc/makepkg.conf",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+        "--tmpfs",
+        "/run",
+        "--ro-bind",
+    ])
+    .arg(&dir)
+    .args(["/work", "--chdir", "/work", "--clearenv"])
+    .args(["--setenv", "PATH", "/usr/bin:/bin"])
+    .args(["--setenv", "HOME", "/tmp"])
+    .args(["makepkg", "--printsrcinfo"]);
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| deny(format!("cannot start bwrap: {e}")))?;
+    let finished = wait_timeout(&mut child, std::time::Duration::from_secs(20))?;
+    if !finished.status.success() {
+        return Err(deny(format!(
+            "isolated makepkg --printsrcinfo failed: {}",
+            String::from_utf8_lossy(&finished.stderr).trim()
+        )));
+    }
+    let printed = srcinfo::parse(&String::from_utf8_lossy(&finished.stdout))
+        .map_err(|e| deny(format!("isolated .SRCINFO: {e}")))?;
+    if printed.pkgbase != info.pkgbase || printed.version() != info.version() {
+        return Err(deny(format!(
+            "isolated makepkg .SRCINFO ({} {}) does not match the committed .SRCINFO ({} {})",
+            printed.pkgbase,
+            printed.version(),
+            info.pkgbase,
+            info.version()
+        )));
+    }
+    let _ = repo;
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+fn tempfile_dir() -> Result<std::path::PathBuf> {
+    let dir = std::env::temp_dir().join(format!(
+        "taur-pkgbuild-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+struct Done {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn wait_timeout(child: &mut std::process::Child, limit: std::time::Duration) -> Result<Done> {
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().map_err(Error::Io)? {
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            if let Some(mut o) = child.stdout.take() {
+                std::io::Read::read_to_end(&mut o, &mut stdout)?;
+            }
+            if let Some(mut e) = child.stderr.take() {
+                std::io::Read::read_to_end(&mut e, &mut stderr)?;
+            }
+            return Ok(Done {
+                status,
+                stdout,
+                stderr,
+            });
+        }
+        if start.elapsed() > limit {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(deny("isolated makepkg --printsrcinfo timed out"));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
 }
 
 impl Store {

@@ -10,7 +10,7 @@
   Meant for development and tests.
 
 `--mail-from` / `TAUR_MAIL_FROM` (default `TAUR <noreply@taur.weirdbrains.com>`) sets
-the sender; `--base-url` / `TAUR_BASE_URL` (default `https://taur.weirdbrains.com`) is
+the sender; `--base-url` / `TAUR_BASE_URL` (default `https://packages.taur.weirdbrains.com`) is
 used for links.
 
 ## Verification

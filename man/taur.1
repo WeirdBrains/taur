@@ -52,7 +52,7 @@ Data directory (database, git repos, outbox, SSH host key). Default: ~/.local/sh
 HTTP listen address (IP:PORT). Put a TLS reverse proxy in front. Default: 127.0.0.1:8080.
 .TP
 \fBTAUR_BASE_URL\fR
-Public base URL used in email links and clone URLs. Default: https://taur.weirdbrains.com.
+Public base URL used in email links and clone URLs. Default: https://packages.taur.weirdbrains.com.
 .TP
 \fBTAUR_SSH_BIND\fR
 Git\-over\-SSH listen address, e.g. 0.0.0.0:2222. Default: unset (SSH off).
@@ -74,5 +74,11 @@ Sender address for outgoing mail. Default: TAUR <noreply@taur.weirdbrains.com>.
 .TP
 \fBTAUR_ADMINS\fR
 Comma\-separated user names granted site admin at startup (grant only, never revokes). Default: unset.
+.TP
+\fBTAUR_RPC_RATE_LIMIT\fR
+RPC requests allowed per window for each TCP peer. Forwarded IP headers are ignored. Default: 0 (off).
+.TP
+\fBTAUR_RPC_RATE_WINDOW\fR
+Rate\-limit window in seconds. Default: 60.
 .SH VERSION
 v0.13.0

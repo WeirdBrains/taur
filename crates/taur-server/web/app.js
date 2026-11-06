@@ -105,7 +105,7 @@ async function pageSearch(params) {
             h("td", {}, link(`/packages/${enc(p.Name)}`, p.Name)),
             h("td", { class: p.OutOfDate ? "flagged" : "" }, p.Version),
             h("td", {}, p.NumVotes), h("td", {}, p.Popularity.toFixed(2)),
-            h("td", {}, p.Description || ""), h("td", {}, maintainerLink(p.Maintainer)))))));
+            h("td", {}, p.Description || ""), h("td", {}, maintainerLink(p.Maintainer))))))));
     } catch (e) { out.push(msg(e.message)); }
   } else if (q) {
     out.push(msg("Enter at least two characters."));

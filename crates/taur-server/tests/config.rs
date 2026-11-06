@@ -43,7 +43,7 @@ fn env_flags_validation_and_admins() {
     // defaults
     let c = serve(&[]).unwrap().validate().unwrap();
     assert_eq!(c.bind.to_string(), "127.0.0.1:8080");
-    assert_eq!(c.base_url, "https://taur.weirdbrains.com");
+    assert_eq!(c.base_url, "https://packages.taur.weirdbrains.com");
     assert_eq!(c.mail_from, "TAUR <noreply@taur.weirdbrains.com>");
     assert!(c.ssh_bind.is_none() && c.grpc_bind.is_none() && c.smtp_url.is_none());
     assert!(c.admins.is_empty() && c.ssh_clone_base.is_none());

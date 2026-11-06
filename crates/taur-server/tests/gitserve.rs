@@ -145,12 +145,13 @@ fn ssh_auth_and_git_serve_commands() {
         &[("SSH_ORIGINAL_COMMAND", "adopt hello-taur")],
     );
     assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.contains("adoption request"), "{stderr}");
     let store = Store::open(home.path()).unwrap();
     assert_eq!(
         store.info(&["hello-taur".into()]).unwrap()[0]
             .maintainer
             .as_deref(),
-        Some("bob")
+        None
     );
     drop(store);
 

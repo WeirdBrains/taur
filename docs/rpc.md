@@ -27,6 +27,12 @@ Errors: `No request type/data specified.`, `Incorrect request type specified.`,
 `Too many package results.` (> 5000), `Invalid version specified.`,
 `Please specify an API version.`, `Invalid callback name.`.
 
+`TAUR_RPC_RATE_LIMIT` (default `0`, off) counts RPC calls per TCP peer in a
+`TAUR_RPC_RATE_WINDOW` (default 60 seconds). Over the limit the response is HTTP 429 and
+`{"error":"Rate limit reached",...}`. The counter uses the socket address.
+`X-Forwarded-For` and similar headers are ignored. In-process calls with no socket share
+one bucket. Several server processes do not share counters.
+
 `callback` (query or form) returns JSONP: `text/javascript` body `/**/callback(…)`.
 The name must match aurweb's `^[A-Za-z0-9()_.]{1,128}$`.
 

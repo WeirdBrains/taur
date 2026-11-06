@@ -135,6 +135,82 @@ impl SrcInfo {
     }
 }
 
+/// Simple `key=value` lines in a PKGBUILD that disagree with `info`.
+///
+/// A line is simple when it has no `$`, backtick, or command substitution.
+/// `pkgname=(a b)` is read as a list. Anything else is left unchecked: this
+/// function does not run the PKGBUILD and cannot prove it matches `.SRCINFO`.
+pub fn literal_mismatches(info: &SrcInfo, pkgbuild: &str) -> Vec<String> {
+    let simple = simple_assignments(pkgbuild);
+    let mut out = Vec::new();
+    if let Some(values) = simple.get("pkgbase")
+        && values.iter().any(|v| v != &info.pkgbase)
+    {
+        out.push(format!(
+            "PKGBUILD pkgbase ({}) does not match .SRCINFO pkgbase {}",
+            values.join(" "),
+            info.pkgbase
+        ));
+    }
+    for key in ["pkgver", "pkgrel", "epoch"] {
+        let Some(want) = info.base.get(key).and_then(|v| v.first()) else {
+            continue;
+        };
+        if let Some(values) = simple.get(key)
+            && values.iter().any(|v| v != want)
+        {
+            out.push(format!(
+                "PKGBUILD {key} ({}) does not match .SRCINFO {key} {want}",
+                values.join(" ")
+            ));
+        }
+    }
+    if let Some(names) = simple.get("pkgname") {
+        let expected: Vec<&str> = info.packages.iter().map(|(n, _)| n.as_str()).collect();
+        if names.iter().map(String::as_str).collect::<Vec<_>>() != expected {
+            out.push(format!(
+                "PKGBUILD pkgname ({}) does not match .SRCINFO pkgnames ({})",
+                names.join(" "),
+                expected.join(" ")
+            ));
+        }
+    }
+    out
+}
+
+fn simple_assignments(pkgbuild: &str) -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut out = std::collections::BTreeMap::<String, Vec<String>>::new();
+    for raw in pkgbuild.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            continue;
+        }
+        if value.contains('$') || value.contains('`') {
+            continue;
+        }
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        let values = if let Some(inner) = value.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
+        {
+            inner
+                .split_whitespace()
+                .map(|s| s.trim_matches('"').trim_matches('\'').to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        } else {
+            vec![value.to_string()]
+        };
+        out.entry(key.to_string()).or_default().extend(values);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +243,22 @@ mod tests {
         assert!(parse("pkgbase = x\nnonsense\n").is_err());
         assert!(validate_name("-x").is_err());
         assert!(validate_name("a@b.c_d+e-f").is_ok());
+    }
+
+    #[test]
+    fn literal_pkgbuild_lines() {
+        let s = parse(FIXTURE).unwrap();
+        let pkg = include_str!("../../../tests/fixtures/hello-taur/PKGBUILD");
+        assert!(
+            literal_mismatches(&s, pkg).is_empty(),
+            "{:?}",
+            literal_mismatches(&s, pkg)
+        );
+        let bad = "pkgbase=other\npkgname=other\npkgver=9\npkgrel=1\n";
+        let m = literal_mismatches(&s, bad);
+        assert!(m.iter().any(|e| e.contains("pkgbase")), "{m:?}");
+        let dynamic = "pkgver=$pkgver\npkgname=(hello-taur hello-taur-docs)\n";
+        let m = literal_mismatches(&s, dynamic);
+        assert!(m.iter().all(|e| !e.contains("pkgver")), "{m:?}");
     }
 }

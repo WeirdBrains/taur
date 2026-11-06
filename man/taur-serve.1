@@ -4,7 +4,7 @@
 .SH NAME
 taur\-serve \- Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .SH SYNOPSIS
-\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-ssh\-public\-host\fR] [\fB\-\-ssh\-public\-port\fR] [\fB\-\-grpc\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-\-admins\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-ssh\-public\-host\fR] [\fB\-\-ssh\-public\-port\fR] [\fB\-\-grpc\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-\-admins\fR] [\fB\-\-rpc\-rate\-limit\fR] [\fB\-\-rpc\-rate\-window\-secs\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .SH OPTIONS
@@ -45,7 +45,7 @@ Serve the gRPC API on this address, plaintext HTTP/2 (unset: gRPC off)
 May also be specified with the \fBTAUR_GRPC_BIND\fR environment variable. 
 .RE
 .TP
-\fB\-\-base\-url\fR \fI<BASE_URL>\fR [default: https://taur.weirdbrains.com]
+\fB\-\-base\-url\fR \fI<BASE_URL>\fR [default: https://packages.taur.weirdbrains.com]
 Public base URL used in email links and clone URLs
 .RS
 May also be specified with the \fBTAUR_BASE_URL\fR environment variable. 
@@ -69,6 +69,18 @@ Comma\-separated user names granted site admin at startup (grant only; removing 
 May also be specified with the \fBTAUR_ADMINS\fR environment variable. 
 .RE
 .TP
+\fB\-\-rpc\-rate\-limit\fR \fI<RPC_RATE_LIMIT>\fR [default: 0]
+RPC requests allowed per window for each socket peer. 0 disables the limiter. The peer address is the TCP connection; forwarded headers are ignored
+.RS
+May also be specified with the \fBTAUR_RPC_RATE_LIMIT\fR environment variable. 
+.RE
+.TP
+\fB\-\-rpc\-rate\-window\-secs\fR \fI<RPC_RATE_WINDOW_SECS>\fR [default: 60]
+Window length in seconds for `TAUR_RPC_RATE_LIMIT`
+.RS
+May also be specified with the \fBTAUR_RPC_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help
 .SH ENVIRONMENT
@@ -81,7 +93,7 @@ Data directory (database, git repos, outbox, SSH host key). Default: ~/.local/sh
 HTTP listen address (IP:PORT). Put a TLS reverse proxy in front. Default: 127.0.0.1:8080.
 .TP
 \fBTAUR_BASE_URL\fR
-Public base URL used in email links and clone URLs. Default: https://taur.weirdbrains.com.
+Public base URL used in email links and clone URLs. Default: https://packages.taur.weirdbrains.com.
 .TP
 \fBTAUR_SSH_BIND\fR
 Git\-over\-SSH listen address, e.g. 0.0.0.0:2222. Default: unset (SSH off).
@@ -103,3 +115,9 @@ Sender address for outgoing mail. Default: TAUR <noreply@taur.weirdbrains.com>.
 .TP
 \fBTAUR_ADMINS\fR
 Comma\-separated user names granted site admin at startup (grant only, never revokes). Default: unset.
+.TP
+\fBTAUR_RPC_RATE_LIMIT\fR
+RPC requests allowed per window for each TCP peer. Forwarded IP headers are ignored. Default: 0 (off).
+.TP
+\fBTAUR_RPC_RATE_WINDOW\fR
+Rate\-limit window in seconds. Default: 60.

@@ -3,6 +3,13 @@
 use crate::{Action, Error, Result, Role, Store, accounts::validate_username, now};
 use rusqlite::{OptionalExtension, params};
 
+/// Result of adopt. `Request` means a site admin still has to accept it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Adopted {
+    Maintainer,
+    Request(i64),
+}
+
 impl Store {
     /// Create an organization; `actor` becomes its Owner.
     pub fn create_org(&self, actor: i64, name: &str) -> Result<i64> {
@@ -282,21 +289,94 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Give up maintainership (package becomes orphaned; org link is kept).
+    /// Give up a relationship with the package base.
+    ///
+    /// Matches aurweb's website, with TAUR's org link left in place:
+    /// the maintainer's disown promotes the lowest `user_id` co-maintainer
+    /// (aurweb promotes the lowest `Priority`); a co-maintainer drops only
+    /// themselves; a site admin who is neither orphans the base and clears
+    /// co-maintainers; an org member who can manage the package clears the
+    /// personal maintainer and keeps the org.
     pub fn disown(&self, actor: i64, pkgbase: i64) -> Result<()> {
-        if !self.can_manage_pkgbase(actor, pkgbase)? {
-            return Err(Error::Forbidden);
+        let maintainer: Option<i64> = self
+            .lock()
+            .query_row(
+                "SELECT maintainer_id FROM pkgbases WHERE id = ?1",
+                [pkgbase],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| Error::NotFound("package base".into()))?;
+        let comaints: Vec<i64> = {
+            let conn = self.lock();
+            let mut st = conn.prepare(
+                "SELECT user_id FROM co_maintainers WHERE pkgbase_id = ?1 ORDER BY user_id",
+            )?;
+            let rows = st.query_map([pkgbase], |r| r.get(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        let is_maintainer = maintainer == Some(actor);
+        let is_comaintainer = comaints.contains(&actor);
+        let is_admin = self.is_admin(actor)?;
+        if is_maintainer {
+            let next = comaints.into_iter().find(|id| *id != actor);
+            self.lock().execute(
+                "UPDATE pkgbases SET maintainer_id = ?1 WHERE id = ?2",
+                params![next, pkgbase],
+            )?;
+            if let Some(id) = next {
+                self.lock().execute(
+                    "DELETE FROM co_maintainers WHERE pkgbase_id = ?1 AND user_id = ?2",
+                    params![pkgbase, id],
+                )?;
+            }
+            return Ok(());
         }
-        self.lock().execute(
-            "UPDATE pkgbases SET maintainer_id = NULL WHERE id = ?1",
-            [pkgbase],
-        )?;
-        Ok(())
+        if is_comaintainer && !is_admin {
+            self.lock().execute(
+                "DELETE FROM co_maintainers WHERE pkgbase_id = ?1 AND user_id = ?2",
+                params![pkgbase, actor],
+            )?;
+            return Ok(());
+        }
+        if is_admin {
+            let conn = self.lock();
+            conn.execute(
+                "UPDATE pkgbases SET maintainer_id = NULL WHERE id = ?1",
+                [pkgbase],
+            )?;
+            conn.execute(
+                "DELETE FROM co_maintainers WHERE pkgbase_id = ?1",
+                [pkgbase],
+            )?;
+            return Ok(());
+        }
+        if self.can_manage_pkgbase(actor, pkgbase)? {
+            self.lock().execute(
+                "UPDATE pkgbases SET maintainer_id = NULL WHERE id = ?1",
+                [pkgbase],
+            )?;
+            return Ok(());
+        }
+        Err(Error::Forbidden)
     }
 
-    /// Adopt an orphaned package base. Org-owned packages can only be adopted by
-    /// members who may manage them.
-    pub fn adopt(&self, actor: i64, pkgbase: i64) -> Result<()> {
+    /// Website adopt. A site admin takes an orphan immediately (aurweb Package
+    /// Maintainer). An org member who can manage an org-owned orphan does too
+    /// (TAUR). Anyone else files an `adoption` request and does not become
+    /// maintainer until a site admin accepts it.
+    pub fn adopt(&self, actor: i64, pkgbase: i64) -> Result<Adopted> {
+        self.adopt_inner(actor, pkgbase, false)
+    }
+
+    /// SSH `adopt`, matching aurweb `git-serve`: an orphan always files a
+    /// request, including when the account is a site admin. An org-owned
+    /// orphan is still taken immediately by a member who can manage it.
+    pub fn adopt_ssh(&self, actor: i64, pkgbase: i64) -> Result<Adopted> {
+        self.adopt_inner(actor, pkgbase, true)
+    }
+
+    fn adopt_inner(&self, actor: i64, pkgbase: i64, ssh: bool) -> Result<Adopted> {
         let (maintainer, org): (Option<i64>, Option<i64>) = self
             .lock()
             .query_row(
@@ -309,9 +389,38 @@ impl Store {
         if maintainer.is_some() {
             return Err(Error::Conflict("package base is not orphaned".into()));
         }
-        if org.is_some() && !self.can_manage_pkgbase(actor, pkgbase)? {
-            return Err(Error::Forbidden);
+        let admin = self.is_admin(actor)?;
+        if org.is_some() {
+            if !self.can_manage_pkgbase(actor, pkgbase)? {
+                return Err(Error::Forbidden);
+            }
+            self.assign_maintainer(actor, pkgbase)?;
+            return Ok(Adopted::Maintainer);
         }
+        if admin && !ssh {
+            self.assign_maintainer(actor, pkgbase)?;
+            return Ok(Adopted::Maintainer);
+        }
+        let pending: i64 = self.lock().query_row(
+            "SELECT COUNT(*) FROM requests WHERE pkgbase_id = ?1 AND kind = 'adoption' AND status = 'pending'",
+            [pkgbase],
+            |r| r.get(0),
+        )?;
+        if pending > 0 {
+            return Err(Error::Conflict(
+                "there is already a pending adoption request".into(),
+            ));
+        }
+        let name: String =
+            self.lock()
+                .query_row("SELECT name FROM pkgbases WHERE id = ?1", [pkgbase], |r| {
+                    r.get(0)
+                })?;
+        let req = self.file_request(actor, &name, "adoption", None, "Autogenerated by TAUR.")?;
+        Ok(Adopted::Request(req.id))
+    }
+
+    fn assign_maintainer(&self, actor: i64, pkgbase: i64) -> Result<()> {
         self.lock().execute(
             "UPDATE pkgbases SET maintainer_id = ?1 WHERE id = ?2",
             params![actor, pkgbase],
