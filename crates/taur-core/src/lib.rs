@@ -9,6 +9,7 @@ pub mod keys;
 pub mod mail;
 pub mod orgs;
 pub mod push;
+pub mod ratelimit;
 pub mod repo;
 pub mod roles;
 pub mod rpc;
@@ -55,6 +56,7 @@ pub fn base_child_env() -> Vec<(String, std::ffi::OsString)> {
         .filter_map(|k| std::env::var_os(k).map(|v| (k.to_string(), v)))
         .collect()
 }
+pub use ratelimit::{LimitClass, RatePolicy};
 pub use roles::{Action, Role};
 pub use store::{PkgInfo, SearchBy, Store};
 

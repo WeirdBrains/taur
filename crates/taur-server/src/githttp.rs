@@ -136,6 +136,10 @@ pub async fn handle(
     cgi_response(&raw)
 }
 
+pub(crate) fn is_git_path(path: &str) -> bool {
+    git_target(path).is_some()
+}
+
 /// `(pkgbase, path inside the repo, PATH_INFO git http-backend expects)`.
 /// `/{pkgbase}.git/…` is the canonical URL. `/{pkgbase}/…` is accepted only for
 /// git endpoints so a bare package name is not treated as a repository.

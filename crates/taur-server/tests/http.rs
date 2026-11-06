@@ -87,7 +87,7 @@ async fn rpc_rate_limit_keys_on_the_socket_peer() {
     let s = Arc::new(Store::open(d.path()).unwrap());
     let fx = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hello-taur");
     s.import_dir(&fx, None).unwrap();
-    s.configure_rpc_rate_limit(1, 60);
+    s.configure_rate_limits(&policy(1, ""));
     let app = taur_server::app(s);
     let once = |ip: [u8; 4], forwarded: &str| {
         let mut req = Request::get("/rpc?v=5&type=info&arg[]=hello-taur")
@@ -100,12 +100,144 @@ async fn rpc_rate_limit_keys_on_the_socket_peer() {
     };
     let (st, _) = call(&app, once([10, 1, 0, 1], "1.2.3.4")).await;
     assert_eq!(st, StatusCode::OK);
-    let (st, b) = call(&app, once([10, 1, 0, 1], "8.8.8.8")).await;
+    let (st, b, retry) = call_retry(&app, once([10, 1, 0, 1], "8.8.8.8")).await;
     assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
     let v: Value = serde_json::from_slice(&b).unwrap();
     assert_eq!(v["error"], "Rate limit reached");
+    assert_eq!(v["type"], "error");
+    let retry: u64 = retry.unwrap().parse().unwrap();
+    assert!((1..=60).contains(&retry), "{retry}");
     let (st, _) = call(&app, once([10, 9, 0, 2], "1.2.3.4")).await;
     assert_eq!(st, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn trusted_proxy_chain_and_auth_and_git_limits() {
+    use axum::extract::ConnectInfo;
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+    let d = tempfile::tempdir().unwrap();
+    let s = Arc::new(Store::open(d.path()).unwrap());
+    s.configure_rate_limits(&policy(1, "10.0.0.0/8"));
+    let app = taur_server::app(s);
+    let hit = |ip: [u8; 4], forwarded: &str, path: &str| {
+        let mut req = Request::get(path)
+            .header("x-forwarded-for", forwarded)
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from((ip, 9))));
+        req
+    };
+    let (st, _) = call(
+        &app,
+        hit(
+            [10, 1, 0, 1],
+            "9.9.9.9, 203.0.113.5",
+            "/rpc?v=5&type=info&arg=x",
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = call(
+        &app,
+        hit(
+            [10, 1, 0, 1],
+            "9.9.9.9, 203.0.113.6",
+            "/rpc?v=5&type=info&arg=x",
+        ),
+    )
+    .await;
+    assert_eq!(
+        st,
+        StatusCode::OK,
+        "a different forwarded client has its own bucket"
+    );
+    let (st, _) = call(
+        &app,
+        hit(
+            [10, 1, 0, 1],
+            "1.1.1.1, 203.0.113.5",
+            "/rpc?v=5&type=info&arg=x",
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+    let (st, _) = call(
+        &app,
+        hit([198, 51, 100, 8], "203.0.113.5", "/rpc?v=5&type=info&arg=x"),
+    )
+    .await;
+    assert_eq!(
+        st,
+        StatusCode::OK,
+        "an untrusted peer ignores X-Forwarded-For"
+    );
+
+    let login = |ip: [u8; 4]| {
+        let mut req = Request::post("/api/v1/login")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"name":"nobody","password":"nope"}"#))
+            .unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from((ip, 9))));
+        req
+    };
+    let (st, _) = call(&app, login([203, 0, 113, 9])).await;
+    assert_ne!(st, StatusCode::TOO_MANY_REQUESTS);
+    let (st, b) = call(&app, login([203, 0, 113, 9])).await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+    let v: Value = serde_json::from_slice(&b).unwrap();
+    assert_eq!(v["error"], "Rate limit reached");
+
+    let git = |ip: [u8; 4]| {
+        let mut req = Request::get("/hello.git/info/refs?service=git-upload-pack")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from((ip, 9))));
+        req
+    };
+    let (st, _) = call(&app, git([203, 0, 113, 20])).await;
+    assert_ne!(st, StatusCode::TOO_MANY_REQUESTS);
+    let (st, b) = call(&app, git([203, 0, 113, 20])).await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+    assert!(b.starts_with(b"Rate limit reached"));
+}
+
+fn policy(max: u32, proxies: &str) -> taur_core::RatePolicy {
+    use std::time::Duration;
+    use taur_core::LimitClass;
+    use taur_core::ratelimit::ClassLimit;
+    let class = |class, max| ClassLimit {
+        class,
+        max,
+        window: Duration::from_secs(60),
+    };
+    taur_core::RatePolicy {
+        classes: vec![
+            class(LimitClass::Rpc, max),
+            class(LimitClass::Auth, max),
+            class(LimitClass::Git, max),
+        ],
+        trusted_proxies: taur_core::ratelimit::parse_trusted_proxies(proxies).unwrap(),
+        max_keys: 100,
+    }
+}
+
+async fn call_retry(
+    app: &axum::Router,
+    req: Request<Body>,
+) -> (StatusCode, Vec<u8>, Option<String>) {
+    let r = app.clone().oneshot(req).await.unwrap();
+    let retry = r
+        .headers()
+        .get(header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let status = r.status();
+    let b = r.into_body().collect().await.unwrap().to_bytes().to_vec();
+    (status, b, retry)
 }
 
 #[tokio::test]

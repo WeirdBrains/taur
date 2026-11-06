@@ -78,25 +78,42 @@ pub fn exec_for_sshd(store: &Store, user: &str) -> i32 {
 }
 
 /// Serve SSH on `listener` until it fails.
+///
+/// New TCP connections are counted against [`taur_core::LimitClass::Ssh`].
+/// Over the limit the socket is dropped. This does not cover `taur git-serve`
+/// started by OpenSSH, which is a separate process.
 pub async fn serve(
     listener: TcpListener,
     store: Arc<Store>,
     hook_bin: PathBuf,
 ) -> std::io::Result<()> {
-    let config = russh::server::Config {
+    let config = Arc::new(russh::server::Config {
         keys: vec![host_key(store.home())?],
         auth_rejection_time: std::time::Duration::from_secs(1),
         auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
         inactivity_timeout: Some(std::time::Duration::from_secs(600)),
         ..Default::default()
-    };
-    let mut server = GitSsh {
-        store,
-        hook_bin,
-        user: None,
-        stdin: None,
-    };
-    server.run_on_socket(Arc::new(config), &listener).await
+    });
+    loop {
+        let (stream, peer) = listener.accept().await?;
+        if store
+            .enforce_limit(taur_core::LimitClass::Ssh, Some(peer.ip()), None)
+            .is_err()
+        {
+            drop(stream);
+            continue;
+        }
+        let handler = GitSsh {
+            store: store.clone(),
+            hook_bin: hook_bin.clone(),
+            user: None,
+            stdin: None,
+        };
+        let config = config.clone();
+        tokio::spawn(async move {
+            let _ = russh::server::run_stream(config, stream, handler).await;
+        });
+    }
 }
 
 #[derive(Clone)]

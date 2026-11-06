@@ -27,11 +27,15 @@ Errors: `No request type/data specified.`, `Incorrect request type specified.`,
 `Too many package results.` (> 5000), `Invalid version specified.`,
 `Please specify an API version.`, `Invalid callback name.`.
 
-`TAUR_RPC_RATE_LIMIT` (default `0`, off) counts RPC calls per TCP peer in a
-`TAUR_RPC_RATE_WINDOW` (default 60 seconds). Over the limit the response is HTTP 429 and
-`{"error":"Rate limit reached",...}`. The counter uses the socket address.
-`X-Forwarded-For` and similar headers are ignored. In-process calls with no socket share
-one bucket. Several server processes do not share counters.
+`TAUR_RPC_RATE_LIMIT` (default `300`) counts RPC calls per client in a
+`TAUR_RPC_RATE_WINDOW` (default 60 seconds). `0` disables this class. Over the limit the
+response is HTTP 429, `Retry-After` is a number of seconds, and the body is
+`{"error":"Rate limit reached",...}`. The client is the TCP peer.
+`X-Forwarded-For` is used only when that peer is inside `TAUR_TRUSTED_PROXIES`; the
+right-most address that is not itself a trusted proxy is the client, so a value the
+browser forged does not win. Other classes (auth, git, API, dumps, MCP, gRPC, embedded
+SSH) have their own limits. Web pages are not limited. Counters are per process. A yay
+or paru search is one or a few RPC calls and stays inside the default.
 
 `callback` (query or form) returns JSONP: `text/javascript` body `/**/callback(…)`.
 The name must match aurweb's `^[A-Za-z0-9()_.]{1,128}$`.

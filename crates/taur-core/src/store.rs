@@ -1,13 +1,14 @@
 //! SQLite-backed storage (bundled SQLite via rusqlite).
 
+use crate::ratelimit::{LimitClass, Limiter, RatePolicy};
 use crate::srcinfo::{self, SrcInfo};
 use crate::{Error, Result, now, repo};
 use rusqlite::{Connection, OptionalExtension, Row, ToSql, params};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Relation kinds stored per package, in `.SRCINFO` key spelling.
 pub const RELATION_KINDS: [&str; 9] = [
@@ -272,13 +273,6 @@ fn strings(conn: &Connection, sql: &str, arg: i64) -> Result<Vec<String>> {
     Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
 }
 
-struct RpcWindow {
-    /// `0` disables the limiter.
-    max: u32,
-    window: Duration,
-    hits: HashMap<String, Vec<Instant>>,
-}
-
 pub struct Store {
     conn: Mutex<Connection>,
     home: PathBuf,
@@ -286,7 +280,7 @@ pub struct Store {
     base_url: std::sync::RwLock<String>,
     hook_env: std::sync::RwLock<Vec<(String, String)>>,
     ssh_clone_base: std::sync::RwLock<Option<String>>,
-    rpc_limit: Mutex<RpcWindow>,
+    rate: Mutex<Limiter>,
 }
 
 impl Store {
@@ -331,44 +325,39 @@ impl Store {
             base_url: std::sync::RwLock::new(crate::DEFAULT_BASE_URL.to_string()),
             hook_env: std::sync::RwLock::new(Vec::new()),
             ssh_clone_base: std::sync::RwLock::new(None),
-            rpc_limit: Mutex::new(RpcWindow {
-                max: 0,
-                window: Duration::from_secs(60),
-                hits: HashMap::new(),
-            }),
+            rate: Mutex::new(Limiter::default()),
         })
     }
 
-    /// RPC requests allowed per `window_secs` for each socket peer.
-    /// `max == 0` disables the limiter. The key is the connection's peer address;
-    /// `X-Forwarded-For` is never read. `peer == None` (an in-process call with no
-    /// socket) shares one bucket named `peerless`.
-    pub fn configure_rpc_rate_limit(&self, max: u32, window_secs: u64) {
-        let mut g = self.rpc_limit.lock().unwrap_or_else(|e| e.into_inner());
-        g.max = max;
-        g.window = Duration::from_secs(window_secs.max(1));
-        g.hits.clear();
+    /// Replace the in-memory limits. `Store::open` starts with every class disabled
+    /// so library callers and tests are not limited until a server installs a policy.
+    pub fn configure_rate_limits(&self, policy: &RatePolicy) {
+        *self.rate.lock().unwrap_or_else(|e| e.into_inner()) = Limiter::from_policy(policy);
     }
 
-    /// Record one RPC call. `Err(RateLimited)` when the peer is over the window.
-    pub fn enforce_rpc_limit(&self, peer: Option<IpAddr>) -> Result<()> {
-        let mut g = self.rpc_limit.lock().unwrap_or_else(|e| e.into_inner());
-        if g.max == 0 {
-            return Ok(());
-        }
-        let key = peer
-            .map(|ip| ip.to_string())
-            .unwrap_or_else(|| "peerless".into());
-        let now = Instant::now();
-        let window = g.window;
-        let max = g.max;
-        let hits = g.hits.entry(key).or_default();
-        hits.retain(|t| now.saturating_duration_since(*t) < window);
-        if hits.len() as u32 >= max {
-            return Err(Error::RateLimited);
-        }
-        hits.push(now);
-        Ok(())
+    /// Count one request. `peer == None` (no TCP socket) shares a single bucket for
+    /// that class. `forwarded` is an `X-Forwarded-For` value and is used only when
+    /// `peer` is in the policy's trusted proxy list.
+    pub fn enforce_limit(
+        &self,
+        class: LimitClass,
+        peer: Option<IpAddr>,
+        forwarded: Option<&str>,
+    ) -> Result<()> {
+        self.enforce_limit_at(class, peer, forwarded, Instant::now())
+    }
+
+    pub fn enforce_limit_at(
+        &self,
+        class: LimitClass,
+        peer: Option<IpAddr>,
+        forwarded: Option<&str>,
+        now: Instant,
+    ) -> Result<()> {
+        self.rate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .enforce(class, peer, forwarded, now)
     }
 
     /// Replace the mailer (default: file outbox at `<home>/outbox`).

@@ -1,6 +1,6 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH taur 1  "taur 1.0.0" 
+.TH taur 1  "taur 1.1.0" 
 .SH NAME
 taur \- TAUR: an AUR\-compatible package server
 .SH SYNOPSIS
@@ -49,10 +49,37 @@ Command\-line flags take precedence over environment variables, which take prece
 Data directory (database, git repos, outbox, SSH host key). Default: ~/.local/share/taur.
 .TP
 \fBTAUR_BIND\fR
-HTTP listen address (IP:PORT). Put a TLS reverse proxy in front. Default: 127.0.0.1:8080.
+Listen address (IP:PORT). Plaintext HTTP when TAUR_TLS=off; HTTPS when TAUR_TLS=acme. Default: 127.0.0.1:8080.
+.TP
+\fBTAUR_TLS\fR
+off (plaintext HTTP) or acme (automatic HTTPS). off is for local use or a TLS proxy. Default: off.
+.TP
+\fBTAUR_DOMAIN\fR
+Comma\-separated DNS names. Required for TAUR_TLS=acme. First name is the default public host. Default: unset.
 .TP
 \fBTAUR_BASE_URL\fR
-Public base URL used in email links and clone URLs. Default: https://packages.taur.weirdbrains.com.
+Public base URL. Unset with no domain: http://<listen>. Unset with a domain and TLS off: https://<first\-domain>. Unset with acme: https://<first\-domain>[:bind\-port]. Default: derived.
+.TP
+\fBTAUR_ACME_DIRECTORY\fR
+ACME directory URL. Do not combine with TAUR_ACME_STAGING. Default: Let's Encrypt production.
+.TP
+\fBTAUR_ACME_STAGING\fR
+true uses the Let's Encrypt staging directory. Those certificates are not publicly trusted. Default: false.
+.TP
+\fBTAUR_ACME_CONTACT\fR
+mailto: contact for the ACME account. No default. Default: required for acme.
+.TP
+\fBTAUR_ACME_ACCEPT_TERMS\fR
+Must be the word yes after reading the CA agreement. Anything else refuses to register or request a certificate. Default: unset.
+.TP
+\fBTAUR_ACME_HTTP_BIND\fR
+HTTP\-01 listen address. The CA must reach TCP port 80 of each domain. Default: required for acme.
+.TP
+\fBTAUR_ACME_CACHE\fR
+Directory for the ACME account key and certificates (mode 0700; keys mode 0600). Default: <home>/acme.
+.TP
+\fBTAUR_ACME_RENEW_BEFORE\fR
+Days before expiry to renew. The previous certificate is kept if renewal fails. Default: 30.
 .TP
 \fBTAUR_SSH_BIND\fR
 Git\-over\-SSH listen address, e.g. 0.0.0.0:2222. Default: unset (SSH off).
@@ -64,7 +91,7 @@ Host shown in SSH clone URLs. Default: host of TAUR_BASE_URL.
 Port shown in SSH clone URLs (e.g. when NAT maps 22 to 2222). Default: port of TAUR_SSH_BIND.
 .TP
 \fBTAUR_GRPC_BIND\fR
-gRPC listen address (plaintext HTTP/2), e.g. 127.0.0.1:50051. Default: unset (gRPC off).
+gRPC listen address. Plaintext HTTP/2 when TAUR_TLS=off. With TAUR_TLS=acme, TLS using the same certificate. Default: unset (gRPC off).
 .TP
 \fBTAUR_SMTP_URL\fR
 SMTP URL smtp:// or smtps://user:pass@host[:port]. Secret; never logged. Default: unset (mail to <home>/outbox).
@@ -76,9 +103,57 @@ Sender address for outgoing mail. Default: TAUR <noreply@taur.weirdbrains.com>.
 Comma\-separated user names granted site admin at startup (grant only, never revokes). Default: unset.
 .TP
 \fBTAUR_RPC_RATE_LIMIT\fR
-RPC requests allowed per window for each TCP peer. Forwarded IP headers are ignored. Default: 0 (off).
+AUR RPC requests per window per client. 0 disables this class. Default: 300.
 .TP
 \fBTAUR_RPC_RATE_WINDOW\fR
-Rate\-limit window in seconds. Default: 60.
+Window in seconds for TAUR_RPC_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_AUTH_RATE_LIMIT\fR
+Login, registration, verification and password\-reset requests per window. 0 disables. Default: 20.
+.TP
+\fBTAUR_AUTH_RATE_WINDOW\fR
+Window in seconds for TAUR_AUTH_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_GIT_RATE_LIMIT\fR
+Git smart HTTP requests per window. 0 disables. Default: 60.
+.TP
+\fBTAUR_GIT_RATE_WINDOW\fR
+Window in seconds for TAUR_GIT_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_API_RATE_LIMIT\fR
+JSON API requests per window, other than auth and /api/v1/server. 0 disables. Default: 120.
+.TP
+\fBTAUR_API_RATE_WINDOW\fR
+Window in seconds for TAUR_API_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_DUMP_RATE_LIMIT\fR
+Snapshot and metadata\-dump requests per window. 0 disables. Default: 12.
+.TP
+\fBTAUR_DUMP_RATE_WINDOW\fR
+Window in seconds for TAUR_DUMP_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_MCP_RATE_LIMIT\fR
+MCP requests per window. 0 disables. Default: 60.
+.TP
+\fBTAUR_MCP_RATE_WINDOW\fR
+Window in seconds for TAUR_MCP_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_GRPC_RATE_LIMIT\fR
+gRPC requests per window, other than account auth. 0 disables. Default: 300.
+.TP
+\fBTAUR_GRPC_RATE_WINDOW\fR
+Window in seconds for TAUR_GRPC_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_SSH_RATE_LIMIT\fR
+New embedded SSH connections per window. 0 disables. OpenSSH git\-serve is not covered. Default: 30.
+.TP
+\fBTAUR_SSH_RATE_WINDOW\fR
+Window in seconds for TAUR_SSH_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_TRUSTED_PROXIES\fR
+Comma\-separated CIDRs allowed to supply X\-Forwarded\-For. Empty ignores that header. A /0 prefix is rejected. Default: unset.
+.TP
+\fBTAUR_RATE_MAX_KEYS\fR
+Maximum distinct client keys remembered per limit class. Default: 8192.
 .SH VERSION
-v1.0.0
+v1.1.0

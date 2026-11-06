@@ -1,27 +1,24 @@
 //! `taur serve` settings: env parsing, flag precedence, validation, admin bootstrap.
 //! One test per binary section because it mutates the process environment.
 
-use clap::Parser;
-use taur_server::cli::{Cli, Cmd, ENV_VARS, ServeArgs, bootstrap_admins};
+use clap::{CommandFactory, Parser};
+use taur_core::LimitClass;
+use taur_server::cli::{Cli, Cmd, ENV_VARS, ServeArgs, TlsMode, bootstrap_admins};
 
-const VARS: &[&str] = &[
-    "TAUR_HOME",
-    "TAUR_BIND",
-    "TAUR_BASE_URL",
-    "TAUR_SSH_BIND",
-    "TAUR_SSH_PUBLIC_HOST",
-    "TAUR_SSH_PUBLIC_PORT",
-    "TAUR_GRPC_BIND",
-    "TAUR_SMTP_URL",
-    "TAUR_MAIL_FROM",
-    "TAUR_ADMINS",
-];
+fn limit(c: &taur_server::cli::ServeConfig, class: LimitClass) -> u32 {
+    c.rate
+        .classes
+        .iter()
+        .find(|c| c.class == class)
+        .unwrap()
+        .max
+}
 
 fn serve(args: &[&str]) -> Result<ServeArgs, clap::Error> {
     let mut v = vec!["taur", "serve"];
     v.extend_from_slice(args);
     match Cli::try_parse_from(v)?.cmd {
-        Cmd::Serve(a) => Ok(a),
+        Cmd::Serve(a) => Ok(*a),
         _ => unreachable!(),
     }
 }
@@ -32,7 +29,7 @@ fn set(k: &str, v: &str) {
 }
 
 fn clear() {
-    for k in VARS {
+    for (k, _, _) in ENV_VARS {
         unsafe { std::env::remove_var(k) }
     }
 }
@@ -43,10 +40,15 @@ fn env_flags_validation_and_admins() {
     // defaults
     let c = serve(&[]).unwrap().validate().unwrap();
     assert_eq!(c.bind.to_string(), "127.0.0.1:8080");
-    assert_eq!(c.base_url, "https://packages.taur.weirdbrains.com");
+    assert_eq!(c.base_url, "http://127.0.0.1:8080");
+    assert_eq!(c.tls, TlsMode::Off);
+    assert!(c.domains.is_empty() && c.acme.is_none());
+    assert_eq!(limit(&c, LimitClass::Rpc), 300);
+    assert_eq!(limit(&c, LimitClass::Auth), 20);
     assert_eq!(c.mail_from, "TAUR <noreply@taur.weirdbrains.com>");
     assert!(c.ssh_bind.is_none() && c.grpc_bind.is_none() && c.smtp_url.is_none());
     assert!(c.admins.is_empty() && c.ssh_clone_base.is_none());
+    assert!(c.rate.trusted_proxies.is_empty());
 
     // everything from the environment
     set("TAUR_BIND", "0.0.0.0:9000");
@@ -132,6 +134,146 @@ fn env_flags_validation_and_admins() {
     assert!(bad("TAUR_MAIL_FROM", "nobody").contains("TAUR_MAIL_FROM"));
     assert!(bad("TAUR_ADMINS", "al ice").contains("TAUR_ADMINS"));
     assert!(bad("TAUR_SSH_PUBLIC_PORT", "99999").contains("ssh-public-port"));
+    assert!(bad("TAUR_TRUSTED_PROXIES", "0.0.0.0/0").contains("TAUR_TRUSTED_PROXIES"));
+    assert!(bad("TAUR_TRUSTED_PROXIES", "not-a-cidr").contains("TAUR_TRUSTED_PROXIES"));
+    assert!(bad("TAUR_DOMAIN", "https://pkg.example.com").contains("TAUR_DOMAIN"));
+    assert!(bad("TAUR_DOMAIN", "*.example.com").contains("TAUR_DOMAIN"));
+    assert!(bad("TAUR_TLS", "maybe").contains("TAUR_TLS"));
+
+    // Automatic HTTPS requires a domain, a contact, and an explicit "yes".
+    clear();
+    set("TAUR_TLS", "acme");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("TAUR_DOMAIN"), "{e}");
+    set("TAUR_DOMAIN", "localhost");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("TAUR_DOMAIN"), "{e}");
+    set(
+        "TAUR_DOMAIN",
+        "pkg.example.com, www.example.com,pkg.example.com",
+    );
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("TAUR_ACME_ACCEPT_TERMS"), "{e}");
+    assert!(!e.contains("BEGIN "), "{e}");
+    set("TAUR_ACME_ACCEPT_TERMS", "yes");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("TAUR_ACME_CONTACT"), "{e}");
+    set("TAUR_ACME_CONTACT", "admin@example.com");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("mailto:"), "{e}");
+    set("TAUR_ACME_CONTACT", "mailto:admin@example.com");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("TAUR_ACME_HTTP_BIND"), "{e}");
+    set("TAUR_ACME_HTTP_BIND", "127.0.0.1:80");
+    set("TAUR_BIND", "0.0.0.0:443");
+    let c = serve(&[]).unwrap().validate().unwrap();
+    assert_eq!(c.domains, vec!["pkg.example.com", "www.example.com"]);
+    assert_eq!(c.base_url, "https://pkg.example.com");
+    assert_eq!(
+        c.ssh_clone_base, None,
+        "ssh stays off until TAUR_SSH_BIND is set"
+    );
+    let acme = c.acme.unwrap();
+    assert!(!acme.staging);
+    assert!(acme.directory.contains("acme-v02.api.letsencrypt.org"));
+    assert_eq!(acme.contact, "mailto:admin@example.com");
+
+    // Explicit base URL must name a certificate host and the HTTPS listen port.
+    set("TAUR_BASE_URL", "http://pkg.example.com");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("https"), "{e}");
+    set("TAUR_BASE_URL", "https://other.example.com");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("other.example.com"), "{e}");
+    set("TAUR_BASE_URL", "https://www.example.com:8443");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("8443"), "{e}");
+    set("TAUR_BIND", "0.0.0.0:8443");
+    let c = serve(&[]).unwrap().validate().unwrap();
+    assert_eq!(c.base_url, "https://www.example.com:8443");
+    set("TAUR_SSH_BIND", "0.0.0.0:22");
+    let c = serve(&[]).unwrap().validate().unwrap();
+    assert_eq!(
+        c.ssh_clone_base.as_deref(),
+        Some("ssh://taur@www.example.com")
+    );
+
+    // Staging is a directory choice, not a second source of truth.
+    clear();
+    set("TAUR_TLS", "acme");
+    set("TAUR_DOMAIN", "pkg.example.com");
+    set("TAUR_ACME_ACCEPT_TERMS", "yes");
+    set("TAUR_ACME_CONTACT", "mailto:admin@example.com");
+    set("TAUR_ACME_HTTP_BIND", "0.0.0.0:80");
+    set("TAUR_ACME_STAGING", "true");
+    set("TAUR_ACME_DIRECTORY", "https://acme.example.test/directory");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(
+        e.contains("TAUR_ACME_DIRECTORY") && e.contains("TAUR_ACME_STAGING"),
+        "{e}"
+    );
+    clear();
+    set("TAUR_TLS", "acme");
+    set("TAUR_DOMAIN", "pkg.example.com");
+    set("TAUR_ACME_ACCEPT_TERMS", "yes");
+    set("TAUR_ACME_CONTACT", "mailto:admin@example.com");
+    set("TAUR_ACME_HTTP_BIND", "0.0.0.0:80");
+    set("TAUR_ACME_STAGING", "true");
+    set("TAUR_BIND", "0.0.0.0:443");
+    let c = serve(&[]).unwrap().validate().unwrap();
+    assert!(c.acme.unwrap().staging);
+    assert!(c.base_url == "https://pkg.example.com");
+
+    // Reverse-proxy HTTP: domain advertises https on 443 and does not follow the plaintext port.
+    clear();
+    set("TAUR_TLS", "off");
+    set("TAUR_DOMAIN", "pkg.example.com");
+    set("TAUR_BIND", "127.0.0.1:8080");
+    let c = serve(&[]).unwrap().validate().unwrap();
+    assert_eq!(c.tls, TlsMode::Off);
+    assert!(c.acme.is_none());
+    assert_eq!(c.base_url, "https://pkg.example.com");
+    set("TAUR_BASE_URL", "https://pkg.example.com:8443");
+    let c = serve(&[]).unwrap().validate().unwrap();
+    assert_eq!(c.base_url, "https://pkg.example.com:8443");
+    set("TAUR_BASE_URL", "http://127.0.0.1:8080");
+    let e = serve(&[]).unwrap().validate().unwrap_err();
+    assert!(e.contains("127.0.0.1"), "{e}");
+
+    // Flag overrides the environment, including the derived URL.
+    clear();
+    set("TAUR_DOMAIN", "pkg.example.com");
+    set("TAUR_BASE_URL", "https://pkg.example.com");
+    let c = serve(&["--base-url", "http://127.0.0.1:9", "--bind", "127.0.0.1:9"])
+        .unwrap()
+        .validate()
+        .unwrap_err();
+    assert!(c.contains("127.0.0.1"), "{c}");
+    unsafe { std::env::remove_var("TAUR_DOMAIN") };
+    let c = serve(&[
+        "--tls",
+        "off",
+        "--bind",
+        "127.0.0.1:9",
+        "--base-url",
+        "http://127.0.0.1:9",
+    ])
+    .unwrap()
+    .validate()
+    .unwrap();
+    assert_eq!(c.base_url, "http://127.0.0.1:9");
+    assert!(c.domains.is_empty());
+
+    let mut cmd = <Cli as CommandFactory>::command();
+    let help = cmd
+        .find_subcommand_mut("serve")
+        .unwrap()
+        .render_long_help()
+        .to_string();
+    assert!(help.contains("--domain"), "{help}");
+    assert!(help.contains("TAUR_DOMAIN"), "{help}");
+    assert!(help.contains("--tls"), "{help}");
+    assert!(help.contains("TAUR_ACME_ACCEPT_TERMS"), "{help}");
 
     // admin bootstrap: grant-only, idempotent, warns about unknown users
     let d = tempfile::tempdir().unwrap();

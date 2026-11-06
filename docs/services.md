@@ -5,7 +5,8 @@ from the environment variables in [configuration.md](configuration.md), read fro
 env file (start from `packaging/taur.env.example` or `.env.example`). The env file may
 contain `TAUR_SMTP_URL` with a password, so keep it readable only by root and the
 service account. Prerequisites everywhere: the `taur` binary and `git` on `PATH`
-(git's `http-backend` serves clones and pushes). TLS goes in a reverse proxy in front
+(git's `http-backend` serves clones and pushes). TLS is either `TAUR_TLS=acme` on this
+process or a reverse proxy in front of plaintext `TAUR_TLS=off`. See [tls.md](tls.md).
 of `TAUR_BIND` (and `TAUR_GRPC_BIND` if public).
 
 Values containing spaces or `<`/`>` (e.g. `TAUR_MAIL_FROM`) must be double-quoted so

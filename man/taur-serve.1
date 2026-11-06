@@ -4,13 +4,13 @@
 .SH NAME
 taur\-serve \- Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .SH SYNOPSIS
-\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-ssh\-public\-host\fR] [\fB\-\-ssh\-public\-port\fR] [\fB\-\-grpc\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-\-admins\fR] [\fB\-\-rpc\-rate\-limit\fR] [\fB\-\-rpc\-rate\-window\-secs\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-tls\fR] [\fB\-\-domain\fR] [\fB\-\-acme\-directory\fR] [\fB\-\-acme\-staging\fR] [\fB\-\-acme\-contact\fR] [\fB\-\-acme\-accept\-terms\fR] [\fB\-\-acme\-http\-bind\fR] [\fB\-\-acme\-cache\fR] [\fB\-\-acme\-renew\-before\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-ssh\-public\-host\fR] [\fB\-\-ssh\-public\-port\fR] [\fB\-\-grpc\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-\-admins\fR] [\fB\-\-rpc\-rate\-limit\fR] [\fB\-\-rpc\-rate\-window\fR] [\fB\-\-auth\-rate\-limit\fR] [\fB\-\-auth\-rate\-window\fR] [\fB\-\-git\-rate\-limit\fR] [\fB\-\-git\-rate\-window\fR] [\fB\-\-api\-rate\-limit\fR] [\fB\-\-api\-rate\-window\fR] [\fB\-\-dump\-rate\-limit\fR] [\fB\-\-dump\-rate\-window\fR] [\fB\-\-mcp\-rate\-limit\fR] [\fB\-\-mcp\-rate\-window\fR] [\fB\-\-grpc\-rate\-limit\fR] [\fB\-\-grpc\-rate\-window\fR] [\fB\-\-ssh\-rate\-limit\fR] [\fB\-\-ssh\-rate\-window\fR] [\fB\-\-trusted\-proxies\fR] [\fB\-\-rate\-max\-keys\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .SH OPTIONS
 .TP
 \fB\-\-bind\fR \fI<BIND>\fR [default: 127.0.0.1:8080]
-HTTP listen address
+Listen address. With `\-\-tls off` this is plaintext HTTP. With `\-\-tls acme` this is HTTPS and is never downgraded to HTTP
 .RS
 May also be specified with the \fBTAUR_BIND\fR environment variable. 
 .RE
@@ -19,6 +19,60 @@ May also be specified with the \fBTAUR_BIND\fR environment variable.
 Data directory (default: ~/.local/share/taur)
 .RS
 May also be specified with the \fBTAUR_HOME\fR environment variable. 
+.RE
+.TP
+\fB\-\-tls\fR \fI<TLS>\fR [default: off]
+`off` (plaintext HTTP; local use or a TLS proxy) or `acme` (automatic HTTPS)
+.RS
+May also be specified with the \fBTAUR_TLS\fR environment variable. 
+.RE
+.TP
+\fB\-\-domain\fR \fI<DOMAINS>\fR
+Public DNS name. Repeat the flag, or separate names with commas. Required for `\-\-tls acme`. The first name is the default public host. Not a default hostname
+.RS
+May also be specified with the \fBTAUR_DOMAIN\fR environment variable. 
+.RE
+.TP
+\fB\-\-acme\-directory\fR \fI<ACME_DIRECTORY>\fR
+ACME directory URL. Unset uses Let\*(Aqs Encrypt production, or staging with `\-\-acme\-staging`. Do not set both
+.RS
+May also be specified with the \fBTAUR_ACME_DIRECTORY\fR environment variable. 
+.RE
+.TP
+\fB\-\-acme\-staging\fR
+Use the Let\*(Aqs Encrypt staging directory. Those certificates are not publicly trusted
+.RS
+May also be specified with the \fBTAUR_ACME_STAGING\fR environment variable. 
+.RE
+.TP
+\fB\-\-acme\-contact\fR \fI<ACME_CONTACT>\fR
+`mailto:` contact for the ACME account. Required for automatic HTTPS. No default
+.RS
+May also be specified with the \fBTAUR_ACME_CONTACT\fR environment variable. 
+.RE
+.TP
+\fB\-\-acme\-accept\-terms\fR \fI<ACME_ACCEPT_TERMS>\fR
+Set to `yes` only after reading the CA subscriber agreement
+.RS
+May also be specified with the \fBTAUR_ACME_ACCEPT_TERMS\fR environment variable. 
+.RE
+.TP
+\fB\-\-acme\-http\-bind\fR \fI<ACME_HTTP_BIND>\fR
+Address that receives ACME HTTP\-01 on port 80 of each domain. Required for `\-\-tls acme`
+.RS
+May also be specified with the \fBTAUR_ACME_HTTP_BIND\fR environment variable. 
+.RE
+.TP
+\fB\-\-acme\-cache\fR \fI<ACME_CACHE>\fR
+Directory for the ACME account key and certificates (default: `<home>/acme`)
+.RS
+May also be specified with the \fBTAUR_ACME_CACHE\fR environment variable. 
+.RE
+.TP
+\fB\-\-acme\-renew\-before\fR \fI<ACME_RENEW_BEFORE_DAYS>\fR [default: 30]
+Renew this many days before the certificate expires
+.RS
+May also be specified with the \fBTAUR_ACME_RENEW_BEFORE\fR environment variable. 
 .RE
 .TP
 \fB\-\-ssh\-bind\fR \fI<SSH_BIND>\fR
@@ -40,13 +94,13 @@ May also be specified with the \fBTAUR_SSH_PUBLIC_PORT\fR environment variable.
 .RE
 .TP
 \fB\-\-grpc\-bind\fR \fI<GRPC_BIND>\fR
-Serve the gRPC API on this address, plaintext HTTP/2 (unset: gRPC off)
+gRPC listen address (unset: gRPC off). Plaintext HTTP/2 unless `\-\-tls acme`, which uses the same certificate
 .RS
 May also be specified with the \fBTAUR_GRPC_BIND\fR environment variable. 
 .RE
 .TP
-\fB\-\-base\-url\fR \fI<BASE_URL>\fR [default: https://packages.taur.weirdbrains.com]
-Public base URL used in email links and clone URLs
+\fB\-\-base\-url\fR \fI<BASE_URL>\fR
+Public base URL used in email links and clone URLs. Unset: derived from `\-\-domain` or, with no domain, from the listen address
 .RS
 May also be specified with the \fBTAUR_BASE_URL\fR environment variable. 
 .RE
@@ -69,16 +123,112 @@ Comma\-separated user names granted site admin at startup (grant only; removing 
 May also be specified with the \fBTAUR_ADMINS\fR environment variable. 
 .RE
 .TP
-\fB\-\-rpc\-rate\-limit\fR \fI<RPC_RATE_LIMIT>\fR [default: 0]
-RPC requests allowed per window for each socket peer. 0 disables the limiter. The peer address is the TCP connection; forwarded headers are ignored
+\fB\-\-rpc\-rate\-limit\fR \fI<RPC_RATE_LIMIT>\fR [default: 300]
+AUR RPC requests allowed per window for each client. 0 disables this class
 .RS
 May also be specified with the \fBTAUR_RPC_RATE_LIMIT\fR environment variable. 
 .RE
 .TP
-\fB\-\-rpc\-rate\-window\-secs\fR \fI<RPC_RATE_WINDOW_SECS>\fR [default: 60]
-Window length in seconds for `TAUR_RPC_RATE_LIMIT`
+\fB\-\-rpc\-rate\-window\fR \fI<RPC_RATE_WINDOW_SECS>\fR [default: 60]
+Window length in seconds for `\-\-rpc\-rate\-limit`
 .RS
 May also be specified with the \fBTAUR_RPC_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
+\fB\-\-auth\-rate\-limit\fR \fI<AUTH_RATE_LIMIT>\fR [default: 20]
+Login, registration, verification and password\-reset requests per window. 0 disables
+.RS
+May also be specified with the \fBTAUR_AUTH_RATE_LIMIT\fR environment variable. 
+.RE
+.TP
+\fB\-\-auth\-rate\-window\fR \fI<AUTH_RATE_WINDOW_SECS>\fR [default: 60]
+
+.RS
+May also be specified with the \fBTAUR_AUTH_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
+\fB\-\-git\-rate\-limit\fR \fI<GIT_RATE_LIMIT>\fR [default: 60]
+Git smart HTTP requests per window. 0 disables
+.RS
+May also be specified with the \fBTAUR_GIT_RATE_LIMIT\fR environment variable. 
+.RE
+.TP
+\fB\-\-git\-rate\-window\fR \fI<GIT_RATE_WINDOW_SECS>\fR [default: 60]
+
+.RS
+May also be specified with the \fBTAUR_GIT_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
+\fB\-\-api\-rate\-limit\fR \fI<API_RATE_LIMIT>\fR [default: 120]
+JSON API requests per window, other than auth and `/api/v1/server`. 0 disables
+.RS
+May also be specified with the \fBTAUR_API_RATE_LIMIT\fR environment variable. 
+.RE
+.TP
+\fB\-\-api\-rate\-window\fR \fI<API_RATE_WINDOW_SECS>\fR [default: 60]
+
+.RS
+May also be specified with the \fBTAUR_API_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
+\fB\-\-dump\-rate\-limit\fR \fI<DUMP_RATE_LIMIT>\fR [default: 12]
+Snapshot and metadata\-dump requests per window. 0 disables
+.RS
+May also be specified with the \fBTAUR_DUMP_RATE_LIMIT\fR environment variable. 
+.RE
+.TP
+\fB\-\-dump\-rate\-window\fR \fI<DUMP_RATE_WINDOW_SECS>\fR [default: 60]
+
+.RS
+May also be specified with the \fBTAUR_DUMP_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
+\fB\-\-mcp\-rate\-limit\fR \fI<MCP_RATE_LIMIT>\fR [default: 60]
+MCP requests per window. 0 disables
+.RS
+May also be specified with the \fBTAUR_MCP_RATE_LIMIT\fR environment variable. 
+.RE
+.TP
+\fB\-\-mcp\-rate\-window\fR \fI<MCP_RATE_WINDOW_SECS>\fR [default: 60]
+
+.RS
+May also be specified with the \fBTAUR_MCP_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
+\fB\-\-grpc\-rate\-limit\fR \fI<GRPC_RATE_LIMIT>\fR [default: 300]
+gRPC requests per window, other than account auth (those use the auth limit). 0 disables
+.RS
+May also be specified with the \fBTAUR_GRPC_RATE_LIMIT\fR environment variable. 
+.RE
+.TP
+\fB\-\-grpc\-rate\-window\fR \fI<GRPC_RATE_WINDOW_SECS>\fR [default: 60]
+
+.RS
+May also be specified with the \fBTAUR_GRPC_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
+\fB\-\-ssh\-rate\-limit\fR \fI<SSH_RATE_LIMIT>\fR [default: 30]
+New embedded SSH connections per window. 0 disables. OpenSSH `git\-serve` is not covered
+.RS
+May also be specified with the \fBTAUR_SSH_RATE_LIMIT\fR environment variable. 
+.RE
+.TP
+\fB\-\-ssh\-rate\-window\fR \fI<SSH_RATE_WINDOW_SECS>\fR [default: 60]
+
+.RS
+May also be specified with the \fBTAUR_SSH_RATE_WINDOW\fR environment variable. 
+.RE
+.TP
+\fB\-\-trusted\-proxies\fR \fI<TRUSTED_PROXIES>\fR [default: ]
+Comma\-separated CIDRs allowed to supply `X\-Forwarded\-For`. Empty: ignore that header
+.RS
+May also be specified with the \fBTAUR_TRUSTED_PROXIES\fR environment variable. 
+.RE
+.TP
+\fB\-\-rate\-max\-keys\fR \fI<RATE_MAX_KEYS>\fR [default: 8192]
+Maximum distinct client keys remembered per limit class
+.RS
+May also be specified with the \fBTAUR_RATE_MAX_KEYS\fR environment variable. 
 .RE
 .TP
 \fB\-h\fR, \fB\-\-help\fR
@@ -90,10 +240,37 @@ Command\-line flags take precedence over environment variables, which take prece
 Data directory (database, git repos, outbox, SSH host key). Default: ~/.local/share/taur.
 .TP
 \fBTAUR_BIND\fR
-HTTP listen address (IP:PORT). Put a TLS reverse proxy in front. Default: 127.0.0.1:8080.
+Listen address (IP:PORT). Plaintext HTTP when TAUR_TLS=off; HTTPS when TAUR_TLS=acme. Default: 127.0.0.1:8080.
+.TP
+\fBTAUR_TLS\fR
+off (plaintext HTTP) or acme (automatic HTTPS). off is for local use or a TLS proxy. Default: off.
+.TP
+\fBTAUR_DOMAIN\fR
+Comma\-separated DNS names. Required for TAUR_TLS=acme. First name is the default public host. Default: unset.
 .TP
 \fBTAUR_BASE_URL\fR
-Public base URL used in email links and clone URLs. Default: https://packages.taur.weirdbrains.com.
+Public base URL. Unset with no domain: http://<listen>. Unset with a domain and TLS off: https://<first\-domain>. Unset with acme: https://<first\-domain>[:bind\-port]. Default: derived.
+.TP
+\fBTAUR_ACME_DIRECTORY\fR
+ACME directory URL. Do not combine with TAUR_ACME_STAGING. Default: Let's Encrypt production.
+.TP
+\fBTAUR_ACME_STAGING\fR
+true uses the Let's Encrypt staging directory. Those certificates are not publicly trusted. Default: false.
+.TP
+\fBTAUR_ACME_CONTACT\fR
+mailto: contact for the ACME account. No default. Default: required for acme.
+.TP
+\fBTAUR_ACME_ACCEPT_TERMS\fR
+Must be the word yes after reading the CA agreement. Anything else refuses to register or request a certificate. Default: unset.
+.TP
+\fBTAUR_ACME_HTTP_BIND\fR
+HTTP\-01 listen address. The CA must reach TCP port 80 of each domain. Default: required for acme.
+.TP
+\fBTAUR_ACME_CACHE\fR
+Directory for the ACME account key and certificates (mode 0700; keys mode 0600). Default: <home>/acme.
+.TP
+\fBTAUR_ACME_RENEW_BEFORE\fR
+Days before expiry to renew. The previous certificate is kept if renewal fails. Default: 30.
 .TP
 \fBTAUR_SSH_BIND\fR
 Git\-over\-SSH listen address, e.g. 0.0.0.0:2222. Default: unset (SSH off).
@@ -105,7 +282,7 @@ Host shown in SSH clone URLs. Default: host of TAUR_BASE_URL.
 Port shown in SSH clone URLs (e.g. when NAT maps 22 to 2222). Default: port of TAUR_SSH_BIND.
 .TP
 \fBTAUR_GRPC_BIND\fR
-gRPC listen address (plaintext HTTP/2), e.g. 127.0.0.1:50051. Default: unset (gRPC off).
+gRPC listen address. Plaintext HTTP/2 when TAUR_TLS=off. With TAUR_TLS=acme, TLS using the same certificate. Default: unset (gRPC off).
 .TP
 \fBTAUR_SMTP_URL\fR
 SMTP URL smtp:// or smtps://user:pass@host[:port]. Secret; never logged. Default: unset (mail to <home>/outbox).
@@ -117,7 +294,55 @@ Sender address for outgoing mail. Default: TAUR <noreply@taur.weirdbrains.com>.
 Comma\-separated user names granted site admin at startup (grant only, never revokes). Default: unset.
 .TP
 \fBTAUR_RPC_RATE_LIMIT\fR
-RPC requests allowed per window for each TCP peer. Forwarded IP headers are ignored. Default: 0 (off).
+AUR RPC requests per window per client. 0 disables this class. Default: 300.
 .TP
 \fBTAUR_RPC_RATE_WINDOW\fR
-Rate\-limit window in seconds. Default: 60.
+Window in seconds for TAUR_RPC_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_AUTH_RATE_LIMIT\fR
+Login, registration, verification and password\-reset requests per window. 0 disables. Default: 20.
+.TP
+\fBTAUR_AUTH_RATE_WINDOW\fR
+Window in seconds for TAUR_AUTH_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_GIT_RATE_LIMIT\fR
+Git smart HTTP requests per window. 0 disables. Default: 60.
+.TP
+\fBTAUR_GIT_RATE_WINDOW\fR
+Window in seconds for TAUR_GIT_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_API_RATE_LIMIT\fR
+JSON API requests per window, other than auth and /api/v1/server. 0 disables. Default: 120.
+.TP
+\fBTAUR_API_RATE_WINDOW\fR
+Window in seconds for TAUR_API_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_DUMP_RATE_LIMIT\fR
+Snapshot and metadata\-dump requests per window. 0 disables. Default: 12.
+.TP
+\fBTAUR_DUMP_RATE_WINDOW\fR
+Window in seconds for TAUR_DUMP_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_MCP_RATE_LIMIT\fR
+MCP requests per window. 0 disables. Default: 60.
+.TP
+\fBTAUR_MCP_RATE_WINDOW\fR
+Window in seconds for TAUR_MCP_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_GRPC_RATE_LIMIT\fR
+gRPC requests per window, other than account auth. 0 disables. Default: 300.
+.TP
+\fBTAUR_GRPC_RATE_WINDOW\fR
+Window in seconds for TAUR_GRPC_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_SSH_RATE_LIMIT\fR
+New embedded SSH connections per window. 0 disables. OpenSSH git\-serve is not covered. Default: 30.
+.TP
+\fBTAUR_SSH_RATE_WINDOW\fR
+Window in seconds for TAUR_SSH_RATE_LIMIT. Default: 60.
+.TP
+\fBTAUR_TRUSTED_PROXIES\fR
+Comma\-separated CIDRs allowed to supply X\-Forwarded\-For. Empty ignores that header. A /0 prefix is rejected. Default: unset.
+.TP
+\fBTAUR_RATE_MAX_KEYS\fR
+Maximum distinct client keys remembered per limit class. Default: 8192.

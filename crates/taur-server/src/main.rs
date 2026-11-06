@@ -41,7 +41,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             for w in taur_server::cli::bootstrap_admins(&store, &cfg.admins) {
                 eprintln!("taur: warning: {w}");
             }
-            store.configure_rpc_rate_limit(cfg.rpc_rate_limit, cfg.rpc_rate_window_secs);
+            store.configure_rate_limits(&cfg.rate);
+            log_limits(&cfg.rate);
+            let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+            tokio::spawn(async move {
+                let _ = tokio::signal::ctrl_c().await;
+                let _ = shutdown_tx.send(true);
+            });
             let store = Arc::new(store);
             let s2 = store.clone();
             tokio::spawn(async move {
@@ -60,24 +66,91 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("taur: ssh on {}", listener.local_addr()?);
                 tokio::spawn(taur_server::ssh::serve(listener, store.clone(), hook_bin));
             }
-            if let Some(addr) = cfg.grpc_bind {
-                let listener = tokio::net::TcpListener::bind(&addr).await?;
-                eprintln!("taur: grpc on {}", listener.local_addr()?);
-                let s3 = store.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = taur_server::grpc::serve(listener, s3).await {
-                        eprintln!("taur: grpc server stopped: {e}");
-                    }
-                });
+            if cfg.tls == taur_server::cli::TlsMode::Acme {
+                let acme = cfg.acme.clone().expect("acme config");
+                let cache = acme
+                    .cache
+                    .clone()
+                    .unwrap_or_else(|| store.home().join("acme"));
+                if acme.staging {
+                    eprintln!(
+                        "taur: ACME staging directory {}; certificates from it are not publicly trusted",
+                        acme.directory
+                    );
+                } else {
+                    eprintln!("taur: ACME directory {}", acme.directory);
+                }
+                let tls = taur_server::acme::bootstrap(
+                    taur_server::acme::AcmeSettings {
+                        domains: cfg.domains.clone(),
+                        directory: acme.directory.clone(),
+                        staging: acme.staging,
+                        contact: acme.contact.clone(),
+                        accept_terms: true,
+                        cache,
+                        http_bind: acme.http_bind,
+                        renew_before: acme.renew_before,
+                    },
+                    taur_server::acme::InstantAcme,
+                    shutdown_rx.clone(),
+                )
+                .await?;
+                if let Some(addr) = cfg.grpc_bind {
+                    let listener = tokio::net::TcpListener::bind(&addr).await?;
+                    eprintln!(
+                        "taur: grpc TLS on {} (same certificate as HTTPS)",
+                        listener.local_addr()?
+                    );
+                    let s3 = store.clone();
+                    let grpc_cfg = tls.grpc.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = taur_server::grpc::serve_tls(listener, s3, grpc_cfg).await {
+                            eprintln!("taur: grpc server stopped: {e}");
+                        }
+                    });
+                }
+                let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
+                eprintln!(
+                    "taur: HTTPS on {} for {}",
+                    listener.local_addr()?,
+                    cfg.domains.join(", ")
+                );
+                eprintln!("taur: public URL {}", cfg.base_url);
+                taur_server::acme::serve_https(
+                    listener,
+                    taur_server::app(store),
+                    tls.https,
+                    shutdown_rx,
+                )
+                .await?;
+            } else {
+                if let Some(addr) = cfg.grpc_bind {
+                    let listener = tokio::net::TcpListener::bind(&addr).await?;
+                    eprintln!(
+                        "taur: grpc plaintext HTTP/2 on {} (not TLS)",
+                        listener.local_addr()?
+                    );
+                    let s3 = store.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = taur_server::grpc::serve(listener, s3).await {
+                            eprintln!("taur: grpc server stopped: {e}");
+                        }
+                    });
+                }
+                let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
+                eprintln!("taur: plaintext HTTP on http://{}", listener.local_addr()?);
+                eprintln!("taur: public URL {}", cfg.base_url);
+                let mut shutdown_rx = shutdown_rx;
+                axum::serve(
+                    listener,
+                    taur_server::app(store)
+                        .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .with_graceful_shutdown(async move {
+                    let _ = shutdown_rx.changed().await;
+                })
+                .await?;
             }
-            let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
-            eprintln!("taur: listening on http://{}", listener.local_addr()?);
-            axum::serve(
-                listener,
-                taur_server::app(store)
-                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
-            )
-            .await?;
         }
         Cmd::Import { dir, maintainer } => {
             let info = store.import_dir(&dir, maintainer.as_deref())?;
@@ -111,6 +184,37 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn log_limits(policy: &taur_core::RatePolicy) {
+    let parts: Vec<String> = policy
+        .classes
+        .iter()
+        .map(|c| {
+            if c.max == 0 {
+                format!("{} off", c.class.name())
+            } else {
+                format!("{} {}/{}s", c.class.name(), c.max, c.window.as_secs())
+            }
+        })
+        .collect();
+    eprintln!("taur: rate limits: {}", parts.join(", "));
+    if policy.trusted_proxies.is_empty() {
+        eprintln!("taur: X-Forwarded-For is ignored; clients are keyed by the TCP peer");
+    } else {
+        let nets: Vec<String> = policy
+            .trusted_proxies
+            .iter()
+            .map(|n| n.to_string())
+            .collect();
+        eprintln!(
+            "taur: trusted proxies for X-Forwarded-For: {}",
+            nets.join(", ")
+        );
+        eprintln!(
+            "taur: the proxy must append the client address. Without that header, every client behind the proxy shares one bucket"
+        );
+    }
 }
 
 /// `taur hook pre-receive|post-receive`, run by git inside the bare repo.

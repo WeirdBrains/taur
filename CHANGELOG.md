@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [1.1.0] - 2026-11-05
+### Added
+- `taur serve --tls acme` requests and renews an HTTP-01 certificate (`--domain`, contact, and an explicit terms acceptance). Plain HTTP stays `TAUR_TLS=off`.
+- Default per-client limits for RPC, auth, git, the JSON API, dumps, MCP, gRPC, and embedded SSH, with `Retry-After` and an optional trusted-proxy CIDR list.
+
 ## [1.0.0] - 2026-11-05
 ### Added
 - RPC rate limit (`TAUR_RPC_RATE_LIMIT`) keyed by the TCP peer, HTTP 429 `Rate limit reached`.
