@@ -17,4 +17,5 @@
 - [MCP server](mcp.md)
 - [gRPC API](grpc.md)
 - [Running as a service (systemd, SysV init, OpenRC, runit, launchd, Windows)](services.md)
+- [TLS and automatic certificates](tls.md)
 - [Security review notes](security.md)

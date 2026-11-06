@@ -1,21 +1,21 @@
 //! HTTP front end: a thin axum layer over `taur_core`.
 
-use axum::extract::{
-    ConnectInfo, DefaultBodyLimit, FromRef, FromRequestParts, Path, RawQuery, State,
-};
-use axum::http::request::Parts;
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, FromRef, Path, RawQuery, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
+use taur_core::LimitClass;
 use taur_core::accounts::User;
 use taur_core::{Error, Role, Store, rpc};
 
 type St = State<Arc<Store>>;
 
+pub mod acme;
 pub mod cli;
 pub mod githttp;
 pub mod grpc;
@@ -119,7 +119,96 @@ pub fn app_with(state: AppState) -> Router {
         .route("/api/v1/ssh-keys/{id}", axum::routing::delete(remove_key))
         .fallback(githttp::handle)
         .layer(DefaultBodyLimit::max(githttp::MAX_BODY))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            limit_requests,
+        ))
         .with_state(state)
+}
+
+fn limit_class(path: &str) -> Option<LimitClass> {
+    if path == "/rpc" || path.starts_with("/rpc/") {
+        return Some(LimitClass::Rpc);
+    }
+    if path == "/mcp" {
+        return Some(LimitClass::Mcp);
+    }
+    if matches!(
+        path,
+        "/packages.gz"
+            | "/pkgbase.gz"
+            | "/packages-meta-v1.json.gz"
+            | "/packages-meta-ext-v1.json.gz"
+    ) || path.starts_with("/cgit/aur.git/snapshot/")
+    {
+        return Some(LimitClass::Dump);
+    }
+    if path.starts_with("/cgit/aur.git/plain/") || githttp::is_git_path(path) {
+        return Some(LimitClass::Git);
+    }
+    if matches!(
+        path,
+        "/api/v1/register"
+            | "/api/v1/login"
+            | "/api/v1/verify"
+            | "/api/v1/verify/resend"
+            | "/api/v1/password-reset"
+            | "/api/v1/password-reset/confirm"
+    ) {
+        return Some(LimitClass::Auth);
+    }
+    if path == "/api/v1/server" || path.starts_with("/static/") {
+        return None;
+    }
+    if path.starts_with("/api/v1/") {
+        return Some(LimitClass::Api);
+    }
+    None
+}
+
+async fn limit_requests(
+    State(state): State<AppState>,
+    req: axum::extract::Request,
+    next: Next,
+) -> Response {
+    if let Some(class) = limit_class(req.uri().path()) {
+        let peer = req
+            .extensions()
+            .get::<ConnectInfo<std::net::SocketAddr>>()
+            .map(|c| c.0.ip());
+        let forwarded = req
+            .headers()
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok());
+        if let Err(Error::RateLimited { retry_after }) =
+            state.store.enforce_limit(class, peer, forwarded)
+        {
+            return limited(class, retry_after);
+        }
+    }
+    next.run(req).await
+}
+
+fn limited(class: LimitClass, retry_after: u64) -> Response {
+    let mut res = if class == LimitClass::Rpc {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(rpc::error("Rate limit reached")),
+        )
+            .into_response()
+    } else if class == LimitClass::Git {
+        (StatusCode::TOO_MANY_REQUESTS, "Rate limit reached\n").into_response()
+    } else {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({ "error": "Rate limit reached" })),
+        )
+            .into_response()
+    };
+    if let Ok(value) = HeaderValue::from_str(&retry_after.to_string()) {
+        res.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+    res
 }
 
 // ---- RPC ----
@@ -219,80 +308,26 @@ fn legacy(store: &Store, p: &[(String, String)]) -> Response {
     }
 }
 
-struct Peer(Option<std::net::IpAddr>);
-
-impl<S> FromRequestParts<S> for Peer
-where
-    S: Send + Sync,
-{
-    type Rejection = std::convert::Infallible;
-
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        let ip = parts
-            .extensions
-            .get::<ConnectInfo<std::net::SocketAddr>>()
-            .map(|c| c.0.ip());
-        Ok(Peer(ip))
-    }
-}
-
-fn rpc_gate(store: &Store, peer: &Peer) -> Option<Response> {
-    match store.enforce_rpc_limit(peer.0) {
-        Ok(()) => None,
-        Err(Error::RateLimited) => Some(
-            (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(rpc::error("Rate limit reached")),
-            )
-                .into_response(),
-        ),
-        Err(_) => Some(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-    }
-}
-
-async fn rpc_legacy(State(s): St, peer: Peer, RawQuery(q): RawQuery) -> Response {
-    if let Some(r) = rpc_gate(&s, &peer) {
-        return r;
-    }
+async fn rpc_legacy(State(s): St, RawQuery(q): RawQuery) -> Response {
     legacy(&s, &pairs(q.as_deref()))
 }
 
-async fn rpc_legacy_post(
-    State(s): St,
-    peer: Peer,
-    RawQuery(q): RawQuery,
-    body: String,
-) -> Response {
-    if let Some(r) = rpc_gate(&s, &peer) {
-        return r;
-    }
+async fn rpc_legacy_post(State(s): St, RawQuery(q): RawQuery, body: String) -> Response {
     let mut p = pairs(q.as_deref());
     p.extend(pairs(Some(&body)));
     legacy(&s, &p)
 }
 
-async fn rpc_v5(
-    State(s): St,
-    peer: Peer,
-    Path(kind): Path<String>,
-    RawQuery(q): RawQuery,
-) -> Response {
-    if let Some(r) = rpc_gate(&s, &peer) {
-        return r;
-    }
+async fn rpc_v5(State(s): St, Path(kind): Path<String>, RawQuery(q): RawQuery) -> Response {
     finish(&s, Some(&kind), &pairs(q.as_deref()), None)
 }
 
 async fn rpc_v5_post(
     State(s): St,
-    peer: Peer,
     Path(kind): Path<String>,
     headers: HeaderMap,
     body: String,
 ) -> Response {
-    if let Some(r) = rpc_gate(&s, &peer) {
-        return r;
-    }
     let ctype = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -305,13 +340,9 @@ async fn rpc_v5_post(
 
 async fn rpc_v5_arg(
     State(s): St,
-    peer: Peer,
     Path((kind, arg)): Path<(String, String)>,
     RawQuery(q): RawQuery,
 ) -> Response {
-    if let Some(r) = rpc_gate(&s, &peer) {
-        return r;
-    }
     finish(&s, Some(&kind), &pairs(q.as_deref()), Some(arg))
 }
 
@@ -499,7 +530,17 @@ impl IntoResponse for ApiError {
             Error::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
             Error::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
             Error::Invalid(m) | Error::Parse(m) => (StatusCode::BAD_REQUEST, m.clone()),
-            Error::RateLimited => (StatusCode::TOO_MANY_REQUESTS, self.0.to_string()),
+            Error::RateLimited { retry_after } => {
+                let mut res = (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({ "error": "Rate limit reached" })),
+                )
+                    .into_response();
+                if let Ok(value) = HeaderValue::from_str(&retry_after.to_string()) {
+                    res.headers_mut().insert(header::RETRY_AFTER, value);
+                }
+                return res;
+            }
             other => {
                 // Error values never contain passwords or tokens.
                 eprintln!("taur: internal error: {other}");

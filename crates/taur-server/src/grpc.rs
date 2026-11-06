@@ -1,7 +1,7 @@
 //! gRPC API (tonic), mirroring the JSON API. Auth: `authorization: Bearer <token>` metadata.
 
 use std::sync::Arc;
-use taur_core::{Error, Role, SearchBy, Store, accounts::User};
+use taur_core::{Error, LimitClass, Role, SearchBy, Store, accounts::User};
 use tonic::{Request, Response, Status};
 
 pub mod pb {
@@ -18,7 +18,13 @@ fn status(e: Error) -> Status {
         Error::NotFound(m) => Status::not_found(m),
         Error::Conflict(m) => Status::already_exists(m),
         Error::Invalid(m) | Error::Parse(m) => Status::invalid_argument(m),
-        Error::RateLimited => Status::resource_exhausted(e.to_string()),
+        Error::RateLimited { retry_after } => {
+            let mut st = Status::resource_exhausted("rate limit reached");
+            if let Ok(value) = retry_after.to_string().parse() {
+                let _ = st.metadata_mut().insert("retry-after", value);
+            }
+            st
+        }
         other => {
             // Error values never contain passwords or tokens.
             eprintln!("taur: grpc internal error: {other}");
@@ -52,6 +58,17 @@ pub struct Svc {
 }
 
 impl Svc {
+    fn limit<T>(&self, req: &Request<T>, class: LimitClass) -> Result<(), Status> {
+        let peer = req.remote_addr().map(|a| a.ip());
+        let forwarded = req
+            .metadata()
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok());
+        self.store
+            .enforce_limit(class, peer, forwarded)
+            .map_err(status)
+    }
+
     fn user<T>(&self, req: &Request<T>) -> taur_core::Result<User> {
         self.store.user_for_token(&token(req)?)
     }
@@ -137,6 +154,7 @@ fn role(s: &str) -> taur_core::Result<Role> {
 #[tonic::async_trait]
 impl packages_server::Packages for Svc {
     async fn search(&self, req: Request<SearchRequest>) -> R<PackageList> {
+        self.limit(&req, LimitClass::Grpc)?;
         let r = req.into_inner();
         ok((|| {
             let by_s = if r.by.is_empty() {
@@ -156,12 +174,14 @@ impl packages_server::Packages for Svc {
         })())
     }
     async fn info(&self, req: Request<InfoRequest>) -> R<PackageList> {
+        self.limit(&req, LimitClass::Grpc)?;
         let names = req.into_inner().names;
         ok(self.store.info(&names).map(|v| PackageList {
             packages: v.into_iter().map(package).collect(),
         }))
     }
     async fn comments(&self, req: Request<PkgbaseRequest>) -> R<CommentList> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok(self
             .store
             .comments(&req.into_inner().pkgbase)
@@ -170,6 +190,7 @@ impl packages_server::Packages for Svc {
             }))
     }
     async fn get_flag(&self, req: Request<PkgbaseRequest>) -> R<Flag> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok(self
             .store
             .flag_info(&req.into_inner().pkgbase)
@@ -184,6 +205,7 @@ impl packages_server::Packages for Svc {
 #[tonic::async_trait]
 impl accounts_server::Accounts for Svc {
     async fn register(&self, req: Request<RegisterRequest>) -> R<pb::User> {
+        self.limit(&req, LimitClass::Auth)?;
         let r = req.into_inner();
         ok(self
             .store
@@ -191,6 +213,7 @@ impl accounts_server::Accounts for Svc {
             .map(user))
     }
     async fn login(&self, req: Request<LoginRequest>) -> R<Session> {
+        self.limit(&req, LimitClass::Auth)?;
         let r = req.into_inner();
         ok(self.store.login(&r.name, &r.password).map(|s| Session {
             token: s.token,
@@ -198,27 +221,34 @@ impl accounts_server::Accounts for Svc {
         }))
     }
     async fn logout(&self, req: Request<Empty>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty(token(&req).and_then(|t| self.store.logout(&t)))
     }
     async fn whoami(&self, req: Request<Empty>) -> R<pb::User> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok(self.user(&req).map(user))
     }
     async fn unregister(&self, req: Request<PasswordRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty(token(&req).and_then(|t| self.store.unregister(&t, &req.get_ref().password)))
     }
     async fn verify(&self, req: Request<TokenRequest>) -> R<pb::User> {
+        self.limit(&req, LimitClass::Auth)?;
         ok(self.store.verify_email(&req.into_inner().token).map(user))
     }
     async fn resend_verification(&self, req: Request<Empty>) -> R<Empty> {
+        self.limit(&req, LimitClass::Auth)?;
         empty(
             self.user(&req)
                 .and_then(|u| self.store.resend_verification(&u)),
         )
     }
     async fn request_password_reset(&self, req: Request<EmailRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Auth)?;
         empty(self.store.request_password_reset(&req.into_inner().email))
     }
     async fn reset_password(&self, req: Request<ResetPasswordRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Auth)?;
         let r = req.into_inner();
         empty(self.store.reset_password(&r.token, &r.password))
     }
@@ -227,6 +257,7 @@ impl accounts_server::Accounts for Svc {
 #[tonic::async_trait]
 impl orgs_server::Orgs for Svc {
     async fn list(&self, req: Request<Empty>) -> R<MembershipList> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.user(&req)?;
             Ok(MembershipList {
@@ -243,12 +274,14 @@ impl orgs_server::Orgs for Svc {
         })())
     }
     async fn get(&self, req: Request<OrgRequest>) -> R<OrgDetail> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.user(&req)?;
             self.org_detail(u.id, &req.get_ref().org)
         })())
     }
     async fn create(&self, req: Request<OrgRequest>) -> R<OrgDetail> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.verified(&req)?;
             self.store.create_org(u.id, &req.get_ref().org)?;
@@ -256,6 +289,7 @@ impl orgs_server::Orgs for Svc {
         })())
     }
     async fn delete(&self, req: Request<OrgRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             self.store
@@ -263,6 +297,7 @@ impl orgs_server::Orgs for Svc {
         })())
     }
     async fn set_member(&self, req: Request<SetMemberRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -275,6 +310,7 @@ impl orgs_server::Orgs for Svc {
         })())
     }
     async fn remove_member(&self, req: Request<MemberRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -308,6 +344,7 @@ impl Svc {
 #[tonic::async_trait]
 impl manage_server::Manage for Svc {
     async fn my_packages(&self, req: Request<Empty>) -> R<OwnedPackageList> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.user(&req)?;
             Ok(OwnedPackageList {
@@ -325,6 +362,7 @@ impl manage_server::Manage for Svc {
         })())
     }
     async fn transfer(&self, req: Request<TransferRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -342,12 +380,14 @@ impl manage_server::Manage for Svc {
         })())
     }
     async fn disown(&self, req: Request<PkgbaseRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             self.store.disown(u.id, self.pb(&req.get_ref().pkgbase)?)
         })())
     }
     async fn adopt(&self, req: Request<PkgbaseRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             self.store.adopt(u.id, self.pb(&req.get_ref().pkgbase)?)?;
@@ -355,6 +395,7 @@ impl manage_server::Manage for Svc {
         })())
     }
     async fn set_comaintainers(&self, req: Request<ComaintainersRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -366,6 +407,7 @@ impl manage_server::Manage for Svc {
 #[tonic::async_trait]
 impl community_server::Community for Svc {
     async fn vote(&self, req: Request<Toggle>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -377,6 +419,7 @@ impl community_server::Community for Svc {
         })())
     }
     async fn vote_status(&self, req: Request<PkgbaseRequest>) -> R<pb::Status> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.user(&req)?;
             Ok(pb::Status {
@@ -385,6 +428,7 @@ impl community_server::Community for Svc {
         })())
     }
     async fn notify(&self, req: Request<Toggle>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = if req.get_ref().on {
                 self.verified(&req)?
@@ -396,6 +440,7 @@ impl community_server::Community for Svc {
         })())
     }
     async fn notify_status(&self, req: Request<PkgbaseRequest>) -> R<pb::Status> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.user(&req)?;
             Ok(pb::Status {
@@ -404,6 +449,7 @@ impl community_server::Community for Svc {
         })())
     }
     async fn flag_out_of_date(&self, req: Request<FlagRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -411,12 +457,14 @@ impl community_server::Community for Svc {
         })())
     }
     async fn unflag(&self, req: Request<PkgbaseRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             self.store.unflag(u.id, &req.get_ref().pkgbase)
         })())
     }
     async fn add_comment(&self, req: Request<AddCommentRequest>) -> R<Comment> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -426,6 +474,7 @@ impl community_server::Community for Svc {
         })())
     }
     async fn edit_comment(&self, req: Request<EditCommentRequest>) -> R<Comment> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -433,12 +482,14 @@ impl community_server::Community for Svc {
         })())
     }
     async fn delete_comment(&self, req: Request<IdRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             self.store.delete_comment(u.id, req.get_ref().id)
         })())
     }
     async fn pin_comment(&self, req: Request<PinRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -450,6 +501,7 @@ impl community_server::Community for Svc {
 #[tonic::async_trait]
 impl requests_server::Requests for Svc {
     async fn file(&self, req: Request<FileRequestRequest>) -> R<PackageRequest> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -465,6 +517,7 @@ impl requests_server::Requests for Svc {
         })())
     }
     async fn list(&self, req: Request<ListRequestsRequest>) -> R<PackageRequestList> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             self.user(&req)?;
             Ok(PackageRequestList {
@@ -478,12 +531,14 @@ impl requests_server::Requests for Svc {
         })())
     }
     async fn get(&self, req: Request<IdRequest>) -> R<PackageRequest> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             self.user(&req)?;
             self.store.request(req.get_ref().id).map(request)
         })())
     }
     async fn accept(&self, req: Request<CloseRequestRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -491,6 +546,7 @@ impl requests_server::Requests for Svc {
         })())
     }
     async fn reject(&self, req: Request<CloseRequestRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.verified(&req)?;
             let r = req.get_ref();
@@ -502,6 +558,7 @@ impl requests_server::Requests for Svc {
 #[tonic::async_trait]
 impl ssh_keys_server::SshKeys for Svc {
     async fn list(&self, req: Request<Empty>) -> R<SshKeyList> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.user(&req)?;
             Ok(SshKeyList {
@@ -515,6 +572,7 @@ impl ssh_keys_server::SshKeys for Svc {
         })())
     }
     async fn add(&self, req: Request<AddSshKeyRequest>) -> R<SshKey> {
+        self.limit(&req, LimitClass::Grpc)?;
         ok((|| {
             let u = self.verified(&req)?;
             self.store
@@ -523,6 +581,7 @@ impl ssh_keys_server::SshKeys for Svc {
         })())
     }
     async fn remove(&self, req: Request<IdRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
         empty((|| {
             let u = self.user(&req)?;
             self.store.remove_ssh_key(u.id, req.get_ref().id)
@@ -552,7 +611,7 @@ pub fn routes(store: Arc<Store>) -> tonic::service::Routes {
         .add_service(ssh_keys_server::SshKeysServer::new(s))
 }
 
-/// Serve gRPC (HTTP/2, plaintext; put TLS in front) on `listener`.
+/// Serve gRPC as plaintext HTTP/2. This listener is not TLS.
 pub async fn serve(
     listener: tokio::net::TcpListener,
     store: Arc<Store>,
@@ -560,5 +619,17 @@ pub async fn serve(
     tonic::transport::Server::builder()
         .add_routes(routes(store))
         .serve_with_incoming(tonic::transport::server::TcpIncoming::from(listener))
+        .await
+}
+
+/// Serve gRPC over TLS with the same certificate resolver as HTTPS.
+pub async fn serve_tls(
+    listener: tokio::net::TcpListener,
+    store: Arc<Store>,
+    config: std::sync::Arc<rustls::ServerConfig>,
+) -> Result<(), tonic::transport::Error> {
+    tonic::transport::Server::builder()
+        .add_routes(routes(store))
+        .serve_with_incoming(crate::acme::tls_incoming(listener, config))
         .await
 }

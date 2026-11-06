@@ -19,10 +19,15 @@ certification, a penetration test, or a claim that every bug has been found.
 
 ## Rate limit
 
-`TAUR_RPC_RATE_LIMIT` counts RPC requests per TCP connection peer. Over the limit the
-status is 429 and the JSON error is `Rate limit reached`. `X-Forwarded-For`,
-`X-Real-IP`, and `Forwarded` are not read. Each process keeps its own memory. A reverse
-proxy makes every client look like the proxy unless the proxy enforces its own limit.
+`taur serve` limits RPC, auth, git HTTP, the JSON API, dumps, MCP, gRPC, and new
+embedded SSH connections. Defaults are in [configuration](configuration.md). `0` disables
+one class. Over the limit: HTTP 429 with `Retry-After`, or gRPC `RESOURCE_EXHAUSTED`.
+The RPC body stays `Rate limit reached`. Web pages, `/static`, and `/api/v1/server` are
+not limited. `X-Forwarded-For` is ignored unless the TCP peer is in
+`TAUR_TRUSTED_PROXIES` (a `/0` prefix is rejected). The trusted proxy must append the
+client; otherwise every client behind it shares one bucket. State is per process and
+capped by `TAUR_RATE_MAX_KEYS`. OpenSSH `taur git-serve` is a separate process and is
+not limited here.
 
 ## PKGBUILD checks
 
@@ -42,10 +47,13 @@ PKGBUILD cannot escape bubblewrap.
 
 ## Residual risks
 
-- HTTP and gRPC are plaintext. Put TLS on a proxy. The server does not terminate TLS.
+- `TAUR_TLS=off` leaves HTTP and gRPC plaintext. `TAUR_TLS=acme` encrypts those two
+  listeners only after a certificate exists; SSH is a separate protocol. A proxy in
+  front of plaintext mode is still a valid deployment. See [tls.md](tls.md).
 - The web UI keeps the bearer token in `localStorage`. Script injection on the origin
   can use the token. The API does not use a cookie session.
-- Rate-limit state is not shared across processes and collapses to the proxy address.
+- Rate-limit state is not shared across processes. Without a trusted-proxy CIDR it
+  collapses to the proxy address.
 - The literal PKGBUILD check misses assignments that use `$` or backticks, and it does
   not prove `.SRCINFO` was produced by that PKGBUILD.
 - Deleted repositories remain on disk under `repos/.deleted` until restored or removed

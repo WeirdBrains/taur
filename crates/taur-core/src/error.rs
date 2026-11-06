@@ -28,7 +28,7 @@ pub enum Error {
     #[error("git error: {0}")]
     Git(String),
     #[error("rate limit reached")]
-    RateLimited,
+    RateLimited { retry_after: u64 },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

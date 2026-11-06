@@ -16,6 +16,7 @@ thiserror = "2"
 flate2 = "1"
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "hostname", "rustls", "ring", "rustls-native-certs"] }
 ssh-key = { version = "0.6", features = ["std"] }
+ipnet = "2"
 
 [dev-dependencies]
 tempfile.workspace = true
