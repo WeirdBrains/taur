@@ -22,19 +22,28 @@
 <table>
   <tr><th>Variable</th><th>Role</th></tr>
   <tr><td><code>TAUR_HOME</code></td><td>Database, <code>repos/</code>, outbox, host key.</td></tr>
-  <tr><td><code>TAUR_BIND</code></td><td>HTTP listen address. Default <code>127.0.0.1:8080</code>.</td></tr>
-  <tr><td><code>TAUR_BASE_URL</code></td><td>Links in mail and the public URL. No path.</td></tr>
-  <tr><td><code>TAUR_SSH_BIND</code></td><td>Embedded SSH. Unset means SSH is off.</td></tr>
-  <tr><td><code>TAUR_GRPC_BIND</code></td><td>gRPC. Plaintext HTTP/2.</td></tr>
+  <tr><td><code>TAUR_BIND</code></td><td>Listen address. Default <code>127.0.0.1:8080</code>. HTTP when TLS is off, HTTPS when it is <code>acme</code>.</td></tr>
+  <tr><td><code>TAUR_TLS</code></td><td><code>off</code> (default, plaintext or a proxy) or <code>acme</code> (automatic HTTPS).</td></tr>
+  <tr><td><code>TAUR_DOMAIN</code></td><td>DNS names. Required for <code>acme</code>. First name is the default public host. Example: <code>packages.taur.weirdbrains.com</code>.</td></tr>
+  <tr><td><code>TAUR_BASE_URL</code></td><td>Links in mail and clone URLs. Unset: derived from the domain or the listen address.</td></tr>
+  <tr><td><code>TAUR_SSH_BIND</code></td><td>Embedded SSH. Unset means SSH is off. SSH is not the HTTPS certificate.</td></tr>
+  <tr><td><code>TAUR_GRPC_BIND</code></td><td>gRPC. Plaintext HTTP/2 when TLS is off. The same certificate as HTTPS when TLS is <code>acme</code>.</td></tr>
   <tr><td><code>TAUR_SMTP_URL</code></td><td>Mail. Unset writes files under <code>outbox/</code>.</td></tr>
   <tr><td><code>TAUR_ADMINS</code></td><td>User names granted site admin at startup. Grant only.</td></tr>
-  <tr><td><code>TAUR_RPC_RATE_LIMIT</code></td><td>RPC calls per peer per window. <code>0</code> is off.</td></tr>
+  <tr><td><code>TAUR_RPC_RATE_LIMIT</code></td><td>RPC calls per client per window. Default 300. <code>0</code> disables this class.</td></tr>
 </table>
-<p>Full table: repository <code>docs/configuration.md</code>.</p>
+<p>Full table: repository <code>docs/configuration.md</code> and <code>docs/tls.md</code>.</p>
+<h2>Automatic HTTPS</h2>
+<pre><code>taur serve --tls acme --bind 0.0.0.0:443 \
+  --domain packages.taur.weirdbrains.com \
+  --acme-contact 'mailto:you@example.com' \
+  --acme-accept-terms yes \
+  --acme-http-bind 0.0.0.0:80</code></pre>
+<p><code>--acme-accept-terms</code> must be the word <code>yes</code> after you read the CA agreement. There is no default contact. <code>--acme-staging</code> uses Let's Encrypt staging; those certificates are not publicly trusted. The CA must reach TCP port 80 for each domain. Until the first certificate exists, port 443 is not opened, and a failed renewal keeps the last good certificate. <code>TAUR_TLS=off</code> stays plaintext for local use or a proxy in front.</p>
 <h2>systemd</h2>
 <p>Service files live in the application repository on <code>main</code> (<code>packaging/systemd/</code> and <code>packaging/taur.env.example</code>). Point <code>EnvironmentFile=</code> at a copy of that example. <code>TAUR_BASE_URL</code> should be <code>https://packages.taur.weirdbrains.com</code>. The process should be the only writer of <code>TAUR_HOME</code>.</p>
 <h2>Backup</h2>
-<p>Stop the server or use SQLite's online backup, then copy <code>TAUR_HOME</code>: <code>taur.db</code>, <code>repos/</code> (including <code>repos/.deleted/</code>), and <code>ssh_host_ed25519_key</code>. Restoring that directory onto the same version of the binary brings the instance back.</p>
+<p>Stop the server or use SQLite's online backup, then copy <code>TAUR_HOME</code>: <code>taur.db</code>, <code>repos/</code> (including <code>repos/.deleted/</code>), <code>ssh_host_ed25519_key</code>, and <code>acme/</code> if you use automatic HTTPS (it holds the account key). Restoring that directory onto the same version of the binary brings the instance back.</p>
 <h2>Upgrade</h2>
 <p>Build the new binary, stop the service, replace the binary, start it. The database applies small <code>ALTER TABLE</code> steps on open. Take the backup first. There is no separate migration command.</p>
 </main>
