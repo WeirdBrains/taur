@@ -1,5 +1,3 @@
-/target
-*.db
-.env
-.env.*
-!.env.example
+.DS_Store
+*.log
+target/

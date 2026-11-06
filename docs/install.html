@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install and build — TAUR</title>
+<link rel="canonical" href="https://taur.weirdbrains.com/docs/install.html">
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <a class="brand" href="../"><img class="logo" src="../assets/logo.svg" alt="" width="36" height="36"> taur</a>
+  <button class="menu" aria-expanded="false" aria-controls="links">Menu</button>
+  <nav id="links" aria-label="Main"><a href="../">Overview</a><a href="./">Guides</a><a href="install.html" aria-current="page">Install</a><a href="https://github.com/WeirdBrains/taur">GitHub</a></nav>
+</header>
+<main id="main" class="light doc">
+<h1>Install and build</h1>
+<p class="lede">TAUR is a Rust workspace. You need Rust 1.99 or newer (edition 2024) and <code>git</code> on <code>PATH</code>. SQLite and <code>protoc</code> are bundled.</p>
+<h2>From source</h2>
+<pre><code>git clone https://github.com/WeirdBrains/taur
+cd taur
+cargo build --release
+./target/release/taur --version
+./target/release/taurctl --version</code></pre>
+<p>The binaries are <code>taur</code> (server and admin) and <code>taurctl</code> (HTTP client). They land in <code>target/release/</code>.</p>
+<h2>A temporary server</h2>
+<pre><code>./target/release/taur --home /tmp/taur-dev import tests/fixtures/hello-taur
+./target/release/taur --home /tmp/taur-dev serve --bind 127.0.0.1:8080</code></pre>
+<p><code>--home</code> is the data directory. Use a temporary one until you mean to keep the database. The default is <code>~/.local/share/taur</code>.</p>
+<h2>Checks before you ship a build</h2>
+<pre><code>cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo build --release</code></pre>
+<p>Helper tests run when <code>yay</code> or <code>paru</code> is on <code>PATH</code>. Point at a binary with <code>TAUR_YAY</code> or <code>TAUR_PARU</code>. <code>TAUR_REQUIRE_HELPERS=yay,paru</code> fails the run when one is missing.</p>
+</main>
+<footer class="docfoot"><a href="./">All guides</a></footer>
+<script src="../main.js"></script>
+</body>
+</html>

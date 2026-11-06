@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security — TAUR</title>
+<link rel="canonical" href="https://taur.weirdbrains.com/docs/security.html">
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <a class="brand" href="../"><img class="logo" src="../assets/logo.svg" alt="" width="36" height="36"> taur</a>
+  <button class="menu" aria-expanded="false" aria-controls="links">Menu</button>
+  <nav id="links" aria-label="Main"><a href="../">Overview</a><a href="./">Guides</a><a href="security.html" aria-current="page">Security</a><a href="https://github.com/WeirdBrains/taur">GitHub</a></nav>
+</header>
+<main id="main" class="light doc">
+<h1>Rate limits, PKGBUILD checks, and limits</h1>
+<p class="lede">The repository file <code>docs/security.md</code> is the review note. This page is the operator's version. Neither one is a certification.</p>
+<h2>Rate limit</h2>
+<pre><code>TAUR_RPC_RATE_LIMIT=400
+TAUR_RPC_RATE_WINDOW=60</code></pre>
+<p>Each TCP peer may make that many RPC calls per window. The 429 body is JSON with <code>"error":"Rate limit reached"</code>. Forwarded headers are ignored, so a proxy in front must limit too if you need per-client limits.</p>
+<h2>PKGBUILD</h2>
+<p>Pushes compare simple assignments only. To also run <code>makepkg --printsrcinfo</code> you must set <code>TAUR_PKGBUILD_ISOLATION=bwrap</code> and install bubblewrap. The server will not fall back to running <code>makepkg</code> on the host. That sandbox is not a virtual machine.</p>
+<h2>TLS</h2>
+<p>Terminate TLS in front of <code>TAUR_BIND</code>. gRPC is plaintext HTTP/2 on <code>TAUR_GRPC_BIND</code>. A Caddy snippet for this documentation site is <code>site/Caddyfile</code>. It does not start by itself.</p>
+</main>
+<footer class="docfoot"><a href="./">All guides</a></footer>
+<script src="../main.js"></script>
+</body>
+</html>

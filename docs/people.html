@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accounts and community — TAUR</title>
+<link rel="canonical" href="https://taur.weirdbrains.com/docs/people.html">
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <a class="brand" href="../"><img class="logo" src="../assets/logo.svg" alt="" width="36" height="36"> taur</a>
+  <button class="menu" aria-expanded="false" aria-controls="links">Menu</button>
+  <nav id="links" aria-label="Main"><a href="../">Overview</a><a href="./">Guides</a><a href="people.html" aria-current="page">Accounts</a><a href="https://github.com/WeirdBrains/taur">GitHub</a></nav>
+</header>
+<main id="main" class="light doc">
+<h1>Accounts, organizations, votes, flags, comments</h1>
+<p class="lede"><code>taurctl</code> talks only to the HTTP API. The token file is mode <code>0600</code> under <code>--config-dir</code> (default <code>~/.config/taurctl</code>). Point tests at another directory.</p>
+<h2>Account</h2>
+<pre><code>taurctl --server https://packages.taur.weirdbrains.com --config-dir /tmp/taurctl register alice alice@example.com
+# read the token from the outbox when SMTP is unset, then:
+taurctl --config-dir /tmp/taurctl verify TOKEN
+taurctl --config-dir /tmp/taurctl login alice
+taurctl --config-dir /tmp/taurctl whoami</code></pre>
+<p>Unverified users can search and clone. They cannot push or run other git-serve commands. <code>taur admin NAME</code> grants site admin. <code>taur admin NAME --revoke</code> removes it. <code>TAUR_ADMINS</code> only grants.</p>
+<h2>Organizations</h2>
+<pre><code>taurctl org create brains
+taurctl org add-member brains bob --role contributor
+taurctl pkg transfer hello-taur --org brains</code></pre>
+<p>Roles are owner, admin, and contributor. Owners are the only ones who can delete the org or change the owner role.</p>
+<h2>Votes, flags, comments, requests</h2>
+<pre><code>taurctl pkg vote hello-taur
+taurctl pkg flag hello-taur --comment "upstream moved"
+taurctl pkg comment hello-taur --message "note"
+taurctl request file hello-taur --kind orphan --comment "please adopt"</code></pre>
+<p>An orphan request for a package flagged out-of-date for 180 days is accepted when it is filed. Adoption requests are not. A site admin accepts or rejects the queue with <code>taurctl request accept ID</code>.</p>
+</main>
+<footer class="docfoot"><a href="./">All guides</a></footer>
+<script src="../main.js"></script>
+</body>
+</html>

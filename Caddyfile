@@ -1,0 +1,14 @@
+# Intended vhosts. This file is not applied by cloning the repository.
+# The project site is this tree. The package service is a separate host.
+taur.weirdbrains.com {
+	root * /var/www/taur
+	encode gzip
+	file_server
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+# packages.taur.weirdbrains.com is the TAUR server (RPC, git, API), not these pages.
+

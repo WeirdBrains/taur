@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" role="img" aria-label="taur">
+  <polygon points="4,20 32,4 60,20 50,28 32,16 14,28" fill="#163a5f"/>
+  <polygon points="12,26 26,34 26,58 12,50" fill="#0b4f63"/>
+  <polygon points="26,34 40,26 40,50 26,58" fill="#3fd8e8"/>
+  <text x="76" y="46" fill="#0b2233" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="40" font-weight="700">taur</text>
+</svg>

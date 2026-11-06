@@ -1,5 +1,0 @@
-#!/bin/sh
-# launchd wrapper: install as /usr/local/libexec/taur-launchd (mode 0755).
-ENVFILE=/usr/local/etc/taur/taur.env
-if [ -r "$ENVFILE" ]; then set -a; . "$ENVFILE"; set +a; fi
-exec /usr/local/bin/taur serve
