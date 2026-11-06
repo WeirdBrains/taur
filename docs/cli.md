@@ -49,7 +49,7 @@ when they are out of date.
 
 ## Example
 ```sh
-taurctl config set-server https://taur.weirdbrains.com
+taurctl config set-server https://packages.taur.weirdbrains.com
 taurctl register alice --email alice@example.com
 taurctl login alice
 taurctl org create weirdbrains

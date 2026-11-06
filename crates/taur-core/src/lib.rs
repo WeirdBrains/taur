@@ -75,7 +75,7 @@ pub fn resolve_home(flag: Option<PathBuf>) -> PathBuf {
 }
 
 /// Default public base URL used in emails.
-pub const DEFAULT_BASE_URL: &str = "https://taur.weirdbrains.com";
+pub const DEFAULT_BASE_URL: &str = "https://packages.taur.weirdbrains.com";
 pub const DEFAULT_MAIL_FROM: &str = "TAUR <noreply@taur.weirdbrains.com>";
 
 pub(crate) fn now() -> i64 {

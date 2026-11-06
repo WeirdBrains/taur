@@ -15,7 +15,7 @@ assistants can search packages and, with your token, manage them.
 Client config example (HTTP):
 
 ```json
-{ "mcpServers": { "taur": { "url": "https://taur.weirdbrains.com/mcp",
+{ "mcpServers": { "taur": { "url": "https://packages.taur.weirdbrains.com/mcp",
   "headers": { "Authorization": "Bearer YOUR_TOKEN" } } } }
 ```
 

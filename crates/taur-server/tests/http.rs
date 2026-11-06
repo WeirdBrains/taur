@@ -79,6 +79,36 @@ async fn rpc_endpoints() {
 }
 
 #[tokio::test]
+async fn rpc_rate_limit_keys_on_the_socket_peer() {
+    use axum::extract::ConnectInfo;
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+    let d = tempfile::tempdir().unwrap();
+    let s = Arc::new(Store::open(d.path()).unwrap());
+    let fx = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hello-taur");
+    s.import_dir(&fx, None).unwrap();
+    s.configure_rpc_rate_limit(1, 60);
+    let app = taur_server::app(s);
+    let once = |ip: [u8; 4], forwarded: &str| {
+        let mut req = Request::get("/rpc?v=5&type=info&arg[]=hello-taur")
+            .header("x-forwarded-for", forwarded)
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from((ip, 9))));
+        req
+    };
+    let (st, _) = call(&app, once([10, 1, 0, 1], "1.2.3.4")).await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, b) = call(&app, once([10, 1, 0, 1], "8.8.8.8")).await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+    let v: Value = serde_json::from_slice(&b).unwrap();
+    assert_eq!(v["error"], "Rate limit reached");
+    let (st, _) = call(&app, once([10, 9, 0, 2], "1.2.3.4")).await;
+    assert_eq!(st, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn rpc_jsonp_quirk_json_post_and_cgit_plain() {
     let (_d, app) = setup();
     // JSONP (aurweb wraps the payload as `/**/callback(...)`).
@@ -493,21 +523,42 @@ async fn org_and_package_api() {
         serde_json::from_slice::<Value>(&body).unwrap(),
         json!([{"name": "brains", "role": "contributor"}])
     );
-    // orphaned fixture: alice adopts, moves to org, carol can manage
+    // A normal user files an adoption request. A site admin grants it.
+    let (st, body) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/packages/hello-taur/adopt",
+            Some(&a),
+            n.clone(),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::ACCEPTED);
+    let rid = serde_json::from_slice::<Value>(&body).unwrap()["request"]
+        .as_i64()
+        .unwrap();
+    let store = Store::open(d.path()).unwrap();
+    store
+        .set_admin(store.user_id("bob").unwrap(), true)
+        .unwrap();
     assert_eq!(
         call(
             &app,
             send(
                 "POST",
-                "/api/v1/packages/hello-taur/adopt",
-                Some(&a),
-                n.clone()
-            )
+                &format!("/api/v1/requests/{rid}/accept"),
+                Some(&b),
+                json!({"comment": "granted"}),
+            ),
         )
         .await
         .0,
         StatusCode::NO_CONTENT
     );
+    store
+        .set_admin(store.user_id("bob").unwrap(), false)
+        .unwrap();
     assert_eq!(
         call(
             &app,

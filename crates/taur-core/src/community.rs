@@ -58,7 +58,7 @@ pub struct Flag {
     pub comment: Option<String>,
 }
 
-pub const REQUEST_KINDS: [&str; 3] = ["orphan", "deletion", "merge"];
+pub const REQUEST_KINDS: [&str; 4] = ["orphan", "deletion", "merge", "adoption"];
 
 impl Store {
     fn require_pkgbase(&self, name: &str) -> Result<i64> {
@@ -410,7 +410,7 @@ impl Store {
         let pb = self.require_pkgbase(pkgbase)?;
         if !REQUEST_KINDS.contains(&kind) {
             return Err(Error::Invalid(
-                "kind must be orphan, deletion or merge".into(),
+                "kind must be orphan, deletion, merge or adoption".into(),
             ));
         }
         if comments.trim().is_empty() {
@@ -539,6 +539,17 @@ impl Store {
                     [pb],
                 )?;
             }
+            "adoption" => {
+                let who = req
+                    .requester
+                    .as_deref()
+                    .ok_or_else(|| Error::Invalid("adoption request has no requester".into()))?;
+                let uid = self.user_id(who)?;
+                self.lock().execute(
+                    "UPDATE pkgbases SET maintainer_id = ?1 WHERE id = ?2",
+                    params![uid, pb],
+                )?;
+            }
             "deletion" => self.delete_pkgbase(pb, &req.pkgbase)?,
             "merge" => {
                 let target = req.merge_into.clone().unwrap_or_default();
@@ -579,14 +590,95 @@ impl Store {
     }
 
     fn delete_pkgbase(&self, pb: i64, name: &str) -> Result<()> {
-        self.lock()
-            .execute("DELETE FROM pkgbases WHERE id = ?1", [pb])?;
+        let maintainer: Option<i64> = self
+            .lock()
+            .query_row(
+                "SELECT maintainer_id FROM pkgbases WHERE id = ?1",
+                [pb],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
         let repo = self.repos_dir().join(format!("{name}.git"));
         if repo.exists() {
             let trash = self.repos_dir().join(".deleted");
             std::fs::create_dir_all(&trash)?;
-            std::fs::rename(&repo, trash.join(format!("{name}-{}.git", now())))?;
+            let dest_name = format!("{name}-{pb}-{}.git", now());
+            std::fs::rename(&repo, trash.join(&dest_name))?;
+            self.lock().execute(
+                "INSERT INTO deleted_pkgbases (name, repo_rel, maintainer_id, deleted_at) VALUES (?1, ?2, ?3, ?4)",
+                params![name, format!(".deleted/{dest_name}"), maintainer, now()],
+            )?;
         }
+        self.lock()
+            .execute("DELETE FROM pkgbases WHERE id = ?1", [pb])?;
+        Ok(())
+    }
+
+    /// Put a deleted package base back as an orphan. The git history in
+    /// `repos/.deleted/` is moved back to `repos/<name>.git` and metadata is
+    /// re-read from `HEAD:.SRCINFO`. The former maintainer or a site admin may
+    /// restore; aurweb lets any verified user restore from the shared git
+    /// namespace, which TAUR does not keep.
+    pub fn restore_pkgbase(&self, actor: i64, name: &str) -> Result<()> {
+        crate::srcinfo::validate_name(name)?;
+        if self.pkgbase_id(name)?.is_some() {
+            return Err(Error::Conflict(format!("{name} already exists")));
+        }
+        let row: Option<(i64, String, Option<i64>)> = self
+            .lock()
+            .query_row(
+                "SELECT id, repo_rel, maintainer_id FROM deleted_pkgbases WHERE name = ?1 ORDER BY deleted_at DESC, id DESC LIMIT 1",
+                [name],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((id, rel, former)) = row else {
+            return Err(Error::NotFound(format!("deleted package base {name}")));
+        };
+        if !self.is_admin(actor)? && former != Some(actor) {
+            return Err(Error::Forbidden);
+        }
+        if rel.contains("..") || !rel.starts_with(".deleted/") {
+            return Err(Error::Invalid(
+                "deleted repo path is not in the trash".into(),
+            ));
+        }
+        let repos = self.repos_dir();
+        let trash = repos.join(".deleted");
+        let src = repos.join(&rel);
+        let src_canon = src.canonicalize()?;
+        let trash_canon = trash.canonicalize()?;
+        if !src_canon.starts_with(&trash_canon) {
+            return Err(Error::Invalid(
+                "deleted repo path escapes the trash directory".into(),
+            ));
+        }
+        let dest = repos.join(format!("{name}.git"));
+        if dest.exists() {
+            return Err(Error::Conflict(format!("repository {name} already exists")));
+        }
+        let text = {
+            let mut c = crate::repo::git();
+            c.arg("--git-dir")
+                .arg(&src_canon)
+                .args(["show", "HEAD:.SRCINFO"]);
+            String::from_utf8_lossy(&crate::repo::run(c)?).into_owned()
+        };
+        let info = crate::srcinfo::parse(&text)?;
+        if info.pkgbase != name {
+            return Err(Error::Invalid(format!(
+                ".SRCINFO pkgbase {} does not match {name}",
+                info.pkgbase
+            )));
+        }
+        std::fs::rename(&src_canon, &dest)?;
+        if let Err(e) = self.import_srcinfo(&info, None) {
+            let _ = std::fs::rename(&dest, &src_canon);
+            return Err(e);
+        }
+        self.lock()
+            .execute("DELETE FROM deleted_pkgbases WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -689,5 +781,36 @@ mod tests {
         let p = super::popularity(&[now - 86400], now);
         assert!((p - 0.98).abs() < 1e-9);
         assert_eq!(super::popularity(&[], now), 0.0);
+    }
+
+    #[test]
+    fn disown_promotes_first_comaintainer_and_restore_is_permissioned() {
+        let (d, s, a, b) = setup();
+        s.set_comaintainers(a, "hello-taur", &["bob".into()])
+            .unwrap();
+        s.disown(a, s.pkgbase_id("hello-taur").unwrap().unwrap())
+            .unwrap();
+        assert_eq!(
+            s.info(&["hello-taur".into()]).unwrap()[0]
+                .maintainer
+                .as_deref(),
+            Some("bob")
+        );
+        s.set_admin(a, true).unwrap();
+        let req = s
+            .file_request(b, "hello-taur", "deletion", None, "remove it")
+            .unwrap();
+        s.accept_request(a, req.id, "ok").unwrap();
+        assert!(s.pkgbase_id("hello-taur").unwrap().is_none());
+        let carol = s.register("carol", "carol@x", "longenough").unwrap().id;
+        assert!(matches!(
+            s.restore_pkgbase(carol, "hello-taur"),
+            Err(crate::Error::Forbidden)
+        ));
+        s.restore_pkgbase(b, "hello-taur").unwrap();
+        let info = s.info(&["hello-taur".into()]).unwrap();
+        assert_eq!(info[0].version, "1:1.2.3-1");
+        assert!(info[0].maintainer.is_none());
+        assert!(d.path().join("repos/hello-taur.git").is_dir());
     }
 }

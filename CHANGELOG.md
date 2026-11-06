@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+### Added
+- RPC rate limit (`TAUR_RPC_RATE_LIMIT`) keyed by the TCP peer, HTTP 429 `Rate limit reached`.
+- Adoption requests, aurweb-style disown, and restore of a deleted package base.
+### Fixed
+- Simple PKGBUILD assignments are checked against `.SRCINFO` without running a shell. `TAUR_PKGBUILD_ISOLATION=bwrap` is opt-in and refuses to run `makepkg` on the host.
+- Package search page script parsed again (a missing parenthesis stopped the web UI).
+
 ## [0.13.0] - 2026-11-05
 ### Added
 - JSONP callbacks, aurweb `arg`/`arg[]` handling, and JSON bodies on the RPC.

@@ -209,7 +209,10 @@ async fn grpc_api() {
         Some("alice")
     );
 
-    // management: adopt the orphan, move it to an org
+    // A site admin adopts an orphan immediately (aurweb Package Maintainer).
+    store
+        .set_admin(store.user_id("alice").unwrap(), true)
+        .unwrap();
     manage
         .adopt(authed(
             PkgbaseRequest {

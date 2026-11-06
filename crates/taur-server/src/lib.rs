@@ -1,6 +1,9 @@
 //! HTTP front end: a thin axum layer over `taur_core`.
 
-use axum::extract::{DefaultBodyLimit, FromRef, Path, RawQuery, State};
+use axum::extract::{
+    ConnectInfo, DefaultBodyLimit, FromRef, FromRequestParts, Path, RawQuery, State,
+};
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -78,6 +81,7 @@ pub fn app_with(state: AppState) -> Router {
         .route("/api/v1/packages/{pkgbase}/owner", post(set_owner))
         .route("/api/v1/packages/{pkgbase}/disown", post(disown))
         .route("/api/v1/packages/{pkgbase}/adopt", post(adopt))
+        .route("/api/v1/packages/{pkgbase}/restore", post(restore_pkg))
         .route(
             "/api/v1/packages/{pkgbase}/vote",
             get(vote_status).post(vote).delete(unvote),
@@ -215,26 +219,80 @@ fn legacy(store: &Store, p: &[(String, String)]) -> Response {
     }
 }
 
-async fn rpc_legacy(State(s): St, RawQuery(q): RawQuery) -> Response {
+struct Peer(Option<std::net::IpAddr>);
+
+impl<S> FromRequestParts<S> for Peer
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        let ip = parts
+            .extensions
+            .get::<ConnectInfo<std::net::SocketAddr>>()
+            .map(|c| c.0.ip());
+        Ok(Peer(ip))
+    }
+}
+
+fn rpc_gate(store: &Store, peer: &Peer) -> Option<Response> {
+    match store.enforce_rpc_limit(peer.0) {
+        Ok(()) => None,
+        Err(Error::RateLimited) => Some(
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(rpc::error("Rate limit reached")),
+            )
+                .into_response(),
+        ),
+        Err(_) => Some(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+    }
+}
+
+async fn rpc_legacy(State(s): St, peer: Peer, RawQuery(q): RawQuery) -> Response {
+    if let Some(r) = rpc_gate(&s, &peer) {
+        return r;
+    }
     legacy(&s, &pairs(q.as_deref()))
 }
 
-async fn rpc_legacy_post(State(s): St, RawQuery(q): RawQuery, body: String) -> Response {
+async fn rpc_legacy_post(
+    State(s): St,
+    peer: Peer,
+    RawQuery(q): RawQuery,
+    body: String,
+) -> Response {
+    if let Some(r) = rpc_gate(&s, &peer) {
+        return r;
+    }
     let mut p = pairs(q.as_deref());
     p.extend(pairs(Some(&body)));
     legacy(&s, &p)
 }
 
-async fn rpc_v5(State(s): St, Path(kind): Path<String>, RawQuery(q): RawQuery) -> Response {
+async fn rpc_v5(
+    State(s): St,
+    peer: Peer,
+    Path(kind): Path<String>,
+    RawQuery(q): RawQuery,
+) -> Response {
+    if let Some(r) = rpc_gate(&s, &peer) {
+        return r;
+    }
     finish(&s, Some(&kind), &pairs(q.as_deref()), None)
 }
 
 async fn rpc_v5_post(
     State(s): St,
+    peer: Peer,
     Path(kind): Path<String>,
     headers: HeaderMap,
     body: String,
 ) -> Response {
+    if let Some(r) = rpc_gate(&s, &peer) {
+        return r;
+    }
     let ctype = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -247,9 +305,13 @@ async fn rpc_v5_post(
 
 async fn rpc_v5_arg(
     State(s): St,
+    peer: Peer,
     Path((kind, arg)): Path<(String, String)>,
     RawQuery(q): RawQuery,
 ) -> Response {
+    if let Some(r) = rpc_gate(&s, &peer) {
+        return r;
+    }
     finish(&s, Some(&kind), &pairs(q.as_deref()), Some(arg))
 }
 
@@ -437,6 +499,7 @@ impl IntoResponse for ApiError {
             Error::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
             Error::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
             Error::Invalid(m) | Error::Parse(m) => (StatusCode::BAD_REQUEST, m.clone()),
+            Error::RateLimited => (StatusCode::TOO_MANY_REQUESTS, self.0.to_string()),
             other => {
                 // Error values never contain passwords or tokens.
                 eprintln!("taur: internal error: {other}");
@@ -625,13 +688,25 @@ async fn disown(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn adopt(
+async fn adopt(State(s): St, h: HeaderMap, Path(name): Path<String>) -> Result<Response, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    match s.adopt(u.id, pkgbase(&s, &name)?)? {
+        taur_core::orgs::Adopted::Maintainer => Ok(StatusCode::NO_CONTENT.into_response()),
+        taur_core::orgs::Adopted::Request(id) => Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({"request": id, "status": "pending"})),
+        )
+            .into_response()),
+    }
+}
+
+async fn restore_pkg(
     State(s): St,
     h: HeaderMap,
     Path(name): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let u = auth_verified(&s, &h)?;
-    s.adopt(u.id, pkgbase(&s, &name)?)?;
+    s.restore_pkgbase(u.id, &name)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

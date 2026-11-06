@@ -47,8 +47,9 @@ impl Outcome {
 
 const HELP: &str = "\
 Commands:
-    adopt <pkgbase>                       Adopt an orphaned package base.
-    disown <pkgbase>                      Disown a package base (it becomes orphaned).
+    adopt <pkgbase>                       Request adoption of an orphaned package base.
+    disown <pkgbase>                      Disown a package base (promote a co-maintainer, or orphan it).
+    restore <pkgbase>                     Restore a deleted package base as an orphan.
     flag <pkgbase> <comment>              Flag a package base out-of-date.
     help                                  Show this help message and exit.
     list-repos                            List package bases you maintain.
@@ -214,11 +215,55 @@ fn dispatch(store: &Store, user: &str, action: &str, args: &[String]) -> Outcome
             },
             Err(e) => fail(action, e),
         },
-        "adopt" => one_pkg(action, args, |name| {
-            let id = require_pkgbase_id(store, name)?;
-            store.adopt(account.id, id)?;
-            Ok(format!("adopted {name}\n"))
-        }),
+        "adopt" => {
+            let name = match pkgbase_name(args) {
+                Ok(n) => n,
+                Err("invalid repository name") => {
+                    return fail(
+                        action,
+                        Error::Invalid(format!("invalid package name {:?}", args[0])),
+                    );
+                }
+                Err(msg) => return die(action, msg),
+            };
+            let id = match require_pkgbase_id(store, &name) {
+                Ok(id) => id,
+                Err(e) => return fail(action, e),
+            };
+            match store.adopt_ssh(account.id, id) {
+                Ok(crate::orgs::Adopted::Maintainer) => Outcome::ok(format!("adopted {name}\n")),
+                Ok(crate::orgs::Adopted::Request(_)) => Outcome::text(
+                    "",
+                    format!(
+                        "An adoption request for {name} has been filed. A site admin must grant it before you become the maintainer.\n"
+                    ),
+                    0,
+                ),
+                Err(e) => fail(action, e),
+            }
+        }
+        "restore" => {
+            let name = match pkgbase_name(args) {
+                Ok(n) => n,
+                Err("invalid repository name") => {
+                    return fail(
+                        action,
+                        Error::Invalid(format!("invalid package name {:?}", args[0])),
+                    );
+                }
+                Err(msg) => return die(action, msg),
+            };
+            match store.restore_pkgbase(account.id, &name) {
+                Ok(()) => Outcome::text(
+                    "",
+                    format!(
+                        "{name} will be restored as an orphan. Use `adopt {name}` to request maintainership.\n"
+                    ),
+                    0,
+                ),
+                Err(e) => fail(action, e),
+            }
+        }
         "disown" => one_pkg(action, args, |name| {
             let id = require_pkgbase_id(store, name)?;
             store.disown(account.id, id)?;

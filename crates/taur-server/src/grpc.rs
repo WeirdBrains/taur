@@ -18,6 +18,7 @@ fn status(e: Error) -> Status {
         Error::NotFound(m) => Status::not_found(m),
         Error::Conflict(m) => Status::already_exists(m),
         Error::Invalid(m) | Error::Parse(m) => Status::invalid_argument(m),
+        Error::RateLimited => Status::resource_exhausted(e.to_string()),
         other => {
             // Error values never contain passwords or tokens.
             eprintln!("taur: grpc internal error: {other}");
@@ -349,7 +350,8 @@ impl manage_server::Manage for Svc {
     async fn adopt(&self, req: Request<PkgbaseRequest>) -> R<Empty> {
         empty((|| {
             let u = self.verified(&req)?;
-            self.store.adopt(u.id, self.pb(&req.get_ref().pkgbase)?)
+            self.store.adopt(u.id, self.pb(&req.get_ref().pkgbase)?)?;
+            Ok(())
         })())
     }
     async fn set_comaintainers(&self, req: Request<ComaintainersRequest>) -> R<Empty> {

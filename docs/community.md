@@ -35,8 +35,24 @@ for push notifications too.
 maintainer is skipped). Allowed: maintainer, site admins, org Owners/Admins of the owning
 org. Co-maintainers may push and manage the package. RPC `CoMaintainers` lists them.
 
+## Adopt and disown
+Checked against aurweb `aurweb/git/serve.py` and `aurweb/pkgbase/actions.py` (archlinux/aurweb master).
+
+- **Website, gRPC, MCP and HTTP `POST /api/v1/packages/{pkgbase}/adopt`:** a site admin takes an orphan immediately (aurweb Package Maintainer). Any other verified user files an `adoption` request and does not become maintainer until a site admin accepts it (`202` with `{"request","status":"pending"}`). Adopting a package that already has a maintainer is refused.
+- **SSH `adopt`:** always files that request, including for a site admin. aurweb's git-serve does the same ("granting happens on the website").
+- **Org-owned orphans** are a TAUR feature aurweb does not have. A member who can manage the package takes it immediately, on the website and over SSH. The org link stays.
+- **Disown by the maintainer** promotes the co-maintainer with the lowest user id (aurweb promotes the lowest `Priority`; TAUR has no priority column) or clears the maintainer when there is nobody to promote.
+- **Disown by a co-maintainer** removes only that co-maintainer.
+- **Disown by a site admin** who is neither maintainer nor co-maintainer orphans the package and clears co-maintainers, matching a Package Maintainer disown in aurweb.
+- An org member who can manage the package, and is not the maintainer, clears the personal maintainer and keeps the org.
+
+## Restore
+`POST /api/v1/packages/{pkgbase}/restore` and SSH `restore <pkgbase>` put back a package base removed by an accepted deletion (or merge). The git repository kept under `<home>/repos/.deleted/` is moved back to `<home>/repos/<pkgbase>.git`, and metadata is read again from `HEAD:.SRCINFO`. The package returns as an orphan.
+
+The former maintainer or a site admin may restore. aurweb lets any verified user restore a name that still exists in the shared `aur.git` namespace; TAUR only keeps the per-base repository it moved aside, so restore is limited to those two roles. There is nothing to restore when the git directory was not on disk.
+
 ## Requests
-- `POST /api/v1/packages/{pkgbase}/requests` `{"kind": "orphan"|"deletion"|"merge",
+- `POST /api/v1/packages/{pkgbase}/requests` `{"kind": "orphan"|"deletion"|"merge"|"adoption",
   "merge_into"?, "comment"}`; maintainers are emailed.
 - `GET /api/v1/requests[?all=true]` (signed in; pending only by default),
   `GET /api/v1/requests/{id}`.

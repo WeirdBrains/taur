@@ -3,9 +3,11 @@
 use crate::srcinfo::{self, SrcInfo};
 use crate::{Error, Result, now, repo};
 use rusqlite::{Connection, OptionalExtension, Row, ToSql, params};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 /// Relation kinds stored per package, in `.SRCINFO` key spelling.
 pub const RELATION_KINDS: [&str; 9] = [
@@ -118,6 +120,12 @@ CREATE TABLE IF NOT EXISTS co_maintainers (
   pkgbase_id INTEGER NOT NULL REFERENCES pkgbases(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (pkgbase_id, user_id));
+CREATE TABLE IF NOT EXISTS deleted_pkgbases (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  repo_rel TEXT NOT NULL,
+  maintainer_id INTEGER,
+  deleted_at INTEGER NOT NULL);
 "#;
 
 /// One package as the RPC sees it.
@@ -264,6 +272,13 @@ fn strings(conn: &Connection, sql: &str, arg: i64) -> Result<Vec<String>> {
     Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
 }
 
+struct RpcWindow {
+    /// `0` disables the limiter.
+    max: u32,
+    window: Duration,
+    hits: HashMap<String, Vec<Instant>>,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
     home: PathBuf,
@@ -271,6 +286,7 @@ pub struct Store {
     base_url: std::sync::RwLock<String>,
     hook_env: std::sync::RwLock<Vec<(String, String)>>,
     ssh_clone_base: std::sync::RwLock<Option<String>>,
+    rpc_limit: Mutex<RpcWindow>,
 }
 
 impl Store {
@@ -315,7 +331,44 @@ impl Store {
             base_url: std::sync::RwLock::new(crate::DEFAULT_BASE_URL.to_string()),
             hook_env: std::sync::RwLock::new(Vec::new()),
             ssh_clone_base: std::sync::RwLock::new(None),
+            rpc_limit: Mutex::new(RpcWindow {
+                max: 0,
+                window: Duration::from_secs(60),
+                hits: HashMap::new(),
+            }),
         })
+    }
+
+    /// RPC requests allowed per `window_secs` for each socket peer.
+    /// `max == 0` disables the limiter. The key is the connection's peer address;
+    /// `X-Forwarded-For` is never read. `peer == None` (an in-process call with no
+    /// socket) shares one bucket named `peerless`.
+    pub fn configure_rpc_rate_limit(&self, max: u32, window_secs: u64) {
+        let mut g = self.rpc_limit.lock().unwrap_or_else(|e| e.into_inner());
+        g.max = max;
+        g.window = Duration::from_secs(window_secs.max(1));
+        g.hits.clear();
+    }
+
+    /// Record one RPC call. `Err(RateLimited)` when the peer is over the window.
+    pub fn enforce_rpc_limit(&self, peer: Option<IpAddr>) -> Result<()> {
+        let mut g = self.rpc_limit.lock().unwrap_or_else(|e| e.into_inner());
+        if g.max == 0 {
+            return Ok(());
+        }
+        let key = peer
+            .map(|ip| ip.to_string())
+            .unwrap_or_else(|| "peerless".into());
+        let now = Instant::now();
+        let window = g.window;
+        let max = g.max;
+        let hits = g.hits.entry(key).or_default();
+        hits.retain(|t| now.saturating_duration_since(*t) < window);
+        if hits.len() as u32 >= max {
+            return Err(Error::RateLimited);
+        }
+        hits.push(now);
+        Ok(())
     }
 
     /// Replace the mailer (default: file outbox at `<home>/outbox`).
