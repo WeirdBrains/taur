@@ -19,13 +19,15 @@
 <h1>Rate limits, PKGBUILD checks, and limits</h1>
 <p class="lede">The repository file <code>docs/security.md</code> is the review note. This page is the operator's version. Neither one is a certification.</p>
 <h2>Rate limit</h2>
-<pre><code>TAUR_RPC_RATE_LIMIT=400
-TAUR_RPC_RATE_WINDOW=60</code></pre>
-<p>Each TCP peer may make that many RPC calls per window. The 429 body is JSON with <code>"error":"Rate limit reached"</code>. Forwarded headers are ignored, so a proxy in front must limit too if you need per-client limits.</p>
+<pre><code>TAUR_RPC_RATE_LIMIT=300
+TAUR_RPC_RATE_WINDOW=60
+TAUR_AUTH_RATE_LIMIT=20
+TAUR_TRUSTED_PROXIES=10.0.0.0/8</code></pre>
+<p>Defaults are on: RPC 300, auth 20, git HTTP 60, JSON API 120, dumps 12, MCP 60, gRPC 300, and 30 new embedded SSH connections, each per 60 seconds. <code>0</code> disables one class. HTTP 429 includes <code>Retry-After</code>. The RPC body is still JSON with <code>"error":"Rate limit reached"</code>. <code>X-Forwarded-For</code> is ignored unless the TCP peer is in <code>TAUR_TRUSTED_PROXIES</code>, and that proxy must append the client or every client behind it shares one bucket. Web pages are not limited. OpenSSH <code>git-serve</code> is a separate process and is not covered.</p>
 <h2>PKGBUILD</h2>
 <p>Pushes compare simple assignments only. To also run <code>makepkg --printsrcinfo</code> you must set <code>TAUR_PKGBUILD_ISOLATION=bwrap</code> and install bubblewrap. The server will not fall back to running <code>makepkg</code> on the host. That sandbox is not a virtual machine.</p>
 <h2>TLS</h2>
-<p>Terminate TLS in front of <code>TAUR_BIND</code>. gRPC is plaintext HTTP/2 on <code>TAUR_GRPC_BIND</code>. A Caddy snippet for this documentation site is <code>site/Caddyfile</code>. It does not start by itself.</p>
+<p><code>TAUR_TLS=off</code> is plaintext HTTP, and gRPC on <code>TAUR_GRPC_BIND</code> is plaintext HTTP/2. Put a proxy in front if you want TLS there. <code>TAUR_TLS=acme</code> is HTTP-01 in the process: HTTPS on <code>TAUR_BIND</code>, and gRPC uses that same certificate. It does not start without <code>TAUR_DOMAIN</code> and <code>TAUR_ACME_ACCEPT_TERMS=yes</code>, and it does not fall back to HTTP on the application port. SSH is separate. A Caddy snippet for this documentation site is <code>Caddyfile</code> in this branch. It does not start by itself.</p>
 </main>
 <footer class="docfoot"><a href="./">All guides</a></footer>
 <script src="../main.js"></script>

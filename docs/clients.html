@@ -31,7 +31,7 @@ curl 'https://packages.taur.weirdbrains.com/rpc?v=5&amp;type=info&amp;arg[]=hell
 <p>Dumps: <code>/packages.gz</code>, <code>/pkgbase.gz</code>, <code>/packages-meta-v1.json.gz</code>, <code>/packages-meta-ext-v1.json.gz</code>.</p>
 <h2>gRPC</h2>
 <pre><code>taur serve --grpc-bind 127.0.0.1:50051</code></pre>
-<p>The package service is <code>https://packages.taur.weirdbrains.com</code>. gRPC stays on the address you set with <code>--grpc-bind</code> (plaintext HTTP/2); it is not served from the project site. Send <code>authorization: Bearer &lt;token&gt;</code>.</p>
+<p>The package service is <code>https://packages.taur.weirdbrains.com</code>. gRPC stays on the address you set with <code>--grpc-bind</code>. With <code>TAUR_TLS=off</code> that listener is plaintext HTTP/2. With <code>TAUR_TLS=acme</code> it uses the same certificate as HTTPS. It is not served from the project site. Send <code>authorization: Bearer &lt;token&gt;</code>.</p>
 <h2>MCP</h2>
 <p>HTTP: <code>POST /mcp</code> on the same server. Stdio: <code>taurctl mcp</code> with <code>TAUR_SERVER</code> or <code>--server</code> pointing at the HTTP API. Public tools search and show packages. Management tools need the bearer token in the MCP client configuration, the same token <code>taurctl login</code> stores.</p>
 <pre><code>taurctl --server https://packages.taur.weirdbrains.com login alice
