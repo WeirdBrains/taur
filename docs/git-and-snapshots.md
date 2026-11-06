@@ -41,6 +41,9 @@ Set `TAUR_PKGBUILD_ISOLATION=bwrap` to also run `makepkg --printsrcinfo` inside 
 (read-only `/usr`, no home directory, no network, 20 second limit) and compare pkgbase and
 version with the committed `.SRCINFO`. Any other value is refused. If `bwrap` is missing,
 the push is refused rather than running `makepkg` on the host. Unset, this check is skipped.
+`cargo test -p taur-server --test fixture_isolation` is the regression for building and
+installing `tests/fixtures/hello-taur` only inside that sandbox. See
+[security notes](security.md) for what that sandbox does not prove.
 
 Deleted package bases keep their repository under `<home>/repos/.deleted/`. See
 [community](community.md) for who can restore one.
