@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Publish packages — TAUR</title>
+<link rel="canonical" href="https://taur.weirdbrains.com/docs/publish.html">
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <a class="brand" href="../"><img class="logo" src="../assets/logo.svg" alt="" width="36" height="36"> taur</a>
+  <button class="menu" aria-expanded="false" aria-controls="links">Menu</button>
+  <nav id="links" aria-label="Main"><a href="../">Overview</a><a href="./">Guides</a><a href="publish.html" aria-current="page">Publish</a><a href="https://github.com/WeirdBrains/taur">GitHub</a></nav>
+</header>
+<main id="main" class="light doc">
+<h1>Import, push, keys, adopt, disown, restore</h1>
+<p class="lede">A package base is a directory with a <code>PKGBUILD</code> and a <code>.SRCINFO</code>, stored as <code>repos/&lt;pkgbase&gt;.git</code> on branch <code>master</code>.</p>
+<h2>Import a directory you trust</h2>
+<pre><code>taur --home /var/lib/taur import ./my-pkg --maintainer alice</code></pre>
+<p>Omit <code>--maintainer</code> to leave it orphaned. This reads <code>.SRCINFO</code>. It does not run the PKGBUILD.</p>
+<h2>Push</h2>
+<p>HTTP uses your account name and a session token as the password. SSH uses a key registered with <code>taurctl key add</code>. The server checks the branch, fast-forward, file size, and <code>.SRCINFO</code>. Simple <code>pkgver=</code> lines in the PKGBUILD must agree with <code>.SRCINFO</code>. Shell in the PKGBUILD is not executed unless <code>TAUR_PKGBUILD_ISOLATION=bwrap</code>.</p>
+<pre><code>git clone https://packages.taur.weirdbrains.com/hello-taur.git
+git push https://alice:TOKEN@packages.taur.weirdbrains.com/hello-taur.git master</code></pre>
+<p><code>paru</code> clones <code>/{pkgbase}</code> without <code>.git</code>. Both paths are the same repository.</p>
+<h2>Adopt and disown</h2>
+<p>Over SSH, <code>adopt</code> files an adoption request even for a site admin. On the HTTP API a site admin takes an orphan immediately; everyone else gets HTTP 202 and a request id. The maintainer's <code>disown</code> promotes the co-maintainer with the lowest user id. A co-maintainer who disowns only leaves the co-maintainer list.</p>
+<h2>Restore</h2>
+<pre><code>taurctl request file hello-taur --kind deletion --comment "replaced"
+# a site admin accepts it, then either the former maintainer or an admin:
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  https://packages.taur.weirdbrains.com/api/v1/packages/hello-taur/restore</code></pre>
+<p>The git history comes back from <code>repos/.deleted/</code> and the package is an orphan. Metadata is the <code>HEAD:.SRCINFO</code> from that repository.</p>
+</main>
+<footer class="docfoot"><a href="./">All guides</a></footer>
+<script src="../main.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clients — TAUR</title>
+<link rel="canonical" href="https://taur.weirdbrains.com/docs/clients.html">
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <a class="brand" href="../"><img class="logo" src="../assets/logo.svg" alt="" width="36" height="36"> taur</a>
+  <button class="menu" aria-expanded="false" aria-controls="links">Menu</button>
+  <nav id="links" aria-label="Main"><a href="../">Overview</a><a href="./">Guides</a><a href="clients.html" aria-current="page">Clients</a><a href="https://github.com/WeirdBrains/taur">GitHub</a></nav>
+</header>
+<main id="main" class="light doc">
+<h1>yay, paru, RPC, gRPC, and MCP</h1>
+<p class="lede">Pass URLs on the command line. Do not pass <code>--save</code>. Quote the RPC URL in zsh because <code>?</code> is a glob.</p>
+<h2>yay and paru</h2>
+<pre><code>yay --aururl https://packages.taur.weirdbrains.com --aurrpcurl 'https://packages.taur.weirdbrains.com/rpc?' -Ss hello
+yay --aururl https://packages.taur.weirdbrains.com --aurrpcurl 'https://packages.taur.weirdbrains.com/rpc?' -Sii hello-taur
+yay --aururl https://packages.taur.weirdbrains.com --aurrpcurl 'https://packages.taur.weirdbrains.com/rpc?' -G hello-taur
+
+paru --aururl https://packages.taur.weirdbrains.com --aurrpcurl 'https://packages.taur.weirdbrains.com/rpc?' -Ss hello</code></pre>
+<p>yay GETs <code>/rpc?</code>. paru POSTs a form to <code>/rpc</code>. <code>-G</code> clones. It does not build. Give each helper a private <code>HOME</code> and <code>XDG_CONFIG_HOME</code> when you are testing.</p>
+<h2>RPC</h2>
+<pre><code>curl 'https://packages.taur.weirdbrains.com/rpc/v5/search/hello?by=name'
+curl 'https://packages.taur.weirdbrains.com/rpc?v=5&amp;type=info&amp;arg[]=hello-taur'</code></pre>
+<p>Dumps: <code>/packages.gz</code>, <code>/pkgbase.gz</code>, <code>/packages-meta-v1.json.gz</code>, <code>/packages-meta-ext-v1.json.gz</code>.</p>
+<h2>gRPC</h2>
+<pre><code>taur serve --grpc-bind 127.0.0.1:50051</code></pre>
+<p>The package service is <code>https://packages.taur.weirdbrains.com</code>. gRPC stays on the address you set with <code>--grpc-bind</code> (plaintext HTTP/2); it is not served from the project site. Send <code>authorization: Bearer &lt;token&gt;</code>.</p>
+<h2>MCP</h2>
+<p>HTTP: <code>POST /mcp</code> on the same server. Stdio: <code>taurctl mcp</code> with <code>TAUR_SERVER</code> or <code>--server</code> pointing at the HTTP API. Public tools search and show packages. Management tools need the bearer token in the MCP client configuration, the same token <code>taurctl login</code> stores.</p>
+<pre><code>taurctl --server https://packages.taur.weirdbrains.com login alice
+taurctl mcp</code></pre>
+</main>
+<footer class="docfoot"><a href="./">All guides</a></footer>
+<script src="../main.js"></script>
+</body>
+</html>

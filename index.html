@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TAUR — an AUR-compatible package server</title>
+<link rel="canonical" href="https://taur.weirdbrains.com/">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <a class="brand" href="./"><img class="logo" src="assets/logo.svg" alt="" width="36" height="36"> taur</a>
+  <button class="menu" aria-expanded="false" aria-controls="links">Menu</button>
+  <nav id="links" aria-label="Main">
+    <a href="./" aria-current="page">Overview</a>
+    <a href="docs/">Guides</a>
+    <a href="docs/install.html">Install</a>
+    <a href="https://github.com/WeirdBrains/taur">GitHub</a>
+  </nav>
+</header>
+<main id="main">
+<section class="hero">
+  <div>
+    <p class="lede">Package server</p>
+    <h1>An AUR-compatible server for your own packages.</h1>
+    <p>TAUR speaks the AUR RPC, serves one git repository per package base, and gives you accounts, organizations, and a small web UI. <code>yay</code> and <code>paru</code> can search it with <code>--aururl</code>.</p>
+    <p><a class="btn" href="docs/install.html">Install</a><a class="btn ghost" href="docs/">Guides</a></p>
+    <p class="lede">This site is the project documentation. The server you run has its own package UI at the bind address.</p>
+  </div>
+  <img class="mark" src="assets/logo.svg" alt="TAUR mark: an angular tau, not the Arch Linux logo">
+</section>
+<section class="light">
+  <h2>Features</h2>
+  <ul class="grid">
+    <li><h3>RPC v5</h3><p>Search, info, suggest, and the legacy <code>/rpc</code> query string yay and paru send.</p></li>
+    <li><h3>Git</h3><p>Smart HTTP and SSH clone and push. One bare repo per package base, branch <code>master</code>.</p></li>
+    <li><h3>Helpers</h3><p><code>yay</code> and <code>paru</code> flags per command, so your real helper config stays put.</p></li>
+    <li><h3>Accounts</h3><p>Register, verify email, reset a password, session tokens, SSH keys.</p></li>
+    <li><h3>Organizations</h3><p>Owner, admin, and contributor roles. An org can own a package base.</p></li>
+    <li><h3>Community</h3><p>Votes, flags, comments, notifications, and requests. Adoption follows aurweb's request step.</p></li>
+  </ul>
+</section>
+<section>
+  <h2>Quick start</h2>
+  <pre><code>git clone https://github.com/WeirdBrains/taur
+cd taur
+cargo build --release
+./target/release/taur --home /tmp/taur-dev import tests/fixtures/hello-taur
+./target/release/taur --home /tmp/taur-dev serve --bind 127.0.0.1:8080</code></pre>
+  <p>The public package service is <code>https://packages.taur.weirdbrains.com</code>. This site does not serve RPC or git. Without <code>--save</code>:</p>
+  <pre><code>yay --aururl https://packages.taur.weirdbrains.com --aurrpcurl 'https://packages.taur.weirdbrains.com/rpc?' -Ss hello</code></pre>
+</section>
+</main>
+<footer>
+  <p>TAUR is not Arch Linux and this mark is not the Arch Linux logo. Hosting at taur.weirdbrains.com is the intended name; this tree does not configure DNS or TLS.</p>
+</footer>
+<script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">TAUR</title>
+  <desc id="desc">Angular tau mark. Not the Arch Linux logo.</desc>
+  <polygon points="4,20 32,4 60,20 50,28 32,16 14,28" fill="#163a5f"/>
+  <polygon points="12,26 26,34 26,58 12,50" fill="#0b4f63"/>
+  <polygon points="26,34 40,26 40,50 26,58" fill="#3fd8e8"/>
+</svg>

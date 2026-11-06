@@ -1,21 +1,30 @@
-# TAUR
+# TAUR project site
 
-An AUR-compatible package server in Rust. `yay` and other AUR helpers can search,
-inspect and clone packages from it.
+Static pages for `https://taur.weirdbrains.com`. This branch is only the project site.
+The package repository, RPC, git, and API are `https://packages.taur.weirdbrains.com`,
+served by the `taur` binary from the `main` branch.
+
+## Preview
+
+From this directory:
 
 ```sh
-cargo build
-taur --home /tmp/taur import path/to/pkgdir   # dir with PKGBUILD + .SRCINFO
-taur --home /tmp/taur serve --bind 127.0.0.1:8080
-yay --aururl http://127.0.0.1:8080 --aurrpcurl 'http://127.0.0.1:8080/rpc?' -Ss foo
+python -m http.server 8090 --bind 127.0.0.1
 ```
 
-Configure the server with environment variables: copy [.env.example](.env.example) to `.env`
-(see [docs/configuration.md](docs/configuration.md)).
+Open `http://127.0.0.1:8090/`. Canonical links in the HTML use `https://taur.weirdbrains.com`.
+Serving the folder locally does not make that name resolve.
 
-Manage accounts, orgs and packages with `taurctl` (see [docs/cli.md](docs/cli.md)).
-Git over SSH works with the built-in server or OpenSSH (`taur ssh-auth` /
-`taur git-serve`; see [docs/ssh-keys.md](docs/ssh-keys.md)). Maintainer pages live at
-`/users/<name>`.
+## Deploy
 
-See [docs/](docs/README.md), [PLAN.md](PLAN.md) and [AGENTS.md](AGENTS.md).
+`CNAME` is `taur.weirdbrains.com`, which is the name GitHub Pages would publish if
+this branch is the Pages source. `Caddyfile` is an alternate vhost for the same
+files. Neither file was applied to a live server from this checkout. The package
+service hostname is not this site.
+
+## Mark
+
+`assets/logo.svg` is an original angular tau. It is not the Arch Linux logo and it is
+not an Arch Linux endorsement. `assets/logo-dark.svg` is the same geometry for a dark
+background. `assets/icon.svg` is the favicon tile. `assets/wordmark.svg` sets the word
+"taur" beside the mark. No Arch artwork was traced.

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operate TAUR — guides</title>
+<link rel="canonical" href="https://taur.weirdbrains.com/docs/operate.html">
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <a class="brand" href="../"><img class="logo" src="../assets/logo.svg" alt="" width="36" height="36"> taur</a>
+  <button class="menu" aria-expanded="false" aria-controls="links">Menu</button>
+  <nav id="links" aria-label="Main"><a href="../">Overview</a><a href="./">Guides</a><a href="operate.html" aria-current="page">Operate</a><a href="https://github.com/WeirdBrains/taur">GitHub</a></nav>
+</header>
+<main id="main" class="light doc">
+<h1>Configure, services, backups, upgrades</h1>
+<p class="lede">Flags override environment variables. The SMTP URL is never logged. Copy <a href="https://github.com/WeirdBrains/taur/blob/main/.env.example"><code>.env.example</code></a> and source it, or use it as a systemd <code>EnvironmentFile=</code>.</p>
+<h2>Settings you will set</h2>
+<table>
+  <tr><th>Variable</th><th>Role</th></tr>
+  <tr><td><code>TAUR_HOME</code></td><td>Database, <code>repos/</code>, outbox, host key.</td></tr>
+  <tr><td><code>TAUR_BIND</code></td><td>HTTP listen address. Default <code>127.0.0.1:8080</code>.</td></tr>
+  <tr><td><code>TAUR_BASE_URL</code></td><td>Links in mail and the public URL. No path.</td></tr>
+  <tr><td><code>TAUR_SSH_BIND</code></td><td>Embedded SSH. Unset means SSH is off.</td></tr>
+  <tr><td><code>TAUR_GRPC_BIND</code></td><td>gRPC. Plaintext HTTP/2.</td></tr>
+  <tr><td><code>TAUR_SMTP_URL</code></td><td>Mail. Unset writes files under <code>outbox/</code>.</td></tr>
+  <tr><td><code>TAUR_ADMINS</code></td><td>User names granted site admin at startup. Grant only.</td></tr>
+  <tr><td><code>TAUR_RPC_RATE_LIMIT</code></td><td>RPC calls per peer per window. <code>0</code> is off.</td></tr>
+</table>
+<p>Full table: repository <code>docs/configuration.md</code>.</p>
+<h2>systemd</h2>
+<p>Service files live in the application repository on <code>main</code> (<code>packaging/systemd/</code> and <code>packaging/taur.env.example</code>). Point <code>EnvironmentFile=</code> at a copy of that example. <code>TAUR_BASE_URL</code> should be <code>https://packages.taur.weirdbrains.com</code>. The process should be the only writer of <code>TAUR_HOME</code>.</p>
+<h2>Backup</h2>
+<p>Stop the server or use SQLite's online backup, then copy <code>TAUR_HOME</code>: <code>taur.db</code>, <code>repos/</code> (including <code>repos/.deleted/</code>), and <code>ssh_host_ed25519_key</code>. Restoring that directory onto the same version of the binary brings the instance back.</p>
+<h2>Upgrade</h2>
+<p>Build the new binary, stop the service, replace the binary, start it. The database applies small <code>ALTER TABLE</code> steps on open. Take the backup first. There is no separate migration command.</p>
+</main>
+<footer class="docfoot"><a href="./">All guides</a></footer>
+<script src="../main.js"></script>
+</body>
+</html>
