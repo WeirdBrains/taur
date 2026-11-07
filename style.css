@@ -23,6 +23,8 @@ h2{font-size:1.6rem;margin:0 0 1rem;border-bottom:3px solid #0a7f8c;display:inli
 h3{font-size:1.05rem;margin:0 0 .4rem;border-left:3px solid #0a7f8c;padding-left:.55rem}
 .btn{display:inline-block;padding:.65rem 1.2rem;background:#3fd8e8;color:#04192A;text-decoration:none;font-weight:700;margin:.3rem .6rem .3rem 0;border-radius:20px}
 .btn.ghost{background:none;color:#3fd8e8;border:1px solid #3fd8e8}
+.hero .btn{color:#04192A}
+.hero .btn.ghost{color:#3fd8e8}
 .grid{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),1fr));gap:1rem}
 .grid li{background:#fff;border:1px solid #c9dbe6;padding:1.1rem;border-radius:20px}
 .grid p{margin:0;color:#3f5b6e;font-size:.92rem}
