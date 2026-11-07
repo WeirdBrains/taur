@@ -26,6 +26,12 @@ pub enum Cmd {
     Serve(Box<ServeArgs>),
     /// Mark an account's email as verified (admin).
     VerifyUser { name: String },
+    /// Grant (or with --revoke, remove) the moderator role: reject packages and ordinary users.
+    Moderator {
+        name: String,
+        #[arg(long)]
+        revoke: bool,
+    },
     /// Grant (or with --revoke, remove) site-admin rights: accept requests, manage any package.
     Admin {
         name: String,

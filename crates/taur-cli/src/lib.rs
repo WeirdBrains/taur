@@ -122,6 +122,9 @@ pub enum Cmd {
     /// File and handle package requests (orphan, deletion, merge, adoption).
     #[command(subcommand)]
     Request(RequestCmd),
+    /// Reject a package or user, or review those decisions.
+    #[command(subcommand)]
+    Moderation(ModCmd),
     /// Run an MCP server on stdio that forwards to the TAUR server's /mcp endpoint
     /// (uses the stored session token, if any).
     Mcp,
@@ -267,6 +270,24 @@ pub enum PkgCmd {
         org: Option<String>,
         #[arg(long)]
         user: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ModCmd {
+    /// Reject a package base. Moderator or site admin.
+    RejectPackage { pkgbase: String, reason: String },
+    /// Reject an ordinary account. Moderator or site admin.
+    RejectUser { name: String, reason: String },
+    /// List the rejection audit. Site admin.
+    Audit,
+    /// Reverse one open package or user rejection. Site admin.
+    Reverse { id: i64, reason: String },
+    /// Grant or remove the moderator role. Site admin.
+    SetModerator {
+        name: String,
+        #[arg(long)]
+        revoke: bool,
     },
 }
 
@@ -712,6 +733,66 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                     Some(serde_json::json!({"comment": comment})),
                 )?;
                 done(g, format!("closed request #{id}"));
+            }
+        },
+        Cmd::Moderation(m) => match m {
+            ModCmd::RejectPackage { pkgbase, reason } => {
+                let v = c.send(
+                    "POST",
+                    &format!(
+                        "/api/v1/moderation/packages/{}/reject",
+                        Client::enc(pkgbase)
+                    ),
+                    Some(serde_json::json!({"reason": reason})),
+                )?;
+                done(g, format!("rejected {pkgbase} (event {})", v["event"]));
+            }
+            ModCmd::RejectUser { name, reason } => {
+                let v = c.send(
+                    "POST",
+                    &format!("/api/v1/moderation/users/{}/reject", Client::enc(name)),
+                    Some(serde_json::json!({"reason": reason})),
+                )?;
+                done(g, format!("rejected {name} (event {})", v["event"]));
+            }
+            ModCmd::Audit => {
+                let v = c.send("GET", "/api/v1/audit", None)?;
+                print(g, &v, |v| {
+                    for e in v.as_array().into_iter().flatten() {
+                        println!(
+                            "{} {} {} {} {} {}",
+                            s(&e["id"]),
+                            s(&e["action"]),
+                            s(&e["target_kind"]),
+                            s(&e["target"]),
+                            s(&e["actor"]),
+                            s(&e["reason"])
+                        );
+                    }
+                });
+            }
+            ModCmd::Reverse { id, reason } => {
+                c.send(
+                    "POST",
+                    &format!("/api/v1/audit/{id}/reverse"),
+                    Some(serde_json::json!({"reason": reason})),
+                )?;
+                done(g, format!("reversed event {id}"));
+            }
+            ModCmd::SetModerator { name, revoke } => {
+                c.send(
+                    "PUT",
+                    &format!("/api/v1/admin/moderators/{}", Client::enc(name)),
+                    Some(serde_json::json!({"on": !revoke})),
+                )?;
+                done(
+                    g,
+                    format!(
+                        "{} is {}a moderator",
+                        name,
+                        if *revoke { "no longer " } else { "" }
+                    ),
+                );
             }
         },
         Cmd::Pkg(p) => match p {

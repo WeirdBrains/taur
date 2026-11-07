@@ -14,7 +14,9 @@ type R<T> = Result<Response<T>, Status>;
 fn status(e: Error) -> Status {
     match e {
         Error::Unauthorized => Status::unauthenticated(e.to_string()),
-        Error::Forbidden | Error::Unverified => Status::permission_denied(e.to_string()),
+        Error::Forbidden | Error::Unverified | Error::Suspended(_) => {
+            Status::permission_denied(e.to_string())
+        }
         Error::NotFound(m) => Status::not_found(m),
         Error::Conflict(m) => Status::already_exists(m),
         Error::Invalid(m) | Error::Parse(m) => Status::invalid_argument(m),
@@ -129,6 +131,8 @@ fn user(u: User) -> pb::User {
         name: u.name,
         email: u.email,
         verified: u.verified,
+        is_admin: u.is_admin,
+        is_moderator: u.is_moderator,
     }
 }
 
@@ -599,6 +603,68 @@ fn ssh_key(k: taur_core::keys::SshKey) -> SshKey {
     }
 }
 
+#[tonic::async_trait]
+impl moderation_server::Moderation for Svc {
+    async fn set_moderator(&self, req: Request<ModeratorRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
+        empty((|| {
+            let u = self.verified(&req)?;
+            let r = req.get_ref();
+            self.store.set_moderator(u.id, &r.name, r.on)
+        })())
+    }
+    async fn reject_package(&self, req: Request<ReasonRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
+        empty((|| {
+            let u = self.verified(&req)?;
+            let r = req.get_ref();
+            self.store
+                .reject_package(u.id, &r.name, &r.reason)
+                .map(|_| ())
+        })())
+    }
+    async fn reject_user(&self, req: Request<ReasonRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
+        empty((|| {
+            let u = self.verified(&req)?;
+            let r = req.get_ref();
+            self.store.reject_user(u.id, &r.name, &r.reason).map(|_| ())
+        })())
+    }
+    async fn list_audit(&self, req: Request<Empty>) -> R<AuditList> {
+        self.limit(&req, LimitClass::Grpc)?;
+        ok((|| {
+            let u = self.user(&req)?;
+            let events = self.store.list_audit(u.id)?;
+            Ok(AuditList {
+                events: events
+                    .into_iter()
+                    .map(|e| AuditEvent {
+                        id: e.id,
+                        at: e.at,
+                        action: e.action,
+                        target_kind: e.target_kind,
+                        target: e.target,
+                        reason: e.reason,
+                        actor: e.actor.unwrap_or_default(),
+                        source: e.source,
+                        reverses: e.reverses,
+                        open: e.open,
+                    })
+                    .collect(),
+            })
+        })())
+    }
+    async fn reverse(&self, req: Request<ReverseRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
+        empty((|| {
+            let u = self.verified(&req)?;
+            let r = req.get_ref();
+            self.store.reverse_audit(u.id, r.id, &r.reason).map(|_| ())
+        })())
+    }
+}
+
 /// All TAUR gRPC services as one tonic router.
 pub fn routes(store: Arc<Store>) -> tonic::service::Routes {
     let s = Svc { store };
@@ -608,7 +674,8 @@ pub fn routes(store: Arc<Store>) -> tonic::service::Routes {
         .add_service(manage_server::ManageServer::new(s.clone()))
         .add_service(community_server::CommunityServer::new(s.clone()))
         .add_service(requests_server::RequestsServer::new(s.clone()))
-        .add_service(ssh_keys_server::SshKeysServer::new(s))
+        .add_service(ssh_keys_server::SshKeysServer::new(s.clone()))
+        .add_service(moderation_server::ModerationServer::new(s))
 }
 
 /// Serve gRPC as plaintext HTTP/2. This listener is not TLS.

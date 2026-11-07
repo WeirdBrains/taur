@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+### Added
+- Moderator role that can reject a package or an ordinary account, and a site-admin audit that can reverse those decisions.
+
 ## [1.1.0] - 2026-11-06
 ### Added
 - `taur serve --tls acme` requests and renews an HTTP-01 certificate (`--domain`, contact, and an explicit terms acceptance). Plain HTTP stays `TAUR_TLS=off`.

@@ -115,6 +115,17 @@ pub fn app_with(state: AppState) -> Router {
         .route("/api/v1/requests/{id}", get(show_request))
         .route("/api/v1/requests/{id}/accept", post(accept_request))
         .route("/api/v1/requests/{id}/reject", post(reject_request))
+        .route(
+            "/api/v1/admin/moderators/{name}",
+            axum::routing::put(set_moderator),
+        )
+        .route(
+            "/api/v1/moderation/packages/{name}/reject",
+            post(reject_package),
+        )
+        .route("/api/v1/moderation/users/{name}/reject", post(reject_user))
+        .route("/api/v1/audit", get(list_audit))
+        .route("/api/v1/audit/{id}/reverse", post(reverse_audit))
         .route("/api/v1/ssh-keys", get(list_keys).post(add_key))
         .route("/api/v1/ssh-keys/{id}", axum::routing::delete(remove_key))
         .fallback(githttp::handle)
@@ -526,7 +537,9 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (code, msg) = match &self.0 {
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, self.0.to_string()),
-            Error::Forbidden | Error::Unverified => (StatusCode::FORBIDDEN, self.0.to_string()),
+            Error::Forbidden | Error::Unverified | Error::Suspended(_) => {
+                (StatusCode::FORBIDDEN, self.0.to_string())
+            }
             Error::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
             Error::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
             Error::Invalid(m) | Error::Parse(m) => (StatusCode::BAD_REQUEST, m.clone()),
@@ -594,6 +607,66 @@ async fn logout(State(s): St, h: HeaderMap) -> Result<StatusCode, ApiError> {
 
 async fn account(State(s): St, h: HeaderMap) -> Result<Response, ApiError> {
     Ok(Json(s.user_for_token(&bearer(&h)?)?).into_response())
+}
+
+#[derive(Deserialize)]
+struct ReasonBody {
+    reason: String,
+}
+
+#[derive(Deserialize)]
+struct ModeratorBody {
+    on: bool,
+}
+
+async fn set_moderator(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<ModeratorBody>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.set_moderator(u.id, &name, body.on)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn reject_package(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<ReasonBody>,
+) -> Result<Json<Value>, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let id = s.reject_package(u.id, &name, &body.reason)?;
+    Ok(Json(json!({ "event": id })))
+}
+
+async fn reject_user(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<ReasonBody>,
+) -> Result<Json<Value>, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let id = s.reject_user(u.id, &name, &body.reason)?;
+    Ok(Json(json!({ "event": id })))
+}
+
+async fn list_audit(State(s): St, h: HeaderMap) -> Result<Json<Value>, ApiError> {
+    let u = auth(&s, &h)?;
+    let rows = s.list_audit(u.id)?;
+    Ok(Json(serde_json::to_value(rows).map_err(Error::from)?))
+}
+
+async fn reverse_audit(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+    Json(body): Json<ReasonBody>,
+) -> Result<Json<Value>, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let id = s.reverse_audit(u.id, id, &body.reason)?;
+    Ok(Json(json!({ "event": id })))
 }
 
 async fn unregister(

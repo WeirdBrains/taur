@@ -1,0 +1,50 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-moderation 1  "taurctl-moderation " 
+.SH NAME
+taurctl\-moderation \- Reject a package or user, or review those decisions
+.SH SYNOPSIS
+\fBtaurctl moderation\fR [\fB\-\-server\fR] [\fB\-\-config\-dir\fR] [\fB\-\-json\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Reject a package or user, or review those decisions
+.SH OPTIONS
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+taurctl\-moderation\-reject\-package(1)
+Reject a package base. Moderator or site admin
+.TP
+taurctl\-moderation\-reject\-user(1)
+Reject an ordinary account. Moderator or site admin
+.TP
+taurctl\-moderation\-audit(1)
+List the rejection audit. Site admin
+.TP
+taurctl\-moderation\-reverse(1)
+Reverse one open package or user rejection. Site admin
+.TP
+taurctl\-moderation\-set\-moderator(1)
+Grant or remove the moderator role. Site admin
+.TP
+taurctl\-moderation\-help(1)
+Print this message or the help of the given subcommand(s)

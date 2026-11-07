@@ -10,7 +10,7 @@ const APP_JS: &str = include_str!("../web/app.js");
 const STYLE: &str = include_str!("../web/style.css");
 
 /// Paths rendered by the web UI (`{x}` = one segment).
-pub const PAGES: [&str; 12] = [
+pub const PAGES: [&str; 13] = [
     "/",
     "/packages",
     "/packages/{name}",
@@ -23,6 +23,7 @@ pub const PAGES: [&str; 12] = [
     "/orgs",
     "/orgs/{name}",
     "/requests",
+    "/audit",
 ];
 
 const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";

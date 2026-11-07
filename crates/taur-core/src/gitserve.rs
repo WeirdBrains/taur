@@ -397,6 +397,9 @@ fn git_op(
     let path = path.strip_prefix('/').unwrap_or(path);
     let name = path.strip_suffix(".git").unwrap_or(path);
     validate_name(name)?;
+    if store.pkgbase_suspended(name)? {
+        return Err(Error::Invalid(format!("package {name} is rejected")));
+    }
     let verb = if action == "git-upload-pack" {
         "upload-pack"
     } else {

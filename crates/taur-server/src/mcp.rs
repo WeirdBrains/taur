@@ -62,6 +62,44 @@ const TOOLS: &[Tool] = &[
         destructive = false
     ),
     tool!(
+        "reject_package",
+        "Reject a package base (moderator or site admin). The repository is kept and hidden from search.",
+        [P, ("reason", "string", "Why it is rejected", true)],
+        auth = true,
+        ro = false,
+        destructive = true
+    ),
+    tool!(
+        "reject_user",
+        "Reject an ordinary account (moderator or site admin). Sessions end; the account row stays.",
+        [
+            ("name", "string", "User name", true),
+            ("reason", "string", "Why the account is rejected", true)
+        ],
+        auth = true,
+        ro = false,
+        destructive = true
+    ),
+    tool!(
+        "list_audit",
+        "List rejection and reversal events. Site admin only.",
+        [],
+        auth = true,
+        ro = true,
+        destructive = false
+    ),
+    tool!(
+        "reverse_rejection",
+        "Reverse one open package or user rejection. Site admin only. Does not create an account or package.",
+        [
+            ("id", "integer", "Audit event id", true),
+            ("reason", "string", "Why it is reversed", true)
+        ],
+        auth = true,
+        ro = false,
+        destructive = false
+    ),
+    tool!(
         "my_packages",
         "Package bases you maintain, co-maintain or can manage via organizations.",
         [],
@@ -458,6 +496,19 @@ fn call(store: &Store, name: &str, user: Option<User>, a: &Value) -> taur_core::
         "package_info" => taur_core::rpc::handle(store, Some("info"), &strings(a, "names")?, None),
         "list_comments" => serde_json::to_value(store.comments(s(a, "pkgbase")?)?)?,
         "whoami" => serde_json::to_value(user)?,
+        "reject_package" => {
+            let id = store.reject_package(uid, s(a, "pkgbase")?, s(a, "reason")?)?;
+            json!({"event": id})
+        }
+        "reject_user" => {
+            let id = store.reject_user(uid, s(a, "name")?, s(a, "reason")?)?;
+            json!({"event": id})
+        }
+        "list_audit" => serde_json::to_value(store.list_audit(uid)?)?,
+        "reverse_rejection" => {
+            let id = store.reverse_audit(uid, i(a, "id")?, s(a, "reason")?)?;
+            json!({"event": id})
+        }
         "my_packages" => serde_json::to_value(store.packages_for(uid)?)?,
         "vote" => {
             if b(a, "on", true) {

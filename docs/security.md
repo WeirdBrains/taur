@@ -61,3 +61,7 @@ PKGBUILD cannot escape bubblewrap.
 - The embedded SSH server and OpenSSH `command=` integration trust the forced command
   the way aurweb does. Do not expose `taur git-serve` as a normal shell.
 - No dependency-advisory scan is part of `cargo test`.
+- Official AUR and Arch identity checks are not implemented. Public AUR package info
+  has a maintainer nickname and no email or signature. See [upload policy](upload-policy.md).
+- Moderators can suspend a package or an ordinary account. Site admins reverse that
+  from the audit. See [moderation](moderation.md).
