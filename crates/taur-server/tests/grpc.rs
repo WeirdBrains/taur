@@ -33,7 +33,8 @@ async fn grpc_api() {
     let mut orgs = orgs_client::OrgsClient::new(ch.clone());
     let mut manage = manage_client::ManageClient::new(ch.clone());
     let mut reqs = requests_client::RequestsClient::new(ch.clone());
-    let mut keys = ssh_keys_client::SshKeysClient::new(ch);
+    let mut keys = ssh_keys_client::SshKeysClient::new(ch.clone());
+    let mut mods = moderation_client::ModerationClient::new(ch);
 
     // public
     let found = pkgs
@@ -332,6 +333,95 @@ async fn grpc_api() {
         .unwrap();
 
     acct.logout(authed(Empty {}, &tok)).await.unwrap();
+
+    // Admin acceptance of one registration claim. A moderator cannot accept.
+    store
+        .set_admin(store.user_by_name("alice").unwrap().unwrap().id, true)
+        .unwrap();
+    let again = acct
+        .login(LoginRequest {
+            name: "alice".into(),
+            password: "longenough".into(),
+        })
+        .await
+        .unwrap()
+        .into_inner()
+        .token;
+    store.insert_registry("vendor", "enforce").unwrap();
+    store
+        .insert_identity("vendor", "carol", "carol@example.com")
+        .unwrap();
+    assert_eq!(
+        acct.register(RegisterRequest {
+            name: "carol".into(),
+            email: "other@example.com".into(),
+            password: "longenough".into(),
+        })
+        .await
+        .unwrap_err()
+        .code(),
+        Code::AlreadyExists
+    );
+    let events = mods
+        .list_audit(authed(Empty {}, &again))
+        .await
+        .unwrap()
+        .into_inner()
+        .events;
+    let rejection = events
+        .iter()
+        .find(|e| e.target_kind == "registration" && e.open)
+        .unwrap();
+    assert!(!rejection.reason.contains("other@example.com"));
+    assert!(!rejection.reason.contains("longenough"));
+    let mod_id = store
+        .register("moddy", "mod@example.com", "longenough")
+        .unwrap()
+        .id;
+    store.mark_verified(mod_id).unwrap();
+    store.grant_moderator(mod_id, true).unwrap();
+    let mod_tok = store.login("moddy", "longenough").unwrap().token;
+    assert_eq!(
+        mods.accept_rejection(authed(
+            ReverseRequest {
+                id: rejection.id,
+                reason: "no".into(),
+            },
+            &mod_tok,
+        ))
+        .await
+        .unwrap_err()
+        .code(),
+        Code::PermissionDenied
+    );
+    mods.accept_rejection(authed(
+        ReverseRequest {
+            id: rejection.id,
+            reason: "this claim".into(),
+        },
+        &again,
+    ))
+    .await
+    .unwrap();
+    assert_eq!(
+        acct.register(RegisterRequest {
+            name: "carol".into(),
+            email: "third@example.com".into(),
+            password: "longenough".into(),
+        })
+        .await
+        .unwrap_err()
+        .code(),
+        Code::AlreadyExists
+    );
+    acct.register(RegisterRequest {
+        name: "carol".into(),
+        email: "other@example.com".into(),
+        password: "longenough".into(),
+    })
+    .await
+    .unwrap();
+    assert!(store.user_by_name("carol").unwrap().is_some());
     assert_eq!(
         acct.whoami(authed(Empty {}, &tok))
             .await

@@ -62,6 +62,14 @@ fn moderator_can_reject_and_only_an_admin_can_reverse() {
         rows.iter()
             .any(|e| e.id == event && e.open && e.reason == "not the upstream recipe")
     );
+    assert!(matches!(
+        s.accept_rejection(admin, event, "not an upload"),
+        Err(Error::Conflict(_))
+    ));
+    assert!(matches!(
+        s.accept_rejection(modr, event, "not an upload"),
+        Err(Error::Forbidden)
+    ));
     assert!(!rows.iter().any(|e| e.reason.contains("correct horse")));
     s.reverse_audit(admin, event, "reviewed").unwrap();
     assert!(!s.pkgbase_suspended("hello-taur").unwrap());
@@ -103,6 +111,10 @@ fn request_rejection_is_audited_and_not_reopened() {
     let rows = s.list_audit(admin).unwrap();
     let event = rows.iter().find(|e| e.target_kind == "request").unwrap();
     assert!(event.target.contains("hello-taur"));
+    assert!(matches!(
+        s.accept_rejection(admin, event.id, "not a registration"),
+        Err(Error::Conflict(_))
+    ));
     s.reverse_audit(admin, event.id, "retry").unwrap();
     assert_eq!(s.request(req.id).unwrap().status, "rejected");
     assert!(s.pkgbase_id("hello-taur").unwrap() == Some(id));

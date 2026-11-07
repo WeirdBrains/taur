@@ -65,4 +65,6 @@ PKGBUILD cannot escape bubblewrap.
   an Arch or AUR verification. Public AUR package info has a nickname and no email
   or recipe signature. See [upload policy](upload-policy.md).
 - Moderators can suspend a package or an ordinary account. Site admins reverse that
-  from the audit. See [moderation](moderation.md).
+  from the audit. Accepting a rejected upload or registration permits only that
+  same attempt; it does not unsuspend an account or store the rejected recipe.
+  See [moderation](moderation.md).

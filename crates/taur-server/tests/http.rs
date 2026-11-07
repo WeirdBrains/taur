@@ -1437,3 +1437,205 @@ async fn mcp_endpoint() {
     assert_eq!(v.as_array().unwrap().len(), 1);
     assert_eq!(get(&app, "/mcp").await.0, StatusCode::METHOD_NOT_ALLOWED);
 }
+
+#[tokio::test]
+async fn http_and_mcp_acceptance_is_what_the_gate_reads() {
+    let home = tempfile::tempdir().unwrap();
+    let store = Arc::new(Store::open(home.path()).unwrap());
+    let admin = store
+        .register("admin", "admin@example.com", "correct horse")
+        .unwrap()
+        .id;
+    let alice = store
+        .register("alice", "alice@example.com", "correct horse")
+        .unwrap()
+        .id;
+    let modr = store
+        .register("moddy", "mod@example.com", "correct horse")
+        .unwrap()
+        .id;
+    store.set_admin(admin, true).unwrap();
+    store.mark_verified(admin).unwrap();
+    store.mark_verified(alice).unwrap();
+    store.mark_verified(modr).unwrap();
+    store.grant_moderator(modr, true).unwrap();
+    store.insert_registry("vendor", "enforce").unwrap();
+    let (signing, verifying) = taur_core::registry::generate_key();
+    let fp = store
+        .insert_registry_key("vendor", "lab", verifying.as_bytes())
+        .unwrap();
+    store
+        .insert_identity("vendor", "alice", "alice@example.com")
+        .unwrap();
+    let src = "pkgbase = demo\npkgver = 1.0.0\npkgrel = 1\n\npkgname = demo\n";
+    let pkg = "pkgver=1.0.0\npkgrel=1\npkgname=(demo)\n";
+    let sig = taur_core::registry::sign_recipe(
+        signing.as_bytes(),
+        "vendor",
+        "extra",
+        "demo",
+        "1.0.0-1",
+        src.as_bytes(),
+        pkg.as_bytes(),
+    );
+    store
+        .insert_expectation("vendor", "demo", "extra", "1.0.0-1", &sig, &fp, "alice")
+        .unwrap();
+    let bad = home.path().join("bad");
+    std::fs::create_dir_all(&bad).unwrap();
+    std::fs::write(bad.join(".SRCINFO"), src).unwrap();
+    std::fs::write(bad.join("PKGBUILD"), format!("{pkg}# changed\n")).unwrap();
+    std::fs::write(bad.join("TAUR-REGISTRY"), "vendor\n").unwrap();
+    std::fs::write(bad.join("TAUR-REPOSITORY"), "extra\n").unwrap();
+    std::fs::write(
+        bad.join("TAUR-RECIPE.sig"),
+        sig.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+    )
+    .unwrap();
+    assert!(
+        store
+            .import_into(&bad, Some("alice"), Some("vendor"))
+            .unwrap_err()
+            .to_string()
+            .contains("rejected")
+    );
+    assert!(store.pkgbase_id("demo").unwrap().is_none());
+    let app = taur_server::app(store.clone());
+    let admin_token = store.login("admin", "correct horse").unwrap().token;
+    let mod_token = store.login("moddy", "correct horse").unwrap().token;
+    let (st, body) = call(
+        &app,
+        send("GET", "/api/v1/audit", Some(&admin_token), json!(null)),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let rows: Value = serde_json::from_slice(&body).unwrap();
+    let rejection = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["target_kind"] == "registry_upload" && e["open"] == true)
+        .unwrap();
+    let id = rejection["id"].as_i64().unwrap();
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                &format!("/api/v1/audit/{id}/accept"),
+                Some(&mod_token),
+                json!({"reason": "no"}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (st, body) = call(
+        &app,
+        send(
+            "POST",
+            &format!("/api/v1/audit/{id}/accept"),
+            Some(&admin_token),
+            json!({"reason": "same bytes"}),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let accepted = serde_json::from_slice::<Value>(&body).unwrap()["event"]
+        .as_i64()
+        .unwrap();
+    store
+        .import_into(&bad, Some("alice"), Some("vendor"))
+        .unwrap();
+    std::fs::write(bad.join("PKGBUILD"), format!("{pkg}# changed\n# more\n")).unwrap();
+    assert!(
+        store
+            .import_into(&bad, Some("alice"), Some("vendor"))
+            .unwrap_err()
+            .to_string()
+            .contains("rejected")
+    );
+
+    store
+        .insert_identity("vendor", "carol", "carol@example.com")
+        .unwrap();
+    assert!(
+        store
+            .register("carol", "other@example.com", "correct horse")
+            .unwrap_err()
+            .to_string()
+            .contains("operator identity")
+    );
+    let (_, listed) = mcp(
+        &app,
+        Some(&admin_token),
+        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+    )
+    .await;
+    let names: Vec<_> = listed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"accept_rejection"));
+    assert!(names.contains(&"revoke_acceptance"));
+    let reg = store
+        .list_audit(admin)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.target_kind == "registration" && e.open)
+        .unwrap();
+    let (_, denied) = mcp(
+        &app,
+        Some(&mod_token),
+        tool(2, "accept_rejection", json!({"id": reg.id, "reason": "no"})),
+    )
+    .await;
+    assert_eq!(denied["result"]["isError"], true);
+    let (_, ok) = mcp(
+        &app,
+        Some(&admin_token),
+        tool(
+            3,
+            "accept_rejection",
+            json!({"id": reg.id, "reason": "this claim"}),
+        ),
+    )
+    .await;
+    assert_eq!(ok["result"]["isError"], false);
+    assert!(
+        store
+            .register("carol", "third@example.com", "correct horse")
+            .unwrap_err()
+            .to_string()
+            .contains("operator identity")
+    );
+    assert_eq!(
+        store
+            .register("carol", "other@example.com", "correct horse")
+            .unwrap()
+            .name,
+        "carol"
+    );
+    let (_, revoked) = mcp(
+        &app,
+        Some(&admin_token),
+        tool(
+            4,
+            "revoke_acceptance",
+            json!({"id": accepted, "reason": "withdraw the upload"}),
+        ),
+    )
+    .await;
+    assert_eq!(revoked["result"]["isError"], false);
+    std::fs::write(bad.join("PKGBUILD"), format!("{pkg}# changed\n")).unwrap();
+    assert!(
+        store
+            .import_into(&bad, Some("alice"), Some("vendor"))
+            .unwrap_err()
+            .to_string()
+            .contains("rejected")
+    );
+}

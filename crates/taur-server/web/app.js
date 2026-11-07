@@ -257,7 +257,7 @@ async function pageAudit() {
   if (!me || !me.is_admin) { render(msg("Site admins audit rejections.")); return; }
   const rows = await api("GET", "/api/v1/audit");
   render(h("h1", {}, "Audit"),
-    h("p", { class: "muted" }, "Rejections and reversals. Reversing a package or user rejection makes another try possible. It does not create an account or restore a package that was never stored. A rejected request stays closed."),
+    h("p", { class: "muted" }, "Rejections, acceptances, and reversals. Accept lets that same rejected upload or registration be submitted again. It does not create an account or store a recipe. Reverse clears a package or user suspension and does not permit a rejected upload or registration. A rejected request stays closed."),
     h("table", {}, h("thead", {}, h("tr", {}, ["When", "Action", "Target", "Reason", "Actor", "Source", ""].map((t) => h("th", {}, t)))),
       h("tbody", {}, (rows || []).map((e) => h("tr", {},
         h("td", {}, fmtTime(e.at)),
@@ -266,7 +266,11 @@ async function pageAudit() {
         h("td", {}, e.reason),
         h("td", {}, e.actor || "—"),
         h("td", {}, e.source),
-        h("td", {}, e.open && e.target_kind !== "request" ? h("button", { onclick: guard(async () => {
+        h("td", {}, e.open && (e.target_kind === "registry_upload" || e.target_kind === "registration") ? h("button", { onclick: guard(async () => {
+          const reason = prompt("Why accept this rejected attempt? The same upload or registration can then be retried.");
+          if (!reason) throw new Error("A reason is required.");
+          await api("POST", `/api/v1/audit/${e.id}/accept`, { reason });
+        }, "Accepted.") }, "Accept") : e.open && e.target_kind !== "request" ? h("button", { onclick: guard(async () => {
           const reason = prompt("Why reverse this rejection?");
           if (!reason) throw new Error("A reason is required.");
           await api("POST", `/api/v1/audit/${e.id}/reverse`, { reason });

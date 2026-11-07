@@ -73,7 +73,8 @@ def recv(sock: socket.socket) -> str:
 
 
 def main() -> None:
-    url, profile, marker = sys.argv[1:]
+    url, profile, marker = sys.argv[1:4]
+    hook = sys.argv[4] if len(sys.argv) > 4 else ""
     port = 0
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
@@ -120,7 +121,14 @@ def main() -> None:
         send(ws, json.dumps({"id": 0, "method": "Runtime.enable"}))
         expr = "document.documentElement.outerHTML"
         notes = []
-        for i in range(40):
+        limit = 80 if hook else 40
+        for i in range(limit):
+            if hook:
+                send(ws, json.dumps({"id": i + 500, "method": "Runtime.evaluate", "params": {"expression": hook, "returnByValue": True}}))
+                while True:
+                    msg = json.loads(recv(ws))
+                    if msg.get("id") == i + 500:
+                        break
             send(ws, json.dumps({"id": i + 1, "method": "Runtime.evaluate", "params": {"expression": "document.body.innerText", "returnByValue": True}}))
             while True:
                 msg = json.loads(recv(ws))

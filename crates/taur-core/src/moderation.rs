@@ -258,8 +258,122 @@ impl Store {
         Ok(events)
     }
 
+    /// Let the same rejected upload or registration be tried again.
+    ///
+    /// This does not create an account or store a recipe. The next check allows
+    /// only the scope recorded on that rejection (registry, repository, package,
+    /// version, recipe hashes, and applicant, or the hashed nick and email).
+    /// A newer rejection of that scope, or a revocation, wins. Moderators cannot
+    /// accept. Suspension still uses [`Store::reverse_audit`].
+    pub fn accept_rejection(&self, actor: i64, event_id: i64, reason: &str) -> Result<i64> {
+        if !self.is_admin(actor)? {
+            return Err(Error::Forbidden);
+        }
+        let reason = clean_reason(reason)?;
+        let event = self.audit_event(event_id)?;
+        if event.action != "reject" {
+            return Err(Error::Conflict("only a rejection can be accepted".into()));
+        }
+        if !matches!(
+            event.target_kind.as_str(),
+            "registry_upload" | "registration"
+        ) {
+            return Err(Error::Conflict(
+                "accept overrides a rejected upload or registration; reverse a suspension instead"
+                    .into(),
+            ));
+        }
+        let actor_name = self.user_by_id(actor)?.name;
+        // One connection for the decision and the insert. A second lock here
+        // deadlocks, and a gap between the two would let two accepts both insert.
+        let conn = self.lock();
+        let (scope, applicant): (Option<String>, Option<i64>) = conn.query_row(
+            "SELECT scope_hash, applicant_id FROM audit_events WHERE id = ?1",
+            [event_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let Some(scope) = scope else {
+            return Err(Error::Conflict(
+                "this rejection has no scope to accept".into(),
+            ));
+        };
+        let newer: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM audit_events WHERE scope_hash = ?1 AND action = 'reject' AND id > ?2",
+            params![scope, event_id],
+            |r| r.get(0),
+        )?;
+        if newer > 0 {
+            return Err(Error::Conflict(
+                "a newer rejection of this attempt supersedes it".into(),
+            ));
+        }
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM audit_events WHERE action = 'accept' AND reverses = ?1 ORDER BY id DESC LIMIT 1",
+                [event_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(existing) = existing {
+            let revoked = conn
+                .query_row(
+                    "SELECT 1 FROM audit_events WHERE action = 'revoke' AND reverses = ?1",
+                    [existing],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if !revoked {
+                return Ok(existing);
+            }
+        }
+        conn.execute(
+            "INSERT INTO audit_events (at, action, target_kind, target, reason, actor_name, source, reverses, scope_hash, applicant_id) VALUES (?1, 'accept', ?2, ?3, ?4, ?5, 'admin', ?6, ?7, ?8)",
+            params![now(), event.target_kind, event.target, reason, actor_name, event_id, scope, applicant],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Withdraw an acceptance. The business rule applies again. The row stays.
+    pub fn revoke_acceptance(&self, actor: i64, event_id: i64, reason: &str) -> Result<i64> {
+        if !self.is_admin(actor)? {
+            return Err(Error::Forbidden);
+        }
+        let reason = clean_reason(reason)?;
+        let event = self.audit_event(event_id)?;
+        if event.action != "accept" {
+            return Err(Error::Conflict("only an acceptance can be revoked".into()));
+        }
+        let actor_name = self.user_by_id(actor)?.name;
+        let conn = self.lock();
+        let (scope, applicant): (Option<String>, Option<i64>) = conn.query_row(
+            "SELECT scope_hash, applicant_id FROM audit_events WHERE id = ?1",
+            [event_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        if conn
+            .query_row(
+                "SELECT 1 FROM audit_events WHERE action = 'revoke' AND reverses = ?1",
+                [event_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some()
+        {
+            return Err(Error::Conflict(format!(
+                "acceptance {event_id} is already revoked"
+            )));
+        }
+        conn.execute(
+            "INSERT INTO audit_events (at, action, target_kind, target, reason, actor_name, source, reverses, scope_hash, applicant_id) VALUES (?1, 'revoke', ?2, ?3, ?4, ?5, 'admin', ?6, ?7, ?8)",
+            params![now(), event.target_kind, event.target, reason, actor_name, event_id, scope, applicant],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
     /// Undo one open rejection. Does not create an account or a package, and
-    /// does not reopen a rejected request.
+    /// does not reopen a rejected request. Reversing an upload or registration
+    /// rejection does not permit that attempt; [`Store::accept_rejection`] does.
     pub fn reverse_audit(&self, actor: i64, event_id: i64, reason: &str) -> Result<i64> {
         if !self.is_admin(actor)? {
             return Err(Error::Forbidden);

@@ -187,6 +187,8 @@ pub enum UploadDecision {
     Exact,
     /// Newer version, trusted signature, and the authenticated account is the bound identity.
     NewVersion,
+    /// An admin accepted this exact rejected attempt. The signature or identity rule is not applied again.
+    Overridden,
 }
 
 pub struct ReviewedPush {
@@ -233,7 +235,43 @@ pub fn migrate(conn: &rusqlite::Connection) -> Result<()> {
         "UPDATE pkgbases SET registry_id = (SELECT id FROM registries WHERE name = ?1) WHERE registry_id IS NULL",
         [LEGACY_REGISTRY],
     )?;
+    for (col, ty) in [("scope_hash", "TEXT"), ("applicant_id", "INTEGER")] {
+        let exists = conn
+            .prepare(&format!(
+                "SELECT 1 FROM pragma_table_info('audit_events') WHERE name = '{col}'"
+            ))?
+            .exists([])?;
+        if !exists {
+            conn.execute_batch(&format!("ALTER TABLE audit_events ADD COLUMN {col} {ty}"))?;
+        }
+    }
     Ok(())
+}
+
+/// Identity of one rejected upload. A later admin acceptance matches only this.
+pub fn upload_scope(upload: &RecipeUpload<'_>) -> String {
+    let src = fingerprint(upload.srcinfo);
+    let pkg = fingerprint(upload.pkgbuild);
+    let applicant = upload
+        .actor
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "-".into());
+    let repository = upload.repository.unwrap_or("");
+    fingerprint(
+        format!(
+            "upload\0{}\0{repository}\0{}\0{}\0{src}\0{pkg}\0{applicant}",
+            upload.registry, upload.pkgbase, upload.version
+        )
+        .as_bytes(),
+    )
+}
+
+/// Identity of one rejected registration claim. The email is hashed, not stored.
+/// The registry is the one whose operator identity conflicted; another registry's
+/// identity is a different claim.
+pub fn registration_scope(registry: &str, nick: &str, email: &str) -> String {
+    let email_hash = fingerprint(email.as_bytes());
+    fingerprint(format!("register\0{registry}\0{nick}\0{email_hash}").as_bytes())
 }
 
 impl Store {
@@ -441,13 +479,19 @@ impl Store {
         drop(conn);
         for (bound, registry) in rows {
             if bound != email {
-                self.audit_business(
+                let scope = registration_scope(&registry, name, &email);
+                if self.acceptance_permits(&scope)? {
+                    continue;
+                }
+                self.audit_scoped(
                     "registration",
                     name,
                     &format!(
                         "nick {name} is bound to a different email by an operator identity in registry {registry}"
                     ),
                     "registry",
+                    Some(&scope),
+                    None,
                 )?;
                 return Err(Error::Conflict(format!(
                     "registration rejected: {name} does not match the operator identity in registry {registry}"
@@ -479,6 +523,12 @@ impl Store {
         let Some(expected) = self.expectation(registry_id, upload.pkgbase)? else {
             return Ok(UploadDecision::ExistingRules);
         };
+        if let Some(actor) = upload.actor {
+            self.ensure_not_suspended(actor)?;
+        }
+        if self.acceptance_permits(&upload_scope(upload))? {
+            return Ok(UploadDecision::Overridden);
+        }
         let repository = upload.repository.unwrap_or("");
         let Some(signature) = upload.signature else {
             return self.reject_upload(upload, "missing recipe signature");
@@ -520,6 +570,19 @@ impl Store {
         Ok(UploadDecision::NewVersion)
     }
 
+    /// The latest admin decision for this exact scope. A newer rejection or a
+    /// revocation wins over an older acceptance.
+    pub fn acceptance_permits(&self, scope_hash: &str) -> Result<bool> {
+        let conn = self.lock();
+        let mut st = conn.prepare(
+            "SELECT action FROM audit_events WHERE scope_hash = ?1 AND action IN ('reject', 'accept', 'revoke') ORDER BY id",
+        )?;
+        let actions = st
+            .query_map([scope_hash], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(matches!(actions.last().map(String::as_str), Some("accept")))
+    }
+
     pub fn record_new_version(
         &self,
         registry: &str,
@@ -537,7 +600,8 @@ impl Store {
     }
 
     fn reject_upload(&self, upload: &RecipeUpload<'_>, detail: &str) -> Result<UploadDecision> {
-        self.audit_business(
+        let scope = upload_scope(upload);
+        self.audit_scoped(
             "registry_upload",
             &format!("{}/{}", upload.registry, upload.pkgbase),
             &format!(
@@ -545,6 +609,8 @@ impl Store {
                 upload.pkgbase, upload.registry
             ),
             "registry",
+            Some(&scope),
+            upload.actor,
         )?;
         Err(Error::Invalid(format!(
             "registry {}: known package {} rejected: {detail}",
@@ -628,11 +694,19 @@ impl Store {
             .ok_or_else(|| Error::NotFound(format!("package registry {name}")))
     }
 
-    fn audit_business(&self, kind: &str, target: &str, reason: &str, source: &str) -> Result<i64> {
+    fn audit_scoped(
+        &self,
+        kind: &str,
+        target: &str,
+        reason: &str,
+        source: &str,
+        scope_hash: Option<&str>,
+        applicant_id: Option<i64>,
+    ) -> Result<i64> {
         let conn = self.lock();
         conn.execute(
-            "INSERT INTO audit_events (at, action, target_kind, target, reason, actor_name, source, reverses) VALUES (?1, 'reject', ?2, ?3, ?4, NULL, ?5, NULL)",
-            params![now(), kind, target, reason, source],
+            "INSERT INTO audit_events (at, action, target_kind, target, reason, actor_name, source, reverses, scope_hash, applicant_id) VALUES (?1, 'reject', ?2, ?3, ?4, NULL, ?5, NULL, ?6, ?7)",
+            params![now(), kind, target, reason, source, scope_hash, applicant_id],
         )?;
         Ok(conn.last_insert_rowid())
     }

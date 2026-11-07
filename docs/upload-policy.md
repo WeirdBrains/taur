@@ -65,9 +65,44 @@ No identity for the nick is not a conflict. Matching nick and email registers
 the account and binds it to that identity. Accounts that already exist are left
 as they are.
 
-Reversing the audit row does not create the account and does not turn the check
-off. A later registration still has to match the identity. Reversing an upload
-rejection does not store the recipe and does not skip the next signature check.
+An administrator can accept one of those rejections so the same attempt can be
+submitted again. The commands are:
+
+```sh
+taurctl moderation audit
+taurctl moderation accept ID "this exact attempt is allowed"
+taurctl moderation revoke ACCEPTANCE_ID "withdrawn"
+```
+
+The same decision is `POST /api/v1/audit/{id}/accept` and `POST /api/v1/audit/{id}/revoke`
+with `{"reason":"..."}`, the Accept button on the audit page, gRPC `AcceptRejection`
+and `RevokeAcceptance`, and the MCP tools `accept_rejection` and `revoke_acceptance`.
+A moderator cannot accept, revoke, or grant roles.
+
+Acceptance does not create an account, store the recipe, or publish the package.
+`import` and a completed git push still have to send the files again. The gate
+looks up the latest `reject`, `accept`, or `revoke` for that scope and skips the
+business signature or identity rule only when the latest one is `accept`. There
+is no clock expiry. A newer rejection of the same scope, or a revocation, wins.
+Accepting the older rejection is then refused until that newer rejection is the
+one being accepted. Repeating an acceptance that is still in force returns the
+same audit id.
+
+An upload scope is the registry, repository, package base, version, the SHA-256
+of `.SRCINFO`, the SHA-256 of `PKGBUILD`, and the applicant's account id. A
+registration scope is the registry whose operator identity conflicted, the nick,
+and the SHA-256 of the normalized email. The email is not stored. A public nick
+by itself is not enough, and the decision does not apply to another user,
+package, version, repository, registry, or changed file. Accepting one registry's
+registration conflict does not waive a different registry.
+
+The overridden check is not run again for that scope. Sign-in, email
+verification on git push, suspension, `.SRCINFO` parsing, path checks, and an
+unrelated rejection still apply. Acceptance does not rewrite the operator
+expectation, so a later valid recipe is still judged by the recorded signature.
+A git `pre-receive` refusal does not move the branch. Git may keep unreachable
+objects until `git gc`; those objects are not a package. Reversing the audit
+row records a review and does not permit the retry.
 
 ## What this is not
 
