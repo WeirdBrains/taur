@@ -310,6 +310,97 @@ fn full_management_flow() {
 }
 
 #[test]
+fn moderation_accept_is_admin_only_and_the_gate_reads_it() {
+    let e = start();
+    let pw = "correct horse\n";
+    e.ok(
+        &[
+            "--password-stdin",
+            "register",
+            "admin",
+            "--email",
+            "admin@example.com",
+        ],
+        pw,
+    );
+    e.ok(&["verify", &e.token("admin@example.com", "verify")], "");
+    e.ok(&["--password-stdin", "login", "admin"], pw);
+    let admin = e.store.user_by_name("admin").unwrap().unwrap().id;
+    e.store.set_admin(admin, true).unwrap();
+    e.store.insert_registry("vendor", "enforce").unwrap();
+    e.store
+        .insert_identity("vendor", "carol", "carol@example.com")
+        .unwrap();
+    let mod_cfg = tempfile::tempdir().unwrap();
+    e.ok_as(
+        mod_cfg.path(),
+        &[
+            "--password-stdin",
+            "register",
+            "moddy",
+            "--email",
+            "mod@example.com",
+        ],
+        pw,
+    );
+    e.ok_as(
+        mod_cfg.path(),
+        &["verify", &e.token("mod@example.com", "verify")],
+        "",
+    );
+    e.ok_as(mod_cfg.path(), &["--password-stdin", "login", "moddy"], pw);
+    e.store
+        .grant_moderator(e.store.user_by_name("moddy").unwrap().unwrap().id, true)
+        .unwrap();
+    let (_code, err) = e.fail(
+        e.cfg.path(),
+        &[
+            "--password-stdin",
+            "register",
+            "carol",
+            "--email",
+            "other@example.com",
+        ],
+        pw,
+    );
+    assert!(err.contains("operator identity"), "{err}");
+    let audit = e.ok(&["moderation", "audit"], "");
+    assert!(audit.contains("registration"));
+    assert!(!audit.contains("other@example.com"));
+    assert!(!audit.contains("correct horse"));
+    let id = audit.split_whitespace().next().unwrap().to_string();
+    let (_code, err) = e.fail(mod_cfg.path(), &["moderation", "accept", &id, "no"], "");
+    assert!(err.contains("forbidden"), "{err}");
+    assert!(
+        e.ok(&["moderation", "accept", &id, "this claim"], "")
+            .contains("accepted")
+    );
+    let (_code, err) = e.fail(
+        e.cfg.path(),
+        &[
+            "--password-stdin",
+            "register",
+            "carol",
+            "--email",
+            "third@example.com",
+        ],
+        pw,
+    );
+    assert!(err.contains("operator identity"), "{err}");
+    e.ok(
+        &[
+            "--password-stdin",
+            "register",
+            "carol",
+            "--email",
+            "other@example.com",
+        ],
+        pw,
+    );
+    assert!(!e.store.user_by_name("carol").unwrap().unwrap().verified);
+}
+
+#[test]
 fn config_server_setting() {
     let e = start();
     let dir = tempfile::tempdir().unwrap();

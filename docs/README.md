@@ -19,5 +19,5 @@
 - [Running as a service (systemd, SysV init, OpenRC, runit, launchd, Windows)](services.md)
 - [TLS and automatic certificates](tls.md)
 - [Moderators and the audit](moderation.md)
-- [Official package registries](upload-policy.md)
+- [Package registries](upload-policy.md)
 - [Security review notes](security.md)

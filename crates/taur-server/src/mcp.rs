@@ -100,6 +100,28 @@ const TOOLS: &[Tool] = &[
         destructive = false
     ),
     tool!(
+        "accept_rejection",
+        "Accept one rejected upload or registration so that same attempt can be retried. Site admin only. Does not create an account or store a recipe.",
+        [
+            ("id", "integer", "Audit event id", true),
+            ("reason", "string", "Why it is accepted", true)
+        ],
+        auth = true,
+        ro = false,
+        destructive = false
+    ),
+    tool!(
+        "revoke_acceptance",
+        "Withdraw an acceptance of a rejected upload or registration. Site admin only. The business rule applies to that attempt again.",
+        [
+            ("id", "integer", "Acceptance event id", true),
+            ("reason", "string", "Why it is withdrawn", true)
+        ],
+        auth = true,
+        ro = false,
+        destructive = false
+    ),
+    tool!(
         "my_packages",
         "Package bases you maintain, co-maintain or can manage via organizations.",
         [],
@@ -507,6 +529,14 @@ fn call(store: &Store, name: &str, user: Option<User>, a: &Value) -> taur_core::
         "list_audit" => serde_json::to_value(store.list_audit(uid)?)?,
         "reverse_rejection" => {
             let id = store.reverse_audit(uid, i(a, "id")?, s(a, "reason")?)?;
+            json!({"event": id})
+        }
+        "accept_rejection" => {
+            let id = store.accept_rejection(uid, i(a, "id")?, s(a, "reason")?)?;
+            json!({"event": id})
+        }
+        "revoke_acceptance" => {
+            let id = store.revoke_acceptance(uid, i(a, "id")?, s(a, "reason")?)?;
             json!({"event": id})
         }
         "my_packages" => serde_json::to_value(store.packages_for(uid)?)?,

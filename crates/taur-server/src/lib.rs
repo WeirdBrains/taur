@@ -142,6 +142,8 @@ pub fn app_with(state: AppState) -> Router {
         )
         .route("/api/v1/audit", get(list_audit))
         .route("/api/v1/audit/{id}/reverse", post(reverse_audit))
+        .route("/api/v1/audit/{id}/accept", post(accept_audit))
+        .route("/api/v1/audit/{id}/revoke", post(revoke_audit))
         .route("/api/v1/ssh-keys", get(list_keys).post(add_key))
         .route("/api/v1/ssh-keys/{id}", axum::routing::delete(remove_key))
         .fallback(githttp::handle)
@@ -763,6 +765,28 @@ async fn list_audit(State(s): St, h: HeaderMap) -> Result<Json<Value>, ApiError>
     let u = auth(&s, &h)?;
     let rows = s.list_audit(u.id)?;
     Ok(Json(serde_json::to_value(rows).map_err(Error::from)?))
+}
+
+async fn accept_audit(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+    Json(body): Json<ReasonBody>,
+) -> Result<Json<Value>, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let id = s.accept_rejection(u.id, id, &body.reason)?;
+    Ok(Json(json!({ "event": id })))
+}
+
+async fn revoke_audit(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+    Json(body): Json<ReasonBody>,
+) -> Result<Json<Value>, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let id = s.revoke_acceptance(u.id, id, &body.reason)?;
+    Ok(Json(json!({ "event": id })))
 }
 
 async fn reverse_audit(

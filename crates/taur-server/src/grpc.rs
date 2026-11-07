@@ -655,6 +655,26 @@ impl moderation_server::Moderation for Svc {
             })
         })())
     }
+    async fn accept_rejection(&self, req: Request<ReverseRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
+        empty((|| {
+            let u = self.verified(&req)?;
+            let r = req.get_ref();
+            self.store
+                .accept_rejection(u.id, r.id, &r.reason)
+                .map(|_| ())
+        })())
+    }
+    async fn revoke_acceptance(&self, req: Request<ReverseRequest>) -> R<Empty> {
+        self.limit(&req, LimitClass::Grpc)?;
+        empty((|| {
+            let u = self.verified(&req)?;
+            let r = req.get_ref();
+            self.store
+                .revoke_acceptance(u.id, r.id, &r.reason)
+                .map(|_| ())
+        })())
+    }
     async fn reverse(&self, req: Request<ReverseRequest>) -> R<Empty> {
         self.limit(&req, LimitClass::Grpc)?;
         empty((|| {

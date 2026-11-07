@@ -191,4 +191,6 @@ service Moderation {
   rpc RejectUser(ReasonRequest) returns (Empty);
   rpc ListAudit(Empty) returns (AuditList);
   rpc Reverse(ReverseRequest) returns (Empty);
+  rpc AcceptRejection(ReverseRequest) returns (Empty);
+  rpc RevokeAcceptance(ReverseRequest) returns (Empty);
 }

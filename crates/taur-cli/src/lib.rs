@@ -283,6 +283,10 @@ pub enum ModCmd {
     Audit,
     /// Reverse one open package or user rejection. Site admin.
     Reverse { id: i64, reason: String },
+    /// Accept one rejected upload or registration so the same attempt can be retried.
+    Accept { id: i64, reason: String },
+    /// Withdraw an acceptance. The business rule applies to that attempt again.
+    Revoke { id: i64, reason: String },
     /// Grant or remove the moderator role. Site admin.
     SetModerator {
         name: String,
@@ -770,6 +774,22 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                         );
                     }
                 });
+            }
+            ModCmd::Accept { id, reason } => {
+                c.send(
+                    "POST",
+                    &format!("/api/v1/audit/{id}/accept"),
+                    Some(serde_json::json!({"reason": reason})),
+                )?;
+                done(g, format!("accepted event {id}"));
+            }
+            ModCmd::Revoke { id, reason } => {
+                c.send(
+                    "POST",
+                    &format!("/api/v1/audit/{id}/revoke"),
+                    Some(serde_json::json!({"reason": reason})),
+                )?;
+                done(g, format!("revoked acceptance {id}"));
             }
             ModCmd::Reverse { id, reason } => {
                 c.send(

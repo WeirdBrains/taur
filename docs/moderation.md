@@ -28,7 +28,8 @@ user page for a moderator or site admin.
 
 `GET /api/v1/audit` (web page `/audit`, `taurctl moderation audit`, gRPC `ListAudit`,
 MCP `list_audit`) is site-admin only. Each row is a decision: target kind and name,
-reason, time, actor name, and source (`moderator` or `admin`). It does not store
+reason, time, actor name, and source (`moderator`, `admin`, or `registry` when the
+upload or registration gate rejected it). It does not store
 package contents, passwords, tokens, or mail.
 
 A site admin reverses one open package or user rejection with a new reason
@@ -39,16 +40,31 @@ same row twice is refused. A rejected **request** is listed and stays closed: th
 retry is to file a new request, not to undo the old one into an acceptance.
 
 Registry and registration rejections are in the same audit (`registry_upload`,
-`registration`). Reversing one records the review and does not create an account,
-does not store a recipe, and does not disable the next signature or identity check.
-Rate limits, malformed requests, and ordinary permission errors are not in the audit
-and are not something a reversal can turn off.
+`registration`).
+
+```sh
+taurctl moderation accept 12 "this exact attempt is allowed"
+taurctl moderation revoke 13 "withdrawn"
+```
+
+**Accept** (`POST /api/v1/audit/{id}/accept`, gRPC `AcceptRejection`, MCP
+`accept_rejection`, and the Accept button on `/audit`) lets that exact attempt be
+retried. The upload and registration gates read the latest decision for its
+scope. Only a current `accept` skips the business signature or identity rule
+that rejected it. The recipe bytes and the password are not kept; the retry
+sends them again. A changed file, version, repository, package, registry,
+applicant, or registration email does not match, and neither does another
+registry's identity. The decision stays until a newer rejection of that same
+scope or **Revoke** (`POST /api/v1/audit/{id}/revoke`, gRPC `RevokeAcceptance`,
+MCP `revoke_acceptance`). **Reverse** on these rows records a review and does
+not permit the retry. A moderator cannot accept or revoke. See
+[package registries](upload-policy.md) for the scope and for what stays in force.
 
 Rate-limit responses, malformed RPC, and ordinary permission errors are not audit
 rows. They are not decisions a moderator or an upload policy made.
 
 ## What is not checked
 
-TAUR has no package-registry table. An upload of a new package base follows the
-existing push rules. See [upload policy](upload-policy.md) for the official AUR and
-Arch comparison that is not implemented, and why.
+`local` and a package name with no operator expectation keep the previous upload
+rules. Operator signatures are not Arch Linux or AUR verification. See
+[package registries](upload-policy.md).

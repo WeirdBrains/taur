@@ -8,6 +8,10 @@ use std::sync::Arc;
 use taur_core::Store;
 
 fn dump(url: &str, profile: &std::path::Path, marker: &str) -> String {
+    dump_hook(url, profile, marker, None)
+}
+
+fn dump_hook(url: &str, profile: &std::path::Path, marker: &str, hook: Option<&str>) -> String {
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/chromium_dump.py");
     let dir = profile.join(format!(
         "p{}",
@@ -17,13 +21,12 @@ fn dump(url: &str, profile: &std::path::Path, marker: &str) -> String {
             .unwrap_or(0)
     ));
     std::fs::create_dir_all(&dir).unwrap();
-    let o = Command::new("python3")
-        .arg(script)
-        .arg(url)
-        .arg(&dir)
-        .arg(marker)
-        .output()
-        .expect("python3");
+    let mut cmd = Command::new("python3");
+    cmd.arg(script).arg(url).arg(&dir).arg(marker);
+    if let Some(hook) = hook {
+        cmd.arg(hook);
+    }
+    let o = cmd.output().expect("python3");
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&o.stdout),
@@ -78,4 +81,37 @@ fn pages_render_in_chromium() {
     assert!(store.user_by_name("alice").unwrap().unwrap().verified);
     let reset = dump(&format!("{url}/reset"), profile.path(), "Reset password");
     assert!(reset.contains("Reset password"), "{reset}");
+
+    store
+        .set_admin(store.user_by_name("alice").unwrap().unwrap().id, true)
+        .unwrap();
+    let session = store.login("alice", "longenough").unwrap().token;
+    store.insert_registry("vendor", "enforce").unwrap();
+    store
+        .insert_identity("vendor", "carol", "carol@example.com")
+        .unwrap();
+    assert!(
+        store
+            .register("carol", "other@example.com", "longenough")
+            .unwrap_err()
+            .to_string()
+            .contains("operator identity")
+    );
+    let hook = format!(
+        "(() => {{ localStorage.setItem('taur.token', {session:?}); if (typeof loadMe !== 'function') return; if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} window.prompt = () => 'allow this claim'; const b = [...document.querySelectorAll('button')].find((x) => x.textContent === 'Accept'); if (b && !window.__taurClicked) {{ window.__taurClicked = 1; b.click(); }} }})()"
+    );
+    let audit = dump_hook(
+        &format!("{url}/audit"),
+        profile.path(),
+        "Accepted.",
+        Some(&hook),
+    );
+    assert!(audit.contains("Accepted."), "{audit}");
+    assert!(audit.contains("registration"), "{audit}");
+    assert!(!audit.contains("other@example.com"), "{audit}");
+    assert!(!audit.contains("longenough"), "{audit}");
+    store
+        .register("carol", "other@example.com", "longenough")
+        .unwrap();
+    assert!(store.user_by_name("carol").unwrap().is_some());
 }
