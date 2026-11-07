@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-07
 ### Added
 - Moderator role that can reject a package or an ordinary account, and a site-admin audit that can reverse those decisions.
 - Package registries. The existing `local` registry stays on the previous upload rules. A new registry can require an operator Ed25519 signature over the recipe, and registration can reject a nick that conflicts with an operator identity.
