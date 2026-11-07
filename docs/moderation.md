@@ -38,6 +38,12 @@ again; the reverse does not mint a session or skip email verification. Reversing
 same row twice is refused. A rejected **request** is listed and stays closed: the
 retry is to file a new request, not to undo the old one into an acceptance.
 
+Registry and registration rejections are in the same audit (`registry_upload`,
+`registration`). Reversing one records the review and does not create an account,
+does not store a recipe, and does not disable the next signature or identity check.
+Rate limits, malformed requests, and ordinary permission errors are not in the audit
+and are not something a reversal can turn off.
+
 Rate-limit responses, malformed RPC, and ordinary permission errors are not audit
 rows. They are not decisions a moderator or an upload policy made.
 

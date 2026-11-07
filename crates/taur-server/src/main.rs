@@ -152,10 +152,15 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
             }
         }
-        Cmd::Import { dir, maintainer } => {
-            let info = store.import_dir(&dir, maintainer.as_deref())?;
+        Cmd::Import {
+            dir,
+            maintainer,
+            registry,
+        } => {
+            let info = store.import_into(&dir, maintainer.as_deref(), registry.as_deref())?;
             println!("imported {} {}", info.pkgbase, info.version());
         }
+        Cmd::Registry(cmd) => registry_cmd(&store, cmd)?,
         Cmd::Moderator { name, revoke } => {
             let id = store.user_id(&name)?;
             store.grant_moderator(id, !revoke)?;
@@ -223,6 +228,124 @@ fn log_limits(policy: &taur_core::RatePolicy) {
             "taur: the proxy must append the client address. Without that header, every client behind the proxy shares one bucket"
         );
     }
+}
+
+fn registry_cmd(
+    store: &taur_core::Store,
+    cmd: taur_server::cli::RegistryCmd,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use taur_core::registry::{self, PROVENANCE_OPERATOR};
+    use taur_server::cli::RegistryCmd;
+    match cmd {
+        RegistryCmd::Create { name } => {
+            store.insert_registry(&name, "enforce")?;
+            println!(
+                "created enforcing package registry {name} (provenance {PROVENANCE_OPERATOR})"
+            );
+        }
+        RegistryCmd::List => {
+            for row in store.list_registries()? {
+                println!(
+                    "{} enforcement={} provenance={}",
+                    row.name, row.enforcement, row.provenance
+                );
+            }
+        }
+        RegistryCmd::AddKey {
+            registry,
+            label,
+            public_key,
+        } => {
+            let fp = store.insert_registry_key(
+                &registry,
+                &label,
+                &registry::parse_hex_key(&std::fs::read_to_string(&public_key)?, 32)?,
+            )?;
+            println!("trusted operator key {fp} on {registry}");
+        }
+        RegistryCmd::BindIdentity {
+            registry,
+            nick,
+            email,
+        } => {
+            store.insert_identity(&registry, &nick, &email)?;
+            println!(
+                "operator identity {nick} recorded on {registry} (not an AUR or Arch verification)"
+            );
+        }
+        RegistryCmd::Expect {
+            registry,
+            pkgbase,
+            repository,
+            version,
+            signature,
+            key_fingerprint,
+            nick,
+        } => {
+            let signature = registry::parse_hex_key(&std::fs::read_to_string(&signature)?, 64)?;
+            store.insert_expectation(
+                &registry,
+                &pkgbase,
+                &repository,
+                &version,
+                &signature,
+                &key_fingerprint,
+                &nick,
+            )?;
+            println!("operator expectation for {pkgbase} recorded on {registry}");
+        }
+        RegistryCmd::Sign {
+            secret_key,
+            registry,
+            repository,
+            pkgbase,
+            version,
+            srcinfo,
+            pkgbuild,
+        } => {
+            let seed = registry::parse_hex_key(&std::fs::read_to_string(&secret_key)?, 32)?;
+            let seed: [u8; 32] = seed
+                .as_slice()
+                .try_into()
+                .map_err(|_| "secret key must be 32 bytes")?;
+            let sig = registry::sign_recipe(
+                &seed,
+                &registry,
+                &repository,
+                &pkgbase,
+                &version,
+                &std::fs::read(&srcinfo)?,
+                &std::fs::read(&pkgbuild)?,
+            );
+            println!("{}", hex_encode(&sig));
+        }
+        RegistryCmd::Keygen { dir } => {
+            std::fs::create_dir_all(&dir)?;
+            let (signing, verifying) = registry::generate_key();
+            let secret = dir.join("seed.hex");
+            let public = dir.join("public.hex");
+            std::fs::write(&secret, hex_encode(signing.as_bytes()))?;
+            taur_core::set_mode(&secret, 0o600)?;
+            std::fs::write(&public, hex_encode(verifying.as_bytes()))?;
+            println!(
+                "wrote {} and {} (fingerprint {})",
+                secret.display(),
+                public.display(),
+                registry::fingerprint(verifying.as_bytes())
+            );
+        }
+    }
+    Ok(())
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0xf) as usize] as char);
+    }
+    out
 }
 
 /// `taur hook pre-receive|post-receive`, run by git inside the bare repo.

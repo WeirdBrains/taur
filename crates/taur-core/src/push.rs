@@ -39,6 +39,29 @@ fn is_zero(id: &str) -> bool {
     id.chars().all(|c| c == '0')
 }
 
+fn git_bytes(repo: &Path, commit: &str, path: &str) -> Result<Option<Vec<u8>>> {
+    let spec = format!("{commit}:{path}");
+    let mut c = git();
+    c.arg("--git-dir")
+        .arg(repo)
+        .args(["cat-file", "blob", &spec]);
+    match run(c) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(_) => Ok(None),
+    }
+}
+
+fn git_text(repo: &Path, commit: &str, path: &str) -> Option<String> {
+    let bytes = git_bytes(repo, commit, path).ok()??;
+    let text = String::from_utf8(bytes).ok()?;
+    let line = text.lines().next()?.trim();
+    if line.is_empty() {
+        None
+    } else {
+        Some(line.to_string())
+    }
+}
+
 fn git_out(repo: &Path, args: &[&str]) -> Result<String> {
     let mut c = git();
     c.arg("--git-dir").arg(repo).args(args);
@@ -291,6 +314,7 @@ impl Store {
                     tip = Some(info);
                 }
             }
+            self.review_pushed_recipe(repo, pkgbase, pusher, &u.new)?;
             if let Some(info) = tip {
                 for (name, _) in &info.packages {
                     if let Some(owner) = self.package_owner(name)?
@@ -308,10 +332,26 @@ impl Store {
     /// After a successful push: refresh metadata from the new master `.SRCINFO`.
     /// A new package base gets the pusher as maintainer and submitter.
     pub fn post_receive(&self, repo: &Path, pkgbase: &str, pusher: &str) -> Result<()> {
+        let reviewed = self.review_pushed_recipe(repo, pkgbase, pusher, "master")?;
         let text = git_out(repo, &["show", "master:.SRCINFO"])?;
         let info = srcinfo::parse(&text)?;
         let new = self.pkgbase_id(pkgbase)?.is_none();
-        let pb = self.import_srcinfo(&info, if new { Some(pusher) } else { None })?;
+        let pb = self.import_srcinfo_in(
+            &info,
+            if new { Some(pusher) } else { None },
+            &reviewed.registry,
+        )?;
+        if reviewed.decision == crate::registry::UploadDecision::NewVersion
+            && let (Some(repository), Some(signature)) = (reviewed.repository, reviewed.signature)
+        {
+            self.record_new_version(
+                &reviewed.registry,
+                pkgbase,
+                &info.version(),
+                &repository,
+                &signature,
+            )?;
+        }
         if !new {
             let actor = self.user_by_name(pusher)?.map(|u| u.id);
             self.notify_subscribers(
@@ -329,6 +369,49 @@ impl Store {
         c.arg("--git-dir").arg(repo).arg("update-server-info");
         run(c)?;
         Ok(())
+    }
+
+    /// Apply the package-registry policy to the tree `commit` before it is accepted.
+    pub fn review_pushed_recipe(
+        &self,
+        repo: &Path,
+        pkgbase: &str,
+        pusher: &str,
+        commit: &str,
+    ) -> Result<crate::registry::ReviewedPush> {
+        let srcinfo = git_bytes(repo, commit, ".SRCINFO")?
+            .ok_or_else(|| deny(format!("{pkgbase}: missing .SRCINFO")))?;
+        let pkgbuild = git_bytes(repo, commit, "PKGBUILD")?
+            .ok_or_else(|| deny(format!("{pkgbase}: missing PKGBUILD")))?;
+        let info = srcinfo::parse(&String::from_utf8_lossy(&srcinfo))
+            .map_err(|e| deny(format!("{pkgbase}: .SRCINFO: {e}")))?;
+        let version = info.version();
+        let registry_file = git_text(repo, commit, "TAUR-REGISTRY");
+        let registry = self
+            .resolve_registry(pkgbase, None, &registry_file)
+            .map_err(|e| deny(e.to_string()))?;
+        let repository = git_text(repo, commit, "TAUR-REPOSITORY");
+        let signature = git_text(repo, commit, "TAUR-RECIPE.sig")
+            .and_then(|text| crate::registry::parse_hex_key(&text, 64).ok());
+        let actor = self.user_by_name(pusher)?.map(|u| u.id);
+        let decision = self
+            .check_upload(&crate::registry::RecipeUpload {
+                registry: &registry,
+                repository: repository.as_deref(),
+                pkgbase,
+                version: &version,
+                srcinfo: &srcinfo,
+                pkgbuild: &pkgbuild,
+                signature: signature.as_deref(),
+                actor,
+            })
+            .map_err(|e| deny(e.to_string()))?;
+        Ok(crate::registry::ReviewedPush {
+            decision,
+            registry,
+            repository,
+            signature,
+        })
     }
 
     /// Name of the pkgbase that owns package `name`, if any.

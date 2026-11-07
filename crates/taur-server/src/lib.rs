@@ -124,6 +124,22 @@ pub fn app_with(state: AppState) -> Router {
             post(reject_package),
         )
         .route("/api/v1/moderation/users/{name}/reject", post(reject_user))
+        .route(
+            "/api/v1/registries",
+            get(list_registries).post(create_registry_route),
+        )
+        .route(
+            "/api/v1/registries/{name}/keys",
+            post(add_registry_key_route),
+        )
+        .route(
+            "/api/v1/registries/{name}/identities",
+            post(bind_registry_identity),
+        )
+        .route(
+            "/api/v1/registries/{name}/expectations",
+            post(expect_registry_package),
+        )
         .route("/api/v1/audit", get(list_audit))
         .route("/api/v1/audit/{id}/reverse", post(reverse_audit))
         .route("/api/v1/ssh-keys", get(list_keys).post(add_key))
@@ -617,6 +633,97 @@ struct ReasonBody {
 #[derive(Deserialize)]
 struct ModeratorBody {
     on: bool,
+}
+
+#[derive(Deserialize)]
+struct RegistryBody {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct RegistryKeyBody {
+    label: String,
+    public_key_hex: String,
+}
+
+#[derive(Deserialize)]
+struct IdentityBody {
+    nick: String,
+    email: String,
+}
+
+#[derive(Deserialize)]
+struct ExpectationBody {
+    pkgbase: String,
+    repository: String,
+    version: String,
+    signature_hex: String,
+    key_fingerprint: String,
+    nick: String,
+}
+
+async fn list_registries(State(s): St, h: HeaderMap) -> Result<Json<Value>, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    if !s.is_admin(u.id)? {
+        return Err(Error::Forbidden.into());
+    }
+    Ok(Json(
+        serde_json::to_value(s.list_registries()?).map_err(Error::from)?,
+    ))
+}
+
+async fn create_registry_route(
+    State(s): St,
+    h: HeaderMap,
+    Json(body): Json<RegistryBody>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.create_registry(u.id, &body.name)?;
+    Ok(StatusCode::CREATED)
+}
+
+async fn add_registry_key_route(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<RegistryKeyBody>,
+) -> Result<Json<Value>, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let key = taur_core::registry::parse_hex_key(&body.public_key_hex, 32)?;
+    let fp = s.add_registry_key(u.id, &name, &body.label, &key)?;
+    Ok(Json(json!({ "fingerprint": fp, "provenance": "operator" })))
+}
+
+async fn bind_registry_identity(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<IdentityBody>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.bind_identity(u.id, &name, &body.nick, &body.email)?;
+    Ok(StatusCode::CREATED)
+}
+
+async fn expect_registry_package(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<ExpectationBody>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let signature = taur_core::registry::parse_hex_key(&body.signature_hex, 64)?;
+    s.expect_package(
+        u.id,
+        &name,
+        &body.pkgbase,
+        &body.repository,
+        &body.version,
+        &signature,
+        &body.key_fingerprint,
+        &body.nick,
+    )?;
+    Ok(StatusCode::CREATED)
 }
 
 async fn set_moderator(

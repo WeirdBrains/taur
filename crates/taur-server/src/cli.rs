@@ -19,6 +19,62 @@ pub struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum RegistryCmd {
+    /// Create an enforcing package registry. The existing `local` registry stays exempt.
+    Create { name: String },
+    /// List package registries and whether each enforces known-package checks.
+    List,
+    /// Add an Ed25519 public key (hex). The private key is not stored.
+    AddKey {
+        registry: String,
+        label: String,
+        /// File containing 32 bytes of hex.
+        public_key: PathBuf,
+    },
+    /// Attest that a nick and email belong together. This is an operator record, not an AUR check.
+    BindIdentity {
+        registry: String,
+        nick: String,
+        email: String,
+    },
+    /// Record the signed recipe a known package must match.
+    Expect {
+        registry: String,
+        pkgbase: String,
+        #[arg(long)]
+        repository: String,
+        #[arg(long)]
+        version: String,
+        /// File containing 64 bytes of hex.
+        #[arg(long)]
+        signature: PathBuf,
+        #[arg(long)]
+        key_fingerprint: String,
+        #[arg(long)]
+        nick: String,
+    },
+    /// Write a recipe signature to stdout. The secret seed stays in the file you pass.
+    Sign {
+        #[arg(long)]
+        secret_key: PathBuf,
+        #[arg(long)]
+        registry: String,
+        #[arg(long)]
+        repository: String,
+        #[arg(long)]
+        pkgbase: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        srcinfo: PathBuf,
+        #[arg(long)]
+        pkgbuild: PathBuf,
+    },
+    /// Create an Ed25519 seed and public key in a directory. Mode 0600 on the seed.
+    Keygen { dir: PathBuf },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum Cmd {
     /// Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and
     /// gRPC servers. Every setting can come from an environment variable; a flag given on
@@ -44,7 +100,13 @@ pub enum Cmd {
         /// Existing user to set as maintainer (orphan if omitted).
         #[arg(long)]
         maintainer: Option<String>,
+        /// Package registry. Omit for the exempt `local` registry.
+        #[arg(long)]
+        registry: Option<String>,
     },
+    /// Manage package registries and operator recipe trust. Not an Arch or AUR endorsement.
+    #[command(subcommand)]
+    Registry(RegistryCmd),
     /// Git hook entry point (run by git during pushes; not for manual use).
     #[command(hide = true)]
     Hook { name: String },

@@ -137,6 +137,37 @@ CREATE TABLE IF NOT EXISTS audit_events (
   actor_name TEXT,
   source TEXT NOT NULL,
   reverses INTEGER REFERENCES audit_events(id));
+CREATE TABLE IF NOT EXISTS registries (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  enforcement TEXT NOT NULL,
+  created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS registry_keys (
+  id INTEGER PRIMARY KEY,
+  registry_id INTEGER NOT NULL REFERENCES registries(id),
+  public_key BLOB NOT NULL,
+  fingerprint TEXT NOT NULL,
+  label TEXT NOT NULL,
+  UNIQUE (registry_id, fingerprint));
+CREATE TABLE IF NOT EXISTS registry_identities (
+  id INTEGER PRIMARY KEY,
+  registry_id INTEGER NOT NULL REFERENCES registries(id),
+  nick TEXT NOT NULL,
+  email TEXT NOT NULL,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  provenance TEXT NOT NULL,
+  UNIQUE (registry_id, nick));
+CREATE TABLE IF NOT EXISTS registry_expectations (
+  id INTEGER PRIMARY KEY,
+  registry_id INTEGER NOT NULL REFERENCES registries(id),
+  pkgbase TEXT NOT NULL,
+  repository TEXT NOT NULL,
+  version TEXT NOT NULL,
+  signature BLOB NOT NULL,
+  key_id INTEGER NOT NULL REFERENCES registry_keys(id),
+  identity_id INTEGER NOT NULL REFERENCES registry_identities(id),
+  provenance TEXT NOT NULL,
+  UNIQUE (registry_id, pkgbase));
 "#;
 
 /// One package as the RPC sees it.
@@ -293,6 +324,16 @@ pub struct Store {
     rate: Mutex<Limiter>,
 }
 
+fn read_line(dir: &Path, name: &str) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(name)).ok()?;
+    let line = text.lines().next()?.trim();
+    if line.is_empty() {
+        None
+    } else {
+        Some(line.to_string())
+    }
+}
+
 impl Store {
     /// Open (creating if needed) the store in `home` (`taur.db`, `repos/`).
     pub fn open(home: &Path) -> Result<Store> {
@@ -332,6 +373,7 @@ impl Store {
                 conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty}"))?;
             }
         }
+        crate::registry::migrate(&conn)?;
         let mailer = crate::mail::FileMailer::new(home.join("outbox"), crate::DEFAULT_MAIL_FROM);
         Ok(Store {
             conn: Mutex::new(conn),
@@ -484,11 +526,126 @@ impl Store {
         Ok(info)
     }
 
+    /// Import into a named package registry. `None` uses the exempt `local` registry.
+    /// A known package in an enforcing registry is checked before any commit.
+    pub fn import_into(
+        &self,
+        dir: &Path,
+        maintainer: Option<&str>,
+        registry: Option<&str>,
+    ) -> Result<SrcInfo> {
+        let srcinfo = std::fs::read(dir.join(".SRCINFO")).map_err(|_| {
+            Error::NotFound(format!(
+                "{} (generate it with `makepkg --printsrcinfo > .SRCINFO`)",
+                dir.join(".SRCINFO").display()
+            ))
+        })?;
+        let pkgbuild = std::fs::read(dir.join("PKGBUILD"))
+            .map_err(|_| Error::NotFound(format!("missing {}", dir.join("PKGBUILD").display())))?;
+        let info = srcinfo::parse(&String::from_utf8_lossy(&srcinfo))?;
+        let version = info.version();
+        let registry =
+            self.resolve_registry(&info.pkgbase, registry, &read_line(dir, "TAUR-REGISTRY"))?;
+        let actor = match maintainer {
+            Some(name) => Some(
+                self.user_by_name(name)?
+                    .ok_or_else(|| Error::NotFound(format!("user {name}")))?
+                    .id,
+            ),
+            None => None,
+        };
+        let signature = read_line(dir, "TAUR-RECIPE.sig")
+            .and_then(|text| crate::registry::parse_hex_key(&text, 64).ok());
+        let repository = read_line(dir, "TAUR-REPOSITORY");
+        let upload = crate::registry::RecipeUpload {
+            registry: &registry,
+            repository: repository.as_deref(),
+            pkgbase: &info.pkgbase,
+            version: &version,
+            srcinfo: &srcinfo,
+            pkgbuild: &pkgbuild,
+            signature: signature.as_deref(),
+            actor,
+        };
+        let decision = self.check_upload(&upload)?;
+        repo::commit_dir(
+            &self.repos_dir(),
+            &info.pkgbase,
+            dir,
+            &format!("Update to {}", info.version()),
+        )?;
+        self.import_srcinfo_in(&info, maintainer, &registry)?;
+        if decision == crate::registry::UploadDecision::NewVersion {
+            self.record_new_version(
+                &registry,
+                &info.pkgbase,
+                &version,
+                repository.as_deref().unwrap_or(""),
+                signature.as_deref().unwrap_or(&[]),
+            )?;
+        }
+        Ok(info)
+    }
+
+    pub(crate) fn resolve_registry(
+        &self,
+        pkgbase: &str,
+        explicit: Option<&str>,
+        file_name: &Option<String>,
+    ) -> Result<String> {
+        let asked = explicit
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .or(file_name.as_deref())
+            .unwrap_or(crate::registry::LEGACY_REGISTRY)
+            .to_string();
+        if let Some(current) = self.pkgbase_registry(pkgbase)? {
+            if current != asked {
+                return Err(Error::Conflict(format!(
+                    "{pkgbase} is in registry {current} and cannot be moved to {asked}"
+                )));
+            }
+            return Ok(current);
+        }
+        Ok(asked)
+    }
+
+    pub fn pkgbase_registry(&self, name: &str) -> Result<Option<String>> {
+        Ok(self
+            .lock()
+            .query_row(
+                "SELECT r.name FROM pkgbases b JOIN registries r ON r.id = b.registry_id WHERE b.name = ?1",
+                [name],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     /// Insert or update a pkgbase and its packages from parsed `.SRCINFO`.
+    /// The package stays on the legacy `local` registry.
     pub fn import_srcinfo(&self, info: &SrcInfo, maintainer: Option<&str>) -> Result<i64> {
+        self.import_srcinfo_in(info, maintainer, crate::registry::LEGACY_REGISTRY)
+    }
+
+    /// Like [`Store::import_srcinfo`], placing a new package base in `registry`.
+    /// An existing base cannot move to a different registry.
+    pub fn import_srcinfo_in(
+        &self,
+        info: &SrcInfo,
+        maintainer: Option<&str>,
+        registry: &str,
+    ) -> Result<i64> {
         let mut conn = self.lock();
         let tx = conn.transaction()?;
         let now = now();
+        let registry_id: i64 = tx
+            .query_row(
+                "SELECT id FROM registries WHERE name = ?1",
+                [registry],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| Error::NotFound(format!("package registry {registry}")))?;
         let mid: Option<i64> = match maintainer {
             Some(n) => Some(
                 tx.query_row("SELECT id FROM users WHERE name = ?1", [n], |r| r.get(0))
@@ -506,9 +663,22 @@ impl Store {
             .optional()?;
         let id = match existing {
             Some(id) => {
+                let current: Option<i64> = tx
+                    .query_row(
+                        "SELECT registry_id FROM pkgbases WHERE id = ?1",
+                        [id],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if current.is_some_and(|c| c != registry_id) {
+                    return Err(Error::Conflict(format!(
+                        "{} is already in another package registry",
+                        info.pkgbase
+                    )));
+                }
                 tx.execute(
-                    "UPDATE pkgbases SET last_modified = ?1, maintainer_id = COALESCE(?2, maintainer_id) WHERE id = ?3",
-                    params![now, mid, id],
+                    "UPDATE pkgbases SET last_modified = ?1, maintainer_id = COALESCE(?2, maintainer_id), registry_id = COALESCE(registry_id, ?3) WHERE id = ?4",
+                    params![now, mid, registry_id, id],
                 )?;
                 // A new version clears the out-of-date flag.
                 let old: Option<String> = tx
@@ -528,8 +698,8 @@ impl Store {
             }
             None => {
                 tx.execute(
-                    "INSERT INTO pkgbases (name, maintainer_id, submitter_id, first_submitted, last_modified) VALUES (?1, ?2, ?2, ?3, ?3)",
-                    params![info.pkgbase, mid, now],
+                    "INSERT INTO pkgbases (name, maintainer_id, submitter_id, first_submitted, last_modified, registry_id) VALUES (?1, ?2, ?2, ?3, ?3, ?4)",
+                    params![info.pkgbase, mid, now, registry_id],
                 )?;
                 tx.last_insert_rowid()
             }

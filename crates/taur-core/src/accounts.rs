@@ -105,6 +105,7 @@ impl Store {
                 "password must be at least {MIN_PASSWORD_LEN} characters"
             )));
         }
+        self.guard_registration(name, email)?;
         let hash = hash_password(password)?;
         let conn = self.lock();
         let taken: Option<i64> = conn
@@ -132,6 +133,7 @@ impl Store {
             is_moderator: false,
         };
         drop(conn);
+        self.bind_registered_user(user.id, &user.name, &user.email)?;
         // A delivery failure doesn't undo registration; the user can ask for a resend.
         if let Err(e) = self.send_verification(&user) {
             eprintln!(
