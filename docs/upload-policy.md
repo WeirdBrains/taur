@@ -1,41 +1,81 @@
-# Official package registries
+# Package registries
 
-This is not implemented. The notes below are the facts that block a safe check, not a
-design that TAUR enforces.
+A package registry is not a user account. Packages that were already in TAUR, and
+uploads that do not name another registry, belong to `local`. That registry is
+**exempt**: it keeps the previous upload rules. An administrator creates further
+registries with `taur registry create`. Those are **enforcing**.
 
-## What the server has
+```sh
+taur registry create vendor
+taur registry keygen /var/lib/taur/vendor-key
+taur registry add-key vendor lab /var/lib/taur/vendor-key/public.hex
+taur registry bind-identity vendor alice alice@example.com
+taur registry sign --secret-key /var/lib/taur/vendor-key/seed.hex \
+  --registry vendor --repository extra --pkgbase demo --version 1.0.0-1 \
+  --srcinfo .SRCINFO --pkgbuild PKGBUILD > TAUR-RECIPE.sig
+taur registry expect vendor demo --repository extra --version 1.0.0-1 \
+  --signature TAUR-RECIPE.sig --key-fingerprint <fingerprint> --nick alice
+taur import ./demo --maintainer alice --registry vendor
+```
 
-A push is a git repository of a recipe (`PKGBUILD` and `.SRCINFO`), not a pacman
-archive. Permission is the maintainer, a co-maintainer, an organization member who can
-manage the base, or a site admin. There is no table of official repositories, no stored
-package signature, and no copy of an upstream maintainer email. Packages that are not
-already in this server are created by the first verified pusher. That behavior is
-unchanged.
+The same records can be written over HTTP by a site admin:
+`POST /api/v1/registries`, `.../keys`, `.../identities`, and `.../expectations`.
+A moderator cannot. The private seed from `keygen` is mode `0600` and is never
+uploaded. `sign` prints a signature and does not send the seed to the server.
 
-## What the public AUR RPC provides
+## What a signature covers
 
-`https://aur.archlinux.org/rpc/v5/info/yay` (retrieved 2026-11-06) returns `Maintainer`
-(`jguer`), `Version`, and the usual package fields. The object has no email and no
-signature field. A nickname from that response is not proof that the TAUR account with
-the same name is that person.
+The signature is Ed25519 over a message that contains the registry name, the
+repository, the package base, the version, and the exact `.SRCINFO` and
+`PKGBUILD` bytes. A signature for one package, repository, or registry does not
+verify for another. The server stores only the public key.
 
-## What an official Arch repository provides
+Put these files in the uploaded directory or git tree:
 
-Pacman repository metadata can include `%VERSION%`, `%PGPSIG%` (a signature over the
-built `.pkg.tar` archive), and `%PACKAGER%` (often a display name and an email). Those
-bytes are not a signature of the recipe TAUR received. Comparing them to a PKGBUILD, or
-treating a matching checksum of a different file as approval, would be a false check.
-`%PACKAGER%` is not bound to the authenticated TAUR user.
+- `TAUR-REGISTRY` — registry name (omit for `local`)
+- `TAUR-REPOSITORY` — repository name inside that registry
+- `TAUR-RECIPE.sig` — hex signature
 
-## The decision that is still open
+## Known packages
 
-A check for packages that appear in a newly configured official registry would need all
-of the following, and none of them are available together:
+A name listed with `expect` is known. On an enforcing registry:
 
-- a definition of which registries an operator added, separate from user accounts
-- a public nick and email for the upstream maintainer that can be tied to the signed-in TAUR account
-- a signature over the same bytes TAUR is being asked to store
+- The signature must verify under a key of that registry, and the repository in
+  the signed message must be the recorded one.
+- The recorded version and signature may be uploaded again.
+- A different valid signature is accepted only when the version is newer and the
+  authenticated account is the one bound to that nick and email. Typing the same
+  strings somewhere in the recipe is not that binding.
+- Anything else is rejected before the package is indexed. `import` does not
+  commit. A git push is refused in `pre-receive`, so the branch does not move.
+  Git may still have unreachable objects until `git gc`; they are not a package.
+- An older signed recipe is rejected, so a previous signature cannot replace a
+  newer one.
+- A package cannot be moved from one registry to another by naming a different
+  registry in the upload.
 
-Until that exists, TAUR does not reject an upload for "being in AUR" or "being in core",
-and it does not accept one because a checksum happened to match. Rejected uploads of
-that kind are not queued, because the check itself is not run.
+A name that is not listed keeps the existing rules, including on an enforcing
+registry. `local` never applies this check.
+
+## Registration
+
+If an enforcing registry has an operator identity for a nick, registration with
+that nick and a different email is refused before any account row is written.
+No identity for the nick is not a conflict. Matching nick and email registers
+the account and binds it to that identity. Accounts that already exist are left
+as they are.
+
+Reversing the audit row does not create the account and does not turn the check
+off. A later registration still has to match the identity. Reversing an upload
+rejection does not store the recipe and does not skip the next signature check.
+
+## What this is not
+
+Every key, identity, and expectation stored here has provenance `operator`.
+That means an administrator of this TAUR instance attested to it. It does not
+mean Arch Linux or the AUR checked the package or the person.
+
+The public AUR info object (for example `yay` on 2026-11-06) has `Maintainer`
+and `Version` and no email or recipe signature. A pacman repository signature
+covers a built archive, not the recipe TAUR stores. This server does not call
+those services and does not label operator records as official verification.

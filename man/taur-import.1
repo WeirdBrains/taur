@@ -4,7 +4,7 @@
 .SH NAME
 taur\-import \- Import a package directory containing .SRCINFO (and PKGBUILD)
 .SH SYNOPSIS
-\fBtaur import\fR [\fB\-\-home\fR] [\fB\-\-maintainer\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIDIR\fR> 
+\fBtaur import\fR [\fB\-\-home\fR] [\fB\-\-maintainer\fR] [\fB\-\-registry\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIDIR\fR> 
 .SH DESCRIPTION
 Import a package directory containing .SRCINFO (and PKGBUILD)
 .SH OPTIONS
@@ -17,6 +17,9 @@ May also be specified with the \fBTAUR_HOME\fR environment variable.
 .TP
 \fB\-\-maintainer\fR \fI<MAINTAINER>\fR
 Existing user to set as maintainer (orphan if omitted)
+.TP
+\fB\-\-registry\fR \fI<REGISTRY>\fR
+Package registry. Omit for the exempt `local` registry
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help

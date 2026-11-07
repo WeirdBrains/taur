@@ -11,6 +11,7 @@ pub mod moderation;
 pub mod orgs;
 pub mod push;
 pub mod ratelimit;
+pub mod registry;
 pub mod repo;
 pub mod roles;
 pub mod rpc;

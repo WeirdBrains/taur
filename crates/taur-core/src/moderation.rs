@@ -269,10 +269,34 @@ impl Store {
         if event.action != "reject" {
             return Err(Error::Conflict("only a rejection can be reversed".into()));
         }
-        if event.target_kind == "request" {
-            return Err(Error::Conflict(
-                "a rejected request stays closed; file a new request to try again".into(),
-            ));
+        if matches!(
+            event.target_kind.as_str(),
+            "request" | "registration" | "registry_upload"
+        ) {
+            let actor_name = self.user_by_id(actor)?.name;
+            if self
+                .lock()
+                .query_row(
+                    "SELECT 1 FROM audit_events WHERE reverses = ?1",
+                    [event_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some()
+            {
+                return Err(Error::Conflict(format!(
+                    "rejection {event_id} is already reversed"
+                )));
+            }
+            return self.record(AuditWrite {
+                action: "reverse",
+                kind: &event.target_kind,
+                target: &event.target,
+                reason: &reason,
+                actor_name: Some(&actor_name),
+                source: "admin",
+                reverses: Some(event_id),
+            });
         }
         if self
             .lock()

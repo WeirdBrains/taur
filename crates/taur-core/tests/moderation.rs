@@ -103,10 +103,8 @@ fn request_rejection_is_audited_and_not_reopened() {
     let rows = s.list_audit(admin).unwrap();
     let event = rows.iter().find(|e| e.target_kind == "request").unwrap();
     assert!(event.target.contains("hello-taur"));
-    assert!(matches!(
-        s.reverse_audit(admin, event.id, "retry"),
-        Err(Error::Conflict(_))
-    ));
+    s.reverse_audit(admin, event.id, "retry").unwrap();
+    assert_eq!(s.request(req.id).unwrap().status, "rejected");
     assert!(s.pkgbase_id("hello-taur").unwrap() == Some(id));
     let _ = req;
 }
