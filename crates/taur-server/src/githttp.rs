@@ -70,6 +70,9 @@ pub async fn handle(
     if validate_name(&name).is_err() || rest.split('/').any(|c| c == ".." || c.is_empty()) {
         return StatusCode::NOT_FOUND.into_response();
     }
+    if state.store.pkgbase_suspended(&name).unwrap_or(false) {
+        return (StatusCode::FORBIDDEN, "package is rejected\n").into_response();
+    }
     let query = uri.query().unwrap_or("").to_string();
     let is_push = rest == "git-receive-pack" || query.contains("service=git-receive-pack");
     let repos = state.store.repos_dir();

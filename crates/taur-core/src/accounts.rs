@@ -21,6 +21,8 @@ pub struct User {
     pub name: String,
     pub email: String,
     pub verified: bool,
+    pub is_admin: bool,
+    pub is_moderator: bool,
 }
 
 /// Email verification links are valid for 24 hours; password reset links for 1 hour.
@@ -33,6 +35,8 @@ fn user_row(r: &rusqlite::Row) -> rusqlite::Result<User> {
         name: r.get(1)?,
         email: r.get(2)?,
         verified: r.get::<_, Option<i64>>(3)?.is_some(),
+        is_admin: r.get::<_, i64>(4)? != 0,
+        is_moderator: r.get::<_, i64>(5)? != 0,
     })
 }
 
@@ -124,6 +128,8 @@ impl Store {
             name: name.to_string(),
             email: email.to_string(),
             verified: false,
+            is_admin: false,
+            is_moderator: false,
         };
         drop(conn);
         // A delivery failure doesn't undo registration; the user can ask for a resend.
@@ -205,7 +211,7 @@ impl Store {
         let user = self
             .lock()
             .query_row(
-                "SELECT id, name, email, verified_at FROM users WHERE email = ?1",
+                "SELECT id, name, email, verified_at, is_admin, is_moderator FROM users WHERE email = ?1",
                 [email.trim()],
                 user_row,
             )
@@ -253,7 +259,7 @@ impl Store {
     pub fn user_by_id(&self, id: i64) -> Result<User> {
         self.lock()
             .query_row(
-                "SELECT id, name, email, verified_at FROM users WHERE id = ?1",
+                "SELECT id, name, email, verified_at, is_admin, is_moderator FROM users WHERE id = ?1",
                 [id],
                 user_row,
             )
@@ -265,9 +271,9 @@ impl Store {
         Ok(self
             .lock()
             .query_row(
-                "SELECT id, name, email, verified_at, password_hash FROM users WHERE name = ?1",
+                "SELECT id, name, email, verified_at, is_admin, is_moderator, password_hash FROM users WHERE name = ?1",
                 [name],
-                |r| Ok((user_row(r)?, r.get(4)?)),
+                |r| Ok((user_row(r)?, r.get(6)?)),
             )
             .optional()?)
     }
@@ -280,6 +286,7 @@ impl Store {
         if !verify_password(password, &hash) {
             return Err(Error::Unauthorized);
         }
+        self.ensure_not_suspended(user.id)?;
         let token = random_token();
         let now = now();
         let expires_at = now + SESSION_TTL_SECS;
@@ -294,15 +301,18 @@ impl Store {
 
     /// The user owning a live session token.
     pub fn user_for_token(&self, token: &str) -> Result<User> {
-        self.lock()
+        let user = self
+            .lock()
             .query_row(
-                "SELECT u.id, u.name, u.email, u.verified_at FROM sessions s JOIN users u ON u.id = s.user_id \
+                "SELECT u.id, u.name, u.email, u.verified_at, u.is_admin, u.is_moderator FROM sessions s JOIN users u ON u.id = s.user_id \
                  WHERE s.token_hash = ?1 AND s.expires_at > ?2",
                 params![token_hash(token), now()],
                 user_row,
             )
             .optional()?
-            .ok_or(Error::Unauthorized)
+            .ok_or(Error::Unauthorized)?;
+        self.ensure_not_suspended(user.id)?;
+        Ok(user)
     }
 
     /// End a session. Unknown tokens are rejected so clients notice stale state.

@@ -156,6 +156,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let info = store.import_dir(&dir, maintainer.as_deref())?;
             println!("imported {} {}", info.pkgbase, info.version());
         }
+        Cmd::Moderator { name, revoke } => {
+            let id = store.user_id(&name)?;
+            store.grant_moderator(id, !revoke)?;
+            println!(
+                "{name} is {}a moderator",
+                if revoke { "no longer " } else { "" }
+            );
+        }
         Cmd::Admin { name, revoke } => {
             let id = store.user_id(&name)?;
             store.set_admin(id, !revoke)?;

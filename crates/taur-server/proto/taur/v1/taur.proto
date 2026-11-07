@@ -57,7 +57,7 @@ service Packages {
 }
 
 // ---- accounts ----
-message User { int64 id = 1; string name = 2; string email = 3; bool verified = 4; }
+message User { int64 id = 1; string name = 2; string email = 3; bool verified = 4; bool is_admin = 5; bool is_moderator = 6; }
 message RegisterRequest { string name = 1; string email = 2; string password = 3; }
 message LoginRequest { string name = 1; string password = 2; }
 message Session { string token = 1; int64 expires_at = 2; }
@@ -165,4 +165,30 @@ service SshKeys {
   rpc List(Empty) returns (SshKeyList);
   rpc Add(AddSshKeyRequest) returns (SshKey);
   rpc Remove(IdRequest) returns (Empty);
+}
+
+// ---- moderation ----
+message ReasonRequest { string name = 1; string reason = 2; }
+message ModeratorRequest { string name = 1; bool on = 2; }
+message AuditEvent {
+  int64 id = 1;
+  int64 at = 2;
+  string action = 3;
+  string target_kind = 4;
+  string target = 5;
+  string reason = 6;
+  string actor = 7;
+  string source = 8;
+  optional int64 reverses = 9;
+  bool open = 10;
+}
+message AuditList { repeated AuditEvent events = 1; }
+message ReverseRequest { int64 id = 1; string reason = 2; }
+
+service Moderation {
+  rpc SetModerator(ModeratorRequest) returns (Empty);
+  rpc RejectPackage(ReasonRequest) returns (Empty);
+  rpc RejectUser(ReasonRequest) returns (Empty);
+  rpc ListAudit(Empty) returns (AuditList);
+  rpc Reverse(ReverseRequest) returns (Empty);
 }

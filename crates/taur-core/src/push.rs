@@ -252,6 +252,10 @@ impl Store {
             .user_by_name(pusher)?
             .ok_or_else(|| deny(format!("unknown user {pusher}")))?;
         self.require_verified(&user)?;
+        self.ensure_not_suspended(user.id)?;
+        if self.pkgbase_suspended(pkgbase)? {
+            return Err(deny(format!("package {pkgbase} is rejected")));
+        }
         let existing = self.pkgbase_id(pkgbase)?;
         if let Some(id) = existing
             && !self.can_manage_pkgbase(user.id, id)?

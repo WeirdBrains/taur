@@ -19,6 +19,8 @@ pub enum Error {
     Unauthorized,
     #[error("forbidden")]
     Forbidden,
+    #[error("{0}")]
+    Suspended(String),
     #[error("email address not verified")]
     Unverified,
     #[error("mail delivery failed: {0}")]

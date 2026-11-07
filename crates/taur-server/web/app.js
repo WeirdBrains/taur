@@ -58,6 +58,7 @@ function nav() {
   const items = [link("/", "Packages"), link("/requests", "Requests")];
   if (me) {
     items.push(link("/orgs", "Organizations"), link("/account", me.name));
+    if (me.is_admin) items.push(link("/audit", "Audit"));
     items.push(h("a", { href: "#", class: "right", onclick: async (e) => { e.preventDefault(); await logout(); } }, "Log out"));
   } else {
     items.push(h("span", { class: "right" }), link("/login", "Log in"), link("/register", "Register"));
@@ -180,6 +181,7 @@ async function pagePackage(name) {
       h("input", { name: "into", placeholder: "merge into (merge requests only)", "aria-label": "Merge into" }),
       h("textarea", { name: "comment", placeholder: "Reason", required: true, "aria-label": "Reason" }), h("button", {}, "File request"));
     out.push(h("div", { class: "card" }, h("h2", {}, "File a request"), rq));
+    if (me.is_admin || me.is_moderator) out.push(rejectCard("package", base));
   }
 
   const cbox = h("div", { class: "card" }, h("h2", {}, `Comments (${comments.length})`));
@@ -236,9 +238,39 @@ async function pageUser(name) {
     } catch (e) { return []; }
   };
   const [maintained, co] = await Promise.all([load("maintainer"), load("comaintainers")]);
-  render(h("h1", {}, name),
+  const blocks = [h("h1", {}, name),
     h("h2", {}, "Maintains"), h("div", { class: "card" }, pkgTable(maintained)),
-    h("h2", {}, "Co-maintains"), h("div", { class: "card" }, pkgTable(co)));
+    h("h2", {}, "Co-maintains"), h("div", { class: "card" }, pkgTable(co))];
+  if (me && (me.is_admin || me.is_moderator)) blocks.push(rejectCard("user", name));
+  render(...blocks);
+}
+function rejectCard(kind, name) {
+  const path = kind === "user"
+    ? `/api/v1/moderation/users/${enc(name)}/reject`
+    : `/api/v1/moderation/packages/${enc(name)}/reject`;
+  const f = h("form", { class: "stack", onsubmit: guard(() => api("POST", path, { reason: val(f, "reason") }), "Rejected.") },
+    h("textarea", { name: "reason", required: true, placeholder: "Reason", "aria-label": "Reason" }),
+    h("button", { class: "danger" }, kind === "user" ? "Reject user" : "Reject package"));
+  return h("div", { class: "card" }, h("h2", {}, "Moderation"), f);
+}
+async function pageAudit() {
+  if (!me || !me.is_admin) { render(msg("Site admins audit rejections.")); return; }
+  const rows = await api("GET", "/api/v1/audit");
+  render(h("h1", {}, "Audit"),
+    h("p", { class: "muted" }, "Rejections and reversals. Reversing a package or user rejection makes another try possible. It does not create an account or restore a package that was never stored. A rejected request stays closed."),
+    h("table", {}, h("thead", {}, h("tr", {}, ["When", "Action", "Target", "Reason", "Actor", "Source", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, (rows || []).map((e) => h("tr", {},
+        h("td", {}, fmtTime(e.at)),
+        h("td", {}, e.action),
+        h("td", {}, `${e.target_kind} ${e.target}`),
+        h("td", {}, e.reason),
+        h("td", {}, e.actor || "—"),
+        h("td", {}, e.source),
+        h("td", {}, e.open && e.target_kind !== "request" ? h("button", { onclick: guard(async () => {
+          const reason = prompt("Why reverse this rejection?");
+          if (!reason) throw new Error("A reason is required.");
+          await api("POST", `/api/v1/audit/${e.id}/reverse`, { reason });
+        }, "Reversed.") }, "Reverse") : null))))));
 }
 function pageLogin() {
   const f = h("form", { class: "stack", onsubmit: async (e) => {
@@ -415,6 +447,7 @@ async function route() {
   if (path === "/orgs") return pageOrgs();
   if ((m = path.match(/^\/orgs\/([^/]+)\/?$/))) return pageOrg(m[1]);
   if (path === "/requests") return pageRequests(params);
+  if (path === "/audit") return pageAudit();
   render(msg("Page not found."));
 }
 

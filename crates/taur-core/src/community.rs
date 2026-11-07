@@ -581,7 +581,9 @@ impl Store {
             .as_deref()
             .is_some_and(|n| self.user_id(n).ok() == Some(actor));
         if self.is_admin(actor)? {
-            self.close_request(actor, id, "rejected", comment)
+            self.close_request(actor, id, "rejected", comment)?;
+            let _ = self.audit_request_rejection(actor, id, &req.pkgbase, comment);
+            Ok(())
         } else if own {
             self.close_request(actor, id, "closed", comment)
         } else {

@@ -127,6 +127,16 @@ CREATE TABLE IF NOT EXISTS deleted_pkgbases (
   repo_rel TEXT NOT NULL,
   maintainer_id INTEGER,
   deleted_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS audit_events (
+  id INTEGER PRIMARY KEY,
+  at INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  target_kind TEXT NOT NULL,
+  target TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  actor_name TEXT,
+  source TEXT NOT NULL,
+  reverses INTEGER REFERENCES audit_events(id));
 "#;
 
 /// One package as the RPC sees it.
@@ -261,7 +271,7 @@ fn row_to_info(r: &Row) -> rusqlite::Result<PkgInfo> {
 }
 
 fn query_infos(conn: &Connection, filter: &str, args: &[&dyn ToSql]) -> Result<Vec<PkgInfo>> {
-    let sql = format!("{SELECT} WHERE {filter} ORDER BY p.name");
+    let sql = format!("{SELECT} WHERE ({filter}) AND b.suspended_at IS NULL ORDER BY p.name");
     let mut st = conn.prepare(&sql)?;
     let rows = st.query_map(args, row_to_info)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -307,6 +317,11 @@ impl Store {
             ),
             ("pkgbases", "flagger_comment", "TEXT"),
             ("comments", "pinned_at", "INTEGER"),
+            ("users", "is_moderator", "INTEGER NOT NULL DEFAULT 0"),
+            ("users", "suspended_at", "INTEGER"),
+            ("users", "suspended_reason", "TEXT"),
+            ("pkgbases", "suspended_at", "INTEGER"),
+            ("pkgbases", "suspended_reason", "TEXT"),
         ] {
             let exists = conn
                 .prepare(&format!(
@@ -650,9 +665,15 @@ impl Store {
 
     fn prefix_names(&self, table: &str, prefix: &str) -> Result<Vec<String>> {
         let conn = self.lock();
-        let sql = format!(
-            "SELECT name FROM {table} WHERE name LIKE ?1 ESCAPE '\\' ORDER BY name LIMIT 20"
-        );
+        let sql = if table == "packages" {
+            "SELECT p.name FROM packages p JOIN pkgbases b ON b.id = p.pkgbase_id \
+             WHERE b.suspended_at IS NULL AND p.name LIKE ?1 ESCAPE '\\' ORDER BY p.name LIMIT 20"
+                .to_string()
+        } else {
+            format!(
+                "SELECT name FROM {table} WHERE suspended_at IS NULL AND name LIKE ?1 ESCAPE '\\' ORDER BY name LIMIT 20"
+            )
+        };
         let mut st = conn.prepare(&sql)?;
         let rows = st.query_map([format!("{}%", escape_like(prefix))], |r| r.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
@@ -674,7 +695,8 @@ impl Store {
 
     pub fn all_pkgbase_names(&self) -> Result<Vec<String>> {
         let conn = self.lock();
-        let mut st = conn.prepare("SELECT name FROM pkgbases ORDER BY name")?;
+        let mut st =
+            conn.prepare("SELECT name FROM pkgbases WHERE suspended_at IS NULL ORDER BY name")?;
         let rows = st.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
     }
