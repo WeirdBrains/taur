@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.3.0] - 2026-11-09
 ### Added
 - Recipe mirrors. An administrator can copy selected packages from an AUR-style Git source. Copies stay read-only, are not operator attestations, and a pacman binary repository is not a source.
 
