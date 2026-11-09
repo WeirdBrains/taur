@@ -60,6 +60,29 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             });
+            let sgc = store.clone();
+            tokio::spawn(async move {
+                // The first interval tick is immediate; skip it so startup does
+                // not maintain repositories while the process is still opening.
+                let mut tick = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+                tick.tick().await;
+                loop {
+                    tick.tick().await;
+                    let s = sgc.clone();
+                    let _ =
+                        tokio::task::spawn_blocking(move || match taur_core::repo::maintain_repos(
+                            &s.repos_dir(),
+                            std::time::Duration::from_secs(14 * 24 * 60 * 60),
+                        ) {
+                            Ok(r) => eprintln!(
+                                "taur: repository maintenance collected {} and skipped {}",
+                                r.collected, r.skipped
+                            ),
+                            Err(e) => eprintln!("taur: repository maintenance failed: {e}"),
+                        })
+                        .await;
+                }
+            });
             if let Some(addr) = cfg.ssh_bind {
                 let hook_bin = std::env::current_exe()?;
                 let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -151,6 +174,16 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .await?;
             }
+        }
+        Cmd::Gc { grace_secs } => {
+            let report = taur_core::repo::maintain_repos(
+                &store.repos_dir(),
+                std::time::Duration::from_secs(grace_secs),
+            )?;
+            println!(
+                "collected {} repositories, skipped {} busy",
+                report.collected, report.skipped
+            );
         }
         Cmd::Import {
             dir,

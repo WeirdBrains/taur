@@ -136,6 +136,11 @@ pub async fn handle(
         Ok(Ok(raw)) => raw,
         _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
+    if is_push {
+        // Quarantine already dropped the rejected pack. Drop the empty repo
+        // that was created so the push had somewhere to land.
+        let _ = taur_core::repo::remove_if_unborn(&repos, &name);
+    }
     cgi_response(&raw)
 }
 

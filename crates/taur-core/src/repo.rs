@@ -92,6 +92,133 @@ pub fn ensure_repo(repos: &Path, pkgbase: &str) -> Result<std::path::PathBuf> {
     Ok(repo)
 }
 
+/// Delete a repository that never received a commit.
+///
+/// `git receive-pack` quarantines a push and deletes that quarantine when
+/// `pre-receive` fails, so the rejected pack is not left behind. Creating the
+/// bare repo before the push still leaves an empty directory. A repository
+/// that already has a ref is kept, including after a later push is refused.
+pub fn remove_if_unborn(repos: &Path, pkgbase: &str) -> Result<bool> {
+    validate_name(pkgbase)?;
+    let repo = repos.join(format!("{pkgbase}.git"));
+    if !repo.is_dir() {
+        return Ok(false);
+    }
+    if repo_has_refs(&repo)? {
+        return Ok(false);
+    }
+    let root = repos.canonicalize().unwrap_or_else(|_| repos.to_path_buf());
+    let canon = repo.canonicalize().unwrap_or_else(|_| repo.clone());
+    if !canon.starts_with(&root) {
+        return Err(Error::Invalid(
+            "refusing to remove a repository outside the data directory".into(),
+        ));
+    }
+    std::fs::remove_dir_all(&canon)?;
+    Ok(true)
+}
+
+fn repo_has_refs(repo: &Path) -> Result<bool> {
+    let mut c = git();
+    c.arg("--git-dir").arg(repo).arg("show-ref");
+    let out = c
+        .output()
+        .map_err(|e| Error::Git(format!("cannot run git: {e}")))?;
+    Ok(out.status.success() && !out.stdout.is_empty())
+}
+
+/// True when a push or an existing `git gc` is using this repository.
+pub fn repo_busy(repo: &Path) -> bool {
+    let objects = repo.join("objects");
+    if let Ok(rd) = std::fs::read_dir(&objects) {
+        for entry in rd.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("incoming") || name == "gc.pid" || name.ends_with(".lock") {
+                return true;
+            }
+        }
+    }
+    for rel in ["HEAD.lock", "packed-refs.lock", "gc.pid"] {
+        if repo.join(rel).exists() {
+            return true;
+        }
+    }
+    ref_locks(&repo.join("refs"))
+}
+
+fn ref_locks(dir: &Path) -> bool {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if ref_locks(&path) {
+                return true;
+            }
+        } else if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(".lock"))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaintainReport {
+    pub collected: u32,
+    pub skipped: u32,
+}
+
+/// `git gc --prune` for every package repository.
+///
+/// `grace` is how long an unreachable object is kept. Objects newer than that
+/// stay, which covers a push whose pack has been copied in but whose ref is
+/// not updated yet. A repository with a quarantine directory or a lock is
+/// skipped entirely.
+pub fn maintain_repos(repos: &Path, grace: std::time::Duration) -> Result<MaintainReport> {
+    let mut report = MaintainReport {
+        collected: 0,
+        skipped: 0,
+    };
+    let Ok(rd) = std::fs::read_dir(repos) else {
+        return Ok(report);
+    };
+    let prune = if grace.is_zero() {
+        "now".to_string()
+    } else {
+        format!("{}.seconds.ago", grace.as_secs().max(1))
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if name == ".deleted" || !name.ends_with(".git") || !path.is_dir() {
+            continue;
+        }
+        if repo_busy(&path) {
+            report.skipped += 1;
+            continue;
+        }
+        let mut c = git();
+        c.arg("--git-dir").arg(&path).args([
+            "-c",
+            "gc.auto=0",
+            "gc",
+            "--quiet",
+            &format!("--prune={prune}"),
+        ]);
+        run(c)?;
+        report.collected += 1;
+    }
+    Ok(report)
+}
+
 /// Blob bytes at `rev:path` inside the package base repo (cgit `plain` URLs).
 /// `rev` defaults to `HEAD` when empty. `path` is a file inside the tree, not a URL.
 pub fn plain(repos: &Path, pkgbase: &str, rev: &str, path: &str) -> Result<Vec<u8>> {

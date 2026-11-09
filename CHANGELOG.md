@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+### Added
+- `taur gc` prunes unreachable Git objects older than a grace period and skips a repository that has a push in progress. A refused push does not keep the incoming pack or an empty new repository.
+
 ## [1.3.0] - 2026-11-09
 ### Added
 - Recipe mirrors. An administrator can copy selected packages from an AUR-style Git source. Copies stay read-only, are not operator attestations, and a pacman binary repository is not a source.

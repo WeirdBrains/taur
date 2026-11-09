@@ -48,7 +48,9 @@ A name listed with `expect` is known. On an enforcing registry:
   strings somewhere in the recipe is not that binding.
 - Anything else is rejected before the package is indexed. `import` does not
   commit. A git push is refused in `pre-receive`, so the branch does not move.
-  Git may still have unreachable objects until `git gc`; they are not a package.
+  Git quarantines the incoming pack and deletes it when `pre-receive` refuses
+  the push, and a name that was never accepted does not keep an empty
+  repository. See [git](git-and-snapshots.md).
 - An older signed recipe is rejected, so a previous signature cannot replace a
   newer one.
 - A package cannot be moved from one registry to another by naming a different
@@ -100,8 +102,9 @@ The overridden check is not run again for that scope. Sign-in, email
 verification on git push, suspension, `.SRCINFO` parsing, path checks, and an
 unrelated rejection still apply. Acceptance does not rewrite the operator
 expectation, so a later valid recipe is still judged by the recorded signature.
-A git `pre-receive` refusal does not move the branch. Git may keep unreachable
-objects until `git gc`; those objects are not a package. Reversing the audit
+A git `pre-receive` refusal does not move the branch. The incoming pack is
+quarantined and discarded, and `taur gc` later prunes anything older than its
+grace period. Reversing the audit
 row records a review and does not permit the retry.
 
 ## What this is not
