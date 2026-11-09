@@ -37,6 +37,21 @@ After an accepted push the metadata (versions, dependencies, …) is refreshed f
 `.SRCINFO`. The hooks run `taur hook pre-receive|post-receive`; they refuse pushes that
 don't come through the TAUR server.
 
+Git places the incoming pack in a quarantine directory and deletes it when
+`pre-receive` refuses the push, so that refusal does not leave the new objects
+in the package repository. The branch does not move. A name that has never been
+accepted does not keep the empty repository that was created for the attempt.
+`import` checks the recipe before it writes a commit, so a refused import does
+not create a repository either.
+
+`taur gc` runs `git gc --prune` on each package repository. Unreachable objects
+newer than `--grace-secs` (default 14 days) are kept, which covers a push that
+has copied objects in but has not updated the branch yet. A repository with a
+quarantine directory (`objects/incoming*`), `gc.pid`, or a ref lock is skipped.
+`taur serve` runs the same maintenance once a day, after the first day, with
+that 14-day grace. This does not delete a package or a branch. It is a local
+data-directory command, not a `taurctl` request.
+
 Set `TAUR_PKGBUILD_ISOLATION=bwrap` to also run `makepkg --printsrcinfo` inside bubblewrap
 (read-only `/usr`, no home directory, no network, 20 second limit) and compare pkgbase and
 version with the committed `.SRCINFO`. Any other value is refused. If `bwrap` is missing,

@@ -68,13 +68,17 @@ pub fn exec_for_sshd(store: &Store, user: &str) -> i32 {
         .env("TAUR_HOME", store.home())
         .env("TAUR_PUSHER", user)
         .envs(store.hook_env());
-    match cmd.status() {
+    let code = match cmd.status() {
         Ok(s) => s.code().unwrap_or(1),
         Err(e) => {
             eprintln!("git-serve: cannot run git: {e}");
             1
         }
+    };
+    if op.verb == "receive-pack" {
+        let _ = taur_core::repo::remove_if_unborn(&store.repos_dir(), &op.pkgbase);
     }
+    code
 }
 
 /// Serve SSH on `listener` until it fails.
@@ -299,12 +303,16 @@ impl Handler for GitSsh {
         self.stdin = Some(Arc::new(tokio::sync::Mutex::new(child.stdin.take())));
         let out = child.stdout.take().expect("stdout");
         let err = child.stderr.take().expect("stderr");
+        let cleanup = (verb == "receive-pack").then_some((repos, name));
         tokio::spawn(async move {
             tokio::join!(
                 pump(out, handle.clone(), ch, false),
                 pump(err, handle.clone(), ch, true)
             );
             let code = child.wait().await.ok().and_then(|s| s.code()).unwrap_or(1);
+            if let Some((repos, name)) = cleanup {
+                let _ = taur_core::repo::remove_if_unborn(&repos, &name);
+            }
             let _ = handle.exit_status_request(ch, code as u32).await;
             let _ = handle.eof(ch).await;
             let _ = handle.close(ch).await;

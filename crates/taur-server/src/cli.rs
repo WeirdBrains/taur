@@ -120,6 +120,15 @@ pub enum Cmd {
         #[arg(long)]
         revoke: bool,
     },
+    /// Prune unreachable Git objects older than the grace period.
+    ///
+    /// A repository with a push quarantine or a lock file is skipped. This does
+    /// not delete a package or a branch.
+    Gc {
+        /// Keep unreachable objects newer than this many seconds.
+        #[arg(long, default_value_t = 14 * 24 * 60 * 60)]
+        grace_secs: u64,
+    },
     /// Import a package directory containing .SRCINFO (and PKGBUILD).
     Import {
         dir: PathBuf,

@@ -289,6 +289,111 @@ fn push_over_http_and_ssh() {
         &env,
     );
     assert!(!ok);
+    for name in ["bad", "other-name", "subdir-pkg", "big-pkg"] {
+        assert!(
+            !s.store.repos_dir().join(format!("{name}.git")).exists(),
+            "{name} kept a repository after a refused push"
+        );
+    }
+}
+
+fn object_ids(repo: &Path) -> Vec<String> {
+    if !repo.is_dir() {
+        return Vec::new();
+    }
+    let out = Command::new("git")
+        .arg("--git-dir")
+        .arg(repo)
+        .args(["cat-file", "--batch-check", "--batch-all-objects"])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+#[test]
+fn rejected_push_and_import_leave_no_new_objects() {
+    let s = start();
+    let alice = user(&s, "alice");
+    let host = s.http.trim_start_matches("http://");
+    let w = s.work.path().join("keep");
+    write_pkg(&w, "keep", "1.0");
+    git(&w, &["init", "-q"], &[]);
+    git(&w, &["add", "-A"], &[]);
+    git(&w, &["commit", "-qm", "init"], &[]);
+    let url = format!("http://alice:{alice}@{host}/keep.git");
+    assert!(git(&w, &["push", &url, "master"], &[]).0);
+    let repo = s.store.repos_dir().join("keep.git");
+    let before = object_ids(&repo);
+    write_pkg(&w, "keep", "1.1");
+    std::fs::write(w.join("PKGBUILD"), "pkgver=9\npkgrel=1\npkgname=(keep)\n").unwrap();
+    git(&w, &["commit", "-qam", "bad"], &[]);
+    let (ok, out) = git(&w, &["push", &url, "master"], &[]);
+    assert!(!ok && out.contains("does not match"), "{out}");
+    assert_eq!(
+        object_ids(&repo),
+        before,
+        "rejected push left objects behind"
+    );
+
+    let bad = s.work.path().join("not-a-recipe");
+    std::fs::create_dir_all(&bad).unwrap();
+    std::fs::write(bad.join(".SRCINFO"), "nope\n").unwrap();
+    std::fs::write(bad.join("PKGBUILD"), "pkgver=1\n").unwrap();
+    assert!(s.store.import_into(&bad, Some("alice"), None).is_err());
+    assert!(!s.store.repos_dir().join("not-a-recipe.git").exists());
+
+    let mut child = Command::new("git")
+        .arg("--git-dir")
+        .arg(&repo)
+        .args(["hash-object", "-w", "--stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .spawn()
+        .unwrap();
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"unreachable-blob\n")
+        .unwrap();
+    let hashed = child.wait_with_output().unwrap();
+    assert!(hashed.status.success());
+    let id = String::from_utf8_lossy(&hashed.stdout).trim().to_string();
+    let obj = repo.join("objects").join(&id[..2]).join(&id[2..]);
+    use std::os::unix::fs::PermissionsExt;
+    let mut perm = std::fs::metadata(&obj).unwrap().permissions();
+    perm.set_mode(0o644);
+    std::fs::set_permissions(&obj, perm).unwrap();
+    let file = std::fs::File::options().write(true).open(&obj).unwrap();
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(48 * 3600);
+    file.set_modified(old).unwrap();
+    let incoming = repo.join("objects/incoming-test");
+    std::fs::create_dir(&incoming).unwrap();
+    let skipped =
+        taur_core::repo::maintain_repos(&s.store.repos_dir(), std::time::Duration::from_secs(3600))
+            .unwrap();
+    assert!(skipped.skipped >= 1);
+    assert!(
+        obj.exists(),
+        "gc ran while a quarantine directory was present"
+    );
+    std::fs::remove_dir(&incoming).unwrap();
+    taur_core::repo::maintain_repos(&s.store.repos_dir(), std::time::Duration::from_secs(3600))
+        .unwrap();
+    assert!(!obj.exists(), "old unreachable object was kept");
+    git(&w, &["reset", "-q", "--hard", "HEAD~1"], &[]);
+    write_pkg(&w, "keep", "1.2");
+    git(&w, &["commit", "-qam", "good"], &[]);
+    let (ok, out) = git(&w, &["push", &url, "master"], &[]);
+    assert!(ok, "{out}");
 }
 
 #[test]
