@@ -374,6 +374,7 @@ impl Store {
             }
         }
         crate::registry::migrate(&conn)?;
+        crate::mirror::migrate(&conn)?;
         let mailer = crate::mail::FileMailer::new(home.join("outbox"), crate::DEFAULT_MAIL_FROM);
         Ok(Store {
             conn: Mutex::new(conn),

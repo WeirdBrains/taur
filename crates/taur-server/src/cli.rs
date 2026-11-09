@@ -75,6 +75,32 @@ pub enum RegistryCmd {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum MirrorCmd {
+    /// Add a recipe Git base URL. TAUR fetches `{url}/{pkgbase}.git`. Refuses pacman
+    /// database URLs, credentials, and non-https public schemes.
+    Add {
+        name: String,
+        /// Base address, for example `https://aur.archlinux.org`.
+        #[arg(long)]
+        url: String,
+    },
+    /// List configured recipe mirrors.
+    List,
+    /// Choose package bases to copy. Does not fetch them.
+    Select { name: String, pkgbases: Vec<String> },
+    /// Stop updating a package. The last copy stays until `drop`.
+    Unselect { name: String, pkgbase: String },
+    /// Fetch selected packages. A missing upstream or a rejected package keeps the last copy.
+    Sync { name: String },
+    /// Show selection, revision, and whether a copy is stale.
+    Status { name: String },
+    /// Remove the source after its packages have been dropped.
+    Remove { name: String },
+    /// Delete one package that this mirror stored. A locally maintained package is refused.
+    Drop { name: String, pkgbase: String },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum Cmd {
     /// Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and
     /// gRPC servers. Every setting can come from an environment variable; a flag given on
@@ -107,6 +133,10 @@ pub enum Cmd {
     /// Manage package registries and operator recipe trust. Not an Arch or AUR endorsement.
     #[command(subcommand)]
     Registry(RegistryCmd),
+    /// Copy selected recipes from an AUR-style Git source. Not a pacman binary repository
+    /// and not an operator or Arch verification. Nothing is fetched until `sync`.
+    #[command(subcommand)]
+    Mirror(MirrorCmd),
     /// Git hook entry point (run by git during pushes; not for manual use).
     #[command(hide = true)]
     Hook { name: String },

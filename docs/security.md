@@ -64,6 +64,9 @@ PKGBUILD cannot escape bubblewrap.
 - Operator package registries can require a signature over the recipe. That is not
   an Arch or AUR verification. Public AUR package info has a nickname and no email
   or recipe signature. See [upload policy](upload-policy.md).
+- A recipe mirror copies selected Git trees and does not run `PKGBUILD`s. It is not
+  an operator signature or an Arch/AUR verification, and it does not update a
+  rejected package. See [mirrors](mirrors.md).
 - Moderators can suspend a package or an ordinary account. Site admins reverse that
   from the audit. Accepting a rejected upload or registration permits only that
   same attempt; it does not unsuspend an account or store the rejected recipe.

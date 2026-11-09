@@ -7,6 +7,7 @@ pub mod error;
 pub mod gitserve;
 pub mod keys;
 pub mod mail;
+pub mod mirror;
 pub mod moderation;
 pub mod orgs;
 pub mod push;
