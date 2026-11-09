@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+### Added
+- Recipe mirrors. An administrator can copy selected packages from an AUR-style Git source. Copies stay read-only, are not operator attestations, and a pacman binary repository is not a source.
+
 ## [1.2.0] - 2026-11-07
 ### Added
 - Moderator role that can reject a package or an ordinary account, and a site-admin audit that can reverse those decisions.

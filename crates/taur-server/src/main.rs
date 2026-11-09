@@ -161,6 +161,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             println!("imported {} {}", info.pkgbase, info.version());
         }
         Cmd::Registry(cmd) => registry_cmd(&store, cmd)?,
+        Cmd::Mirror(cmd) => mirror_cmd(&store, cmd)?,
         Cmd::Moderator { name, revoke } => {
             let id = store.user_id(&name)?;
             store.grant_moderator(id, !revoke)?;
@@ -228,6 +229,92 @@ fn log_limits(policy: &taur_core::RatePolicy) {
             "taur: the proxy must append the client address. Without that header, every client behind the proxy shares one bucket"
         );
     }
+}
+
+fn mirror_cmd(
+    store: &taur_core::Store,
+    cmd: taur_server::cli::MirrorCmd,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use taur_server::cli::MirrorCmd;
+    match cmd {
+        MirrorCmd::Add { name, url } => {
+            store.add_mirror(&name, &url)?;
+            println!(
+                "mirror {name} reads recipes from {url}/{{pkgbase}}.git (provenance mirror; not a pacman repository and not an operator attestation). Nothing has been fetched."
+            );
+        }
+        MirrorCmd::List => {
+            for row in store.list_mirrors()? {
+                println!(
+                    "{} url={} registry={} provenance={}",
+                    row.name, row.base_url, row.registry, row.provenance
+                );
+            }
+        }
+        MirrorCmd::Select { name, pkgbases } => {
+            if pkgbases.is_empty() {
+                return Err("name at least one package base".into());
+            }
+            for pkg in &pkgbases {
+                store.select_mirror_package(&name, pkg)?;
+                println!("selected {pkg} on {name}");
+            }
+        }
+        MirrorCmd::Unselect { name, pkgbase } => {
+            store.unselect_mirror_package(&name, &pkgbase)?;
+            println!("{pkgbase} will not be updated; the last copy is kept");
+        }
+        MirrorCmd::Sync { name } => {
+            let rows = store.sync_mirror(&name)?;
+            if rows.is_empty() {
+                println!("mirror {name} has no selected packages");
+            }
+            let mut failed = false;
+            for row in rows {
+                if row.status == "unselected" {
+                    continue;
+                }
+                println!(
+                    "{} {} revision={} stale={} {}",
+                    row.pkgbase,
+                    row.status,
+                    row.revision.unwrap_or_else(|| "-".into()),
+                    row.stale,
+                    row.detail
+                );
+                if matches!(
+                    row.status.as_str(),
+                    "failed" | "blocked" | "upstream-missing"
+                ) {
+                    failed = true;
+                }
+            }
+            if failed {
+                return Err("one or more packages were not updated".into());
+            }
+        }
+        MirrorCmd::Status { name } => {
+            for row in store.mirror_status(&name)? {
+                println!(
+                    "{} status={} revision={} stale={} {}",
+                    row.pkgbase,
+                    row.status,
+                    row.revision.unwrap_or_else(|| "-".into()),
+                    row.stale,
+                    row.detail
+                );
+            }
+        }
+        MirrorCmd::Remove { name } => {
+            store.remove_mirror(&name)?;
+            println!("removed mirror {name}");
+        }
+        MirrorCmd::Drop { name, pkgbase } => {
+            store.drop_mirrored_package(&name, &pkgbase)?;
+            println!("dropped {pkgbase} from mirror {name}");
+        }
+    }
+    Ok(())
 }
 
 fn registry_cmd(

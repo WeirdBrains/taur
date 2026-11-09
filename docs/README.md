@@ -20,5 +20,6 @@
 - [TLS and automatic certificates](tls.md)
 - [Moderators and the audit](moderation.md)
 - [Package registries](upload-policy.md)
+- [Recipe mirrors](mirrors.md)
 - [Security review notes](security.md)
 - [Making a release](releases.md)

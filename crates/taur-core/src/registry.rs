@@ -24,6 +24,8 @@ pub const PROVENANCE_OPERATOR: &str = "operator";
 
 const ENFORCE: &str = "enforce";
 const EXEMPT: &str = "exempt";
+/// A recipe mirror. Not an operator trust record and not a pacman repository.
+pub const MIRROR_ENFORCEMENT: &str = "mirror";
 
 /// Bytes that an Ed25519 signature covers. Registry, repository, package, and
 /// version are inside the message, so a signature cannot be moved onto another
@@ -175,7 +177,7 @@ pub fn parse_hex_key(text: &str, len: usize) -> Result<Vec<u8>> {
 pub struct RegistryInfo {
     pub name: String,
     pub enforcement: String,
-    /// Always [`PROVENANCE_OPERATOR`] for records this server stores.
+    /// `operator` for local and enforcing registries. `mirror` for a recipe mirror.
     pub provenance: String,
 }
 
@@ -306,10 +308,16 @@ impl Store {
         let conn = self.lock();
         let mut st = conn.prepare("SELECT name, enforcement FROM registries ORDER BY id")?;
         let rows = st.query_map([], |r| {
+            let enforcement: String = r.get(1)?;
+            let provenance = if enforcement == MIRROR_ENFORCEMENT {
+                crate::mirror::PROVENANCE_MIRROR
+            } else {
+                PROVENANCE_OPERATOR
+            };
             Ok(RegistryInfo {
                 name: r.get(0)?,
-                enforcement: r.get(1)?,
-                provenance: PROVENANCE_OPERATOR.to_string(),
+                enforcement,
+                provenance: provenance.to_string(),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -520,6 +528,12 @@ impl Store {
         if enforcement == EXEMPT {
             return Ok(UploadDecision::ExistingRules);
         }
+        if enforcement == MIRROR_ENFORCEMENT {
+            return Err(Error::Invalid(format!(
+                "registry {} is a recipe mirror and is read-only; mirroring is not an operator signature or an acceptance",
+                upload.registry
+            )));
+        }
         let Some(expected) = self.expectation(registry_id, upload.pkgbase)? else {
             return Ok(UploadDecision::ExistingRules);
         };
@@ -678,6 +692,11 @@ impl Store {
         if enforcement == EXEMPT {
             return Err(Error::Conflict(format!(
                 "registry {registry} is an existing package registry and does not take new trust records"
+            )));
+        }
+        if enforcement != ENFORCE {
+            return Err(Error::Conflict(format!(
+                "registry {registry} is a recipe mirror and does not take operator trust records"
             )));
         }
         Ok(())
