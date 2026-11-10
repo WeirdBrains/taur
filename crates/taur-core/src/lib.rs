@@ -18,6 +18,7 @@ pub mod roles;
 pub mod rpc;
 pub mod srcinfo;
 pub mod store;
+pub mod upload;
 
 pub use error::{Error, Result};
 

@@ -1,5 +1,11 @@
 # Importing packages
 
+A verified user can also upload that directory as a `.tar.gz`, `.tar`, or `.zip` at `/upload`
+(`POST /api/v1/packages/upload`, form field `archive`). The same `.SRCINFO` and
+`PKGBUILD` checks run. The PKGBUILD is not executed. A new package base is adopted
+by the uploader. An existing one is updated only when that user could push it.
+The archive is at most 8 MiB. See [Publish a package](guides/publish.md).
+
 `taur import DIR [--maintainer USER]`
 
 Reads `DIR/.SRCINFO` (generate with `makepkg --printsrcinfo > .SRCINFO`), commits the

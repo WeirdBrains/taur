@@ -7,6 +7,71 @@ use std::process::Command;
 use std::sync::Arc;
 use taur_core::Store;
 
+fn webup_gzip() -> Vec<u8> {
+    let pkg = b"pkgbase=webup\npkgname=(webup)\npkgver=1.0.0\npkgrel=1\narch=(any)\n";
+    let src = b"pkgbase = webup\n\tpkgdesc = Uploaded\n\tpkgver = 1.0.0\n\tpkgrel = 1\n\tarch = any\n\npkgname = webup\n";
+    fn ustar(name: &str, body: &[u8]) -> Vec<u8> {
+        let mut h = vec![0u8; 512];
+        h[..name.len()].copy_from_slice(name.as_bytes());
+        let put = |h: &mut [u8], at: usize, text: &str| {
+            h[at..at + text.len()].copy_from_slice(text.as_bytes());
+        };
+        put(&mut h, 100, "0000644\0");
+        put(&mut h, 108, "0000000\0");
+        put(&mut h, 116, "0000000\0");
+        put(&mut h, 124, &format!("{:011o}\0", body.len()));
+        put(&mut h, 136, "00000000000\0");
+        h[148..156].fill(b' ');
+        h[156] = b'0';
+        h[257..262].copy_from_slice(b"ustar");
+        h[263] = b'0';
+        h[264] = b'0';
+        let sum: u32 = h.iter().map(|b| u32::from(*b)).sum();
+        put(&mut h, 148, &format!("{sum:06o}\0 "));
+        let mut out = h;
+        out.extend_from_slice(body);
+        while !out.len().is_multiple_of(512) {
+            out.push(0);
+        }
+        out
+    }
+    let mut raw = Vec::new();
+    raw.extend(ustar("PKGBUILD", pkg));
+    raw.extend(ustar(".SRCINFO", src));
+    raw.extend(vec![0u8; 1024]);
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    use std::io::Write;
+    enc.write_all(&raw).unwrap();
+    enc.finish().unwrap()
+}
+
+fn b64(data: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let mut n = (chunk[0] as u32) << 16;
+        if chunk.len() > 1 {
+            n |= (chunk[1] as u32) << 8;
+        }
+        if chunk.len() > 2 {
+            n |= chunk[2] as u32;
+        }
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            T[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
 fn dump(url: &str, profile: &std::path::Path, marker: &str) -> String {
     dump_hook(url, profile, marker, None)
 }
@@ -89,6 +154,18 @@ fn pages_render_in_chromium() {
         .set_admin(store.user_by_name("alice").unwrap().unwrap().id, true)
         .unwrap();
     let session = store.login("alice", "longenough").unwrap().token;
+    let upload_hook = format!(
+        "(() => {{ localStorage.setItem('taur.token', {session:?}); if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} const input = document.querySelector('input[name=archive]'); if (input && !window.__taurSent) {{ window.__taurSent = 1; const bin = Uint8Array.from(atob({b64:?}), c => c.charCodeAt(0)); const file = new File([bin], 'webup.tar.gz', {{type:'application/gzip'}}); const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files; input.form.requestSubmit(); }} }})()",
+        b64 = b64(&webup_gzip())
+    );
+    let uploaded = dump_hook(
+        &format!("{url}/upload"),
+        profile.path(),
+        "webup 1.0.0-1",
+        Some(&upload_hook),
+    );
+    assert!(uploaded.contains("webup 1.0.0-1"), "{uploaded}");
+    assert!(uploaded.contains("Published webup"), "{uploaded}");
     store.insert_registry("vendor", "enforce").unwrap();
     store
         .insert_identity("vendor", "carol", "carol@example.com")

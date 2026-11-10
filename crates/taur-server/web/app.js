@@ -60,7 +60,7 @@ function nav() {
   const n = document.getElementById("nav");
   const items = [link("/", "Packages"), link("/docs", "Docs"), link("/requests", "Requests")];
   if (me) {
-    items.push(link("/orgs", "Organizations"), link("/account", me.name));
+    items.push(link("/upload", "Upload"), link("/orgs", "Organizations"), link("/account", me.name));
     if (me.is_admin || me.is_moderator) items.push(link("/admin", "Admin"));
     if (me.is_admin) items.push(link("/audit", "Audit"), link("/mirrors", "Mirrors"));
     if (me.is_owner) items.push(link("/registries", "Registries"));
@@ -228,7 +228,7 @@ function peopleLinks(names) {
   return out;
 }
 function pkgTable(rows) {
-  if (!rows.length) return h("p", { class: "muted" }, "None.");
+  if (!rows.length) return h("p", { class: "muted" }, "None. ", link("/upload", "Upload a package"), " or read ", link("/docs/publish", "how to publish"), ".");
   return h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Version", "Votes", "Description"].map((t) => h("th", {}, t)))),
     h("tbody", {}, rows.map((p) => h("tr", {},
       h("td", {}, link(`/packages/${enc(p.Name)}`, p.Name)),
@@ -394,7 +394,7 @@ async function pageAccount() {
   out.push(h("div", { class: "card" }, h("h2", {}, "Your packages"),
     pkgs.length ? h("table", {}, h("tr", {}, h("th", {}, "Package base"), h("th", {}, "Maintainer"), h("th", {}, "Organization")),
       pkgs.map((p) => h("tr", {}, h("td", {}, link(`/packages/${enc(p.pkgbase)}`, p.pkgbase)), h("td", {}, p.maintainer || "orphan"), h("td", {}, p.org || "—"))))
-      : h("p", { class: "muted" }, "None yet. ", link("/docs/publish", "Publish a package"), " with git."),
+      : h("p", { class: "muted" }, "None yet. ", link("/upload", "Upload a package"), " or ", link("/docs/publish", "publish with git"), "."),
   ));
   const kf = h("form", { class: "stack", onsubmit: guard(() => api("POST", "/api/v1/ssh-keys", { public_key: val(kf, "key") }), "Key added.") },
     h("textarea", { name: "key", placeholder: "ssh-ed25519 AAAA… you@host", required: true, "aria-label": "Public key" }), h("button", {}, "Add SSH key"));
@@ -673,6 +673,41 @@ async function pageDoc(slug) {
   render(h("p", {}, link("/docs", "Docs")), h("h1", {}, doc.title), h("div", { class: "card" }, renderMarkdown(doc.body)));
 }
 
+async function pageUpload() {
+  if (!me) return needLogin();
+  if (!me.verified) {
+    return render(h("h1", {}, "Upload a package"), h("div", { class: "card" },
+      h("p", {}, "Verify your email before uploading. "), link("/account", "Account")));
+  }
+  const f = h("form", { class: "stack", onsubmit: async (e) => {
+    e.preventDefault();
+    const file = f.elements.archive.files[0];
+    if (!file) return flash("Choose a .tar.gz, .tar, or .zip.", "error");
+    const body = new FormData();
+    body.append("archive", file);
+    try {
+      const res = await fetch("/api/v1/packages/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token()}`, "X-CSRF-Token": token() },
+        body,
+      });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+      if (!res.ok) throw new Error((data && data.error) || `${res.status}`);
+      history.pushState(null, "", `/packages/${enc(data.name)}`);
+      await route();
+      flash(`Published ${data.pkgbase} ${data.version}.`);
+    } catch (err) { flash(err.message, "error"); }
+  } },
+    h("input", { name: "archive", type: "file", accept: ".tar,.tar.gz,.tgz,.zip,application/gzip,application/zip", required: true, "aria-label": "Package archive" }),
+    h("button", {}, "Upload"));
+  render(h("h1", {}, "Upload a package"), h("div", { class: "card" },
+    h("p", {}, "Upload a .tar.gz, .tar, or .zip of one package directory. It needs PKGBUILD and .SRCINFO at the top, or inside a single folder. The server checks the recipe and does not run the PKGBUILD. A new name becomes yours. An existing package base is updated only when you can maintain it."),
+    h("p", {}, link("/docs/publish", "Publish guide")),
+    f));
+}
+
 // ---- router ----
 async function route() {
   const path = decodeURIComponent(location.pathname);
@@ -687,6 +722,7 @@ async function route() {
   if (path === "/verify") return pageVerify(params);
   if (path === "/reset") return pageReset(params);
   if (path === "/account") return pageAccount();
+  if (path === "/upload") return pageUpload();
   if (path === "/orgs") return pageOrgs();
   if ((m = path.match(/^\/orgs\/([^/]+)\/?$/))) return pageOrg(m[1]);
   if (path === "/requests") return pageRequests(params);

@@ -1,6 +1,8 @@
 //! HTTP front end: a thin axum layer over `taur_core`.
 
-use axum::extract::{ConnectInfo, DefaultBodyLimit, FromRef, Path, Query, RawQuery, State};
+use axum::extract::{
+    ConnectInfo, DefaultBodyLimit, FromRef, Multipart, Path, Query, RawQuery, State,
+};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -79,6 +81,7 @@ pub fn app_with(state: AppState) -> Router {
             axum::routing::put(set_member).delete(remove_member),
         )
         .route("/api/v1/packages", get(my_packages))
+        .route("/api/v1/packages/upload", post(upload_package))
         .route("/api/v1/packages/{pkgbase}/owner", post(set_owner))
         .route("/api/v1/packages/{pkgbase}/disown", post(disown))
         .route("/api/v1/packages/{pkgbase}/adopt", post(adopt))
@@ -1255,6 +1258,50 @@ async fn remove_member(
     let u = auth_verified(&s, &h)?;
     s.remove_member(u.id, s.org_id(&org)?, s.user_id(&user)?)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn upload_package(
+    State(s): St,
+    h: HeaderMap,
+    mut body: Multipart,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let user = auth_verified(&s, &h)?;
+    let mut archive = None;
+    while let Some(field) = body
+        .next_field()
+        .await
+        .map_err(|e| Error::Invalid(format!("could not read the upload: {e}")))?
+    {
+        if field.name() == Some("archive") || archive.is_none() {
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| Error::Invalid(format!("could not read the upload: {e}")))?;
+            if data.len() as u64 > taur_core::upload::MAX_ARCHIVE_BYTES {
+                return Err(Error::Invalid("the archive is larger than 8 MiB".into()).into());
+            }
+            archive = Some(data);
+        }
+    }
+    let Some(archive) = archive else {
+        return Err(Error::Invalid("choose a .tar.gz, .tar, or .zip".into()).into());
+    };
+    let dir = taur_core::upload::extract_recipe(&archive)?;
+    let published = s.publish_recipe(&user, dir.path())?;
+    let status = if published.created {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok((
+        status,
+        Json(json!({
+            "pkgbase": published.pkgbase,
+            "name": published.name,
+            "version": published.version,
+            "created": published.created,
+        })),
+    ))
 }
 
 async fn my_packages(State(s): St, h: HeaderMap) -> Result<Response, ApiError> {

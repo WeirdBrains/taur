@@ -7,6 +7,14 @@ order: 0
 
 This is how a package you maintain shows up in search.
 
+## Upload from the site
+
+Open [Upload](/upload) after your email is verified. Choose a `.tar.gz`, `.tar`, or `.zip` of the package directory. `PKGBUILD` and `.SRCINFO` sit at the top of that directory, or inside one folder. The archive is at most 8 MiB, with at most 64 files, and each file is at most 256 KiB. Nested directories, symlinks, and paths that leave the directory are refused.
+
+The server checks `.SRCINFO`, the literal `PKGBUILD` assignments, architectures, maintainership, and any registry rule. It does not run the PKGBUILD or `makepkg`. A new package base is adopted to you. An update is accepted only when you could also `git push` that base: you maintain it, you co-maintain it, or your organization can manage it. A rejected package stays rejected.
+
+Git and SSH pushes are unchanged.
+
 ## What you need
 
 - A verified account. Open the link in the verification mail, or use **Resend verification** on your account page. A site admin can also mark you verified.
