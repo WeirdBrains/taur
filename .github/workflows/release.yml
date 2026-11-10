@@ -107,7 +107,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          assets="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.assets | length' 2>/dev/null || echo missing)"
+          # A 404 prints a JSON body on stdout and exits non-zero. Assign
+          # "missing" on failure; do not append it to that body, or the
+          # "already has assets" check treats a missing release as present.
+          assets="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.assets | length' 2>/dev/null)" || assets=missing
+          case "$assets" in
+            ''|*[!0-9]*) assets=missing ;;
+          esac
           echo "release ${TAG} asset count: ${assets}"
           if [ "$assets" = "missing" ]; then
             gh release create "$TAG" --verify-tag --title "$TAG" \

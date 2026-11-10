@@ -8,6 +8,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 - The web UI footer shows the running server's version.
 
+### Fixed
+
+- The release upload job treats a missing GitHub Release as missing, so a tag push can create the release and attach packages.
+
 ## [1.5.0] - 2026-11-10
 
 ### Added
