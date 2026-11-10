@@ -48,6 +48,24 @@ The login name (`aur`) is ignored; the key selects the account.
 | `set-keywords <pkgbase> [keyword…]` | someone who can manage it | replaces keywords |
 | `set-comaintainers <pkgbase> [user…]` | maintainer, org manager, or site admin | replaces co-maintainers |
 
+Keywords are stored on the package in the database. They are not read from
+`PKGBUILD` or `.SRCINFO`. Web, RPC, and CLI search match them only with
+`by=keywords`, and only as an exact keyword (the default `name-desc` search
+does not look at keywords).
+
+The documented embedded-SSH clone URL in [git-and-snapshots](git-and-snapshots.md)
+is `ssh://taur@packages.taur.weirdbrains.com:2222`. With a registered key and
+permission to manage the package, this replaces every keyword on `taur`:
+
+```sh
+ssh -p 2222 taur@packages.taur.weirdbrains.com set-keywords taur aur package-server package-manager archlinux rust
+```
+
+If you use system OpenSSH with `Match User aur` as in the section above, the
+login name is `aur` instead; the key still selects the account. Omitting every
+keyword clears the list. This command was not run against a live server from
+these docs.
+
 An interactive shell is rejected. `restore` (aurweb's deleted-package recovery) is not
 implemented. Unverified accounts can clone and list repos; other commands ask them to
 verify their email.
