@@ -58,13 +58,19 @@ fn write_repo(dir: &Path, version: &str) {
 
 fn write_packaging(dir: &Path, version: &str) {
     fs::create_dir_all(dir.join("packaging/arch")).unwrap();
+    fs::create_dir_all(dir.join("packaging/arch-internal")).unwrap();
     fs::create_dir_all(dir.join("packaging/debian")).unwrap();
     fs::create_dir_all(dir.join("packaging/rpm")).unwrap();
     fs::write(
         dir.join("packaging/arch/PKGBUILD"),
         format!(
-            "pkgname=taur\npkgver={version}\npkgrel=1\npkgdesc='test'\narch=('x86_64')\nurl='https://example.com'\nlicense=('MIT')\ndepends=('git')\nsource=(payload.tar.gz)\nsha256sums=('SKIP')\npackage() {{ :; }}\n"
+            "pkgname=taur\npkgver={version}\npkgrel=1\npkgdesc='test'\narch=('x86_64')\nurl='https://example.com'\nlicense=('MIT')\ndepends=('git')\nsource=(\"https://github.com/WeirdBrains/taur/releases/download/v${{pkgver}}/taur-${{pkgver}}-x86_64-unknown-linux-gnu.tar.gz\")\nsha256sums=('UPSTREAM_TARBALL_SHA256')\npackage() {{ :; }}\n"
         ),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("packaging/arch-internal/PKGBUILD"),
+        "pkgname=taur\npkgver=0\npkgrel=1\narch=('x86_64')\nsource=(payload.tar.gz)\nsha256sums=('SKIP')\npackage() { :; }\n",
     )
     .unwrap();
     fs::write(
@@ -142,6 +148,7 @@ fn fixture(version: &str) -> Fix {
             "CHANGELOG.md",
             "packaging/arch/PKGBUILD",
             "packaging/arch/.SRCINFO",
+            "packaging/arch-internal/PKGBUILD",
             "packaging/debian/control.in",
             "packaging/rpm/taur.spec",
         ],
@@ -452,6 +459,52 @@ fn a_rejected_push_does_not_publish_the_branch_or_the_tag() {
 }
 
 #[test]
+fn bump_resets_published_tarball_hash_to_placeholder() {
+    let fix = fixture("1.2.0");
+    let path = fix.work.path().join("packaging/arch/PKGBUILD");
+    let mut pkgbuild = fs::read_to_string(&path).unwrap();
+    pkgbuild = pkgbuild.replace(
+        "sha256sums=('UPSTREAM_TARBALL_SHA256')",
+        "sha256sums=('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')",
+    );
+    fs::write(&path, pkgbuild).unwrap();
+    // Regenerate .SRCINFO so check() still passes at the current version.
+    let out = Command::new("makepkg")
+        .arg("--printsrcinfo")
+        .current_dir(fix.work.path().join("packaging/arch"))
+        .output()
+        .expect("makepkg --printsrcinfo");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    fs::write(fix.work.path().join("packaging/arch/.SRCINFO"), out.stdout).unwrap();
+    commit_and_push(
+        &fix,
+        &["packaging/arch/PKGBUILD", "packaging/arch/.SRCINFO"],
+        "fill tarball hash",
+    );
+    ok(&fix, &["--patch"]);
+    let pkgbuild = fs::read_to_string(&path).unwrap();
+    assert_eq!(pkgver_of(fix.work.path()), "1.2.1");
+    assert!(
+        pkgbuild.contains("sha256sums=('UPSTREAM_TARBALL_SHA256')"),
+        "release bump must not keep a previous tarball hash: {pkgbuild}"
+    );
+    assert!(!pkgbuild.contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    let srcinfo = fs::read_to_string(fix.work.path().join("packaging/arch/.SRCINFO")).unwrap();
+    assert!(
+        srcinfo.contains("sha256sums = UPSTREAM_TARBALL_SHA256"),
+        "{srcinfo}"
+    );
+    assert!(
+        srcinfo.contains("source = https://github.com/WeirdBrains/taur/releases/download/v1.2.1/taur-1.2.1-x86_64-unknown-linux-gnu.tar.gz"),
+        "{srcinfo}"
+    );
+}
+
+#[test]
 fn bump_updates_pkgbuild_and_srcinfo() {
     let fix = fixture("1.2.0");
     ok(&fix, &["--patch"]);
@@ -460,6 +513,21 @@ fn bump_updates_pkgbuild_and_srcinfo() {
     let pkgbuild = fs::read_to_string(fix.work.path().join("packaging/arch/PKGBUILD")).unwrap();
     assert!(pkgbuild.contains("pkgrel=1"));
     assert!(!pkgbuild.contains("pkgver=1.2.0"));
+    assert!(
+        pkgbuild.contains("sha256sums=('UPSTREAM_TARBALL_SHA256')"),
+        "{pkgbuild}"
+    );
+    assert!(
+        pkgbuild.contains(
+            "https://github.com/WeirdBrains/taur/releases/download/v${pkgver}/taur-${pkgver}-x86_64-unknown-linux-gnu.tar.gz"
+        ),
+        "{pkgbuild}"
+    );
+    let srcinfo = fs::read_to_string(fix.work.path().join("packaging/arch/.SRCINFO")).unwrap();
+    assert!(
+        srcinfo.contains("source = https://github.com/WeirdBrains/taur/releases/download/v1.2.1/taur-1.2.1-x86_64-unknown-linux-gnu.tar.gz"),
+        "{srcinfo}"
+    );
     let debian = fs::read_to_string(fix.work.path().join("packaging/debian/control.in")).unwrap();
     assert_eq!(debian, "Package: taur\nVersion: @VERSION@-1\n");
     let rpm = fs::read_to_string(fix.work.path().join("packaging/rpm/taur.spec")).unwrap();

@@ -1,5 +1,7 @@
 # Using with yay and paru
 
+The `taur` package recipe served by a TAUR server must be the public Arch recipe: `PKGBUILD`, `.SRCINFO`, and `taur.install`. Its `source` is the published GitHub release tarball (`taur-VERSION-x86_64-unknown-linux-gnu.tar.gz`) with a verified checksum. A recipe that lists a local `payload.tar.gz` cannot be built with yay; that file exists only in the internal official-package build.
+
 Pass the server URL on the command line. That leaves the real yay and paru config files
 untouched. Do not pass `--save`.
 

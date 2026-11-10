@@ -1,9 +1,14 @@
 # Maintainer: WeirdBrains <taur@weirdbrains.com>
-# scripts/release.sh sets pkgver to the workspace version and regenerates
-# .SRCINFO with makepkg --printsrcinfo. scripts/package.sh copies this file,
-# sets pkgver and the payload checksum, writes payload.tar.gz beside it, and
-# rewrites .SRCINFO in the build directory. package() does not compile Rust.
-# .SRCINFO is source-recipe metadata; it is not installed as a runtime file.
+# Public AUR-compatible recipe. Helpers such as yay clone these files from a
+# TAUR server and download the published GitHub release tarball. This file is
+# not used to build the official GitHub .pkg.tar.zst; that uses
+# packaging/arch-internal/PKGBUILD and a local payload.tar.gz.
+#
+# sha256sums is UPSTREAM_TARBALL_SHA256 until the tarball for this pkgver is
+# published. scripts/release.sh resets it to that placeholder when bumping
+# pkgver so a previous release's hash is never left in place. After the
+# GitHub asset exists, scripts/check-package-metadata.py set-tarball-sha256
+# writes the verified hash and .SRCINFO is regenerated.
 pkgname=taur
 pkgver=1.6.0
 pkgrel=1
@@ -15,13 +20,39 @@ depends=('git' 'systemd')
 backup=('etc/taur/taur.env')
 options=('!strip' '!debug' '!lto')
 install=taur.install
-source=(payload.tar.gz)
-sha256sums=('SKIP')
+source=("https://github.com/WeirdBrains/taur/releases/download/v${pkgver}/taur-${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
+sha256sums=('1ef4b03d5b37652d2e24aaf770fef828a6cf8c25bac132bad71cedad59d7dc5f')
 
 package() {
-  cp -a "${srcdir}/." "${pkgdir}/"
-  rm -f "${pkgdir}/payload.tar.gz"
-  chown -R root:root "${pkgdir}"
-  chmod 0750 "${pkgdir}/etc/taur"
-  chmod 0640 "${pkgdir}/etc/taur/taur.env"
+  cd "${srcdir}/taur-${pkgver}"
+
+  install -Dm755 taur "${pkgdir}/usr/bin/taur"
+  install -Dm755 taurctl "${pkgdir}/usr/bin/taurctl"
+
+  install -Dm644 packaging/systemd/taur.service \
+    "${pkgdir}/usr/lib/systemd/system/taur.service"
+  install -Dm644 packaging/systemd/taur.sysusers \
+    "${pkgdir}/usr/lib/sysusers.d/taur.conf"
+  install -Dm644 packaging/systemd/taur.tmpfiles \
+    "${pkgdir}/usr/lib/tmpfiles.d/taur.conf"
+  install -Dm755 packaging/account/ensure-account \
+    "${pkgdir}/usr/lib/taur/ensure-account"
+
+  install -dm0750 "${pkgdir}/etc/taur"
+  install -m0640 packaging/taur.env.example "${pkgdir}/etc/taur/taur.env"
+
+  install -Dm644 packaging/licenses/MIT \
+    "${pkgdir}/usr/share/licenses/taur/MIT"
+  install -Dm644 packaging/licenses/Apache-2.0 \
+    "${pkgdir}/usr/share/licenses/taur/Apache-2.0"
+
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/taur/README.md"
+  install -Dm644 CHANGELOG.md "${pkgdir}/usr/share/doc/taur/CHANGELOG.md"
+  mkdir -p "${pkgdir}/usr/share/doc/taur/docs"
+  cp -a docs/. "${pkgdir}/usr/share/doc/taur/docs/"
+
+  for man in man/*.1; do
+    install -Dm644 "$man" "${pkgdir}/usr/share/man/man1/$(basename "$man")"
+    gzip -n -9 "${pkgdir}/usr/share/man/man1/$(basename "$man")"
+  done
 }

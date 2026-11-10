@@ -52,7 +52,7 @@ exclusive. Tags are vMAJOR.MINOR.PATCH with no leading zeros, prerelease, or
 build metadata.
 
 The script updates the workspace version, lockfile, changelog heading, the
-Arch PKGBUILD pkgver and .SRCINFO, and man pages, runs fmt, clippy, tests, and
+public Arch PKGBUILD pkgver (and resets sha256sums to UPSTREAM_TARBALL_SHA256), .SRCINFO, and man pages, runs fmt, clippy, tests, and
 a release build, then commits, creates an annotated tag, and pushes main and
 that tag together. It checks Debian and RPM @VERSION@ templates (package.sh
 fills those in) and fails if package metadata is missing or does not match the

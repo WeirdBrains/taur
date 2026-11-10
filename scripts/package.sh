@@ -116,7 +116,9 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$script_dir/.." && pwd)"
 cd "$repo"
-[[ -d packaging/debian && -d packaging/rpm && -d packaging/arch ]] || die "packaging/ is incomplete"
+[[ -d packaging/debian && -d packaging/rpm && -d packaging/arch && -f packaging/arch-internal/PKGBUILD ]] \
+  || die "packaging/ is incomplete"
+[[ -f packaging/arch/PKGBUILD && -f packaging/arch/taur.install ]] || die "packaging/arch is incomplete"
 
 resolve_ref() {
   local arg="$1"
@@ -362,12 +364,14 @@ mkdir -p "$arch_dir"
 tar --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner \
   -C "$root" -czf "$arch_dir/payload.tar.gz" .
 payload_sum="$(sha256sum "$arch_dir/payload.tar.gz" | awk '{print $1}')"
+# Official .pkg.tar.zst is built from the internal payload recipe, not the
+# public AUR PKGBUILD (which points at the GitHub release tarball).
 sed -e "s/^pkgver=.*/pkgver=${version}/" \
   -e "s/^depends=.*/depends=${arch_depends}/" \
   -e "s/^sha256sums=.*/sha256sums=('${payload_sum}')/" \
-  "$repo/packaging/arch/PKGBUILD" > "$arch_dir/PKGBUILD"
+  "$repo/packaging/arch-internal/PKGBUILD" > "$arch_dir/PKGBUILD"
 cp "$repo/packaging/arch/taur.install" "$arch_dir/taur.install"
-# Source-recipe metadata next to the staged PKGBUILD. Not installed into the package root.
+# Source-recipe metadata next to the staged internal PKGBUILD. Not installed into the package root.
 (cd "$arch_dir" && makepkg --printsrcinfo > .SRCINFO) || die "makepkg --printsrcinfo failed for the staged Arch recipe"
 (
   cd "$arch_dir"
@@ -413,6 +417,28 @@ tar --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner \
   cd "$output"
   sha256sum "$tar_name" "$deb_name" "$rpm_name" "$arch_name" > SHA256SUMS
 )
+
+# Public AUR-compatible recipe for a TAUR-server upload. The official GitHub
+# SHA256SUMS stays the four packages above; this archive is written beside them
+# after the tarball hash is known, never with a placeholder or stale digest.
+tarball_sum="$(awk -v n="$tar_name" '$2 == n { print $1 }' "$output/SHA256SUMS")"
+[[ ${#tarball_sum} -eq 64 ]] || die "could not read $tar_name from SHA256SUMS"
+aur_dir="$output/arch-aur"
+rm -rf "$aur_dir"
+mkdir -p "$aur_dir"
+cp "$repo/packaging/arch/PKGBUILD" "$repo/packaging/arch/taur.install" "$aur_dir/"
+python3 "$script_dir/check-package-metadata.py" set-tarball-sha256 "$tarball_sum" --recipe-dir "$aur_dir" \
+  || die "failed to write the public AUR tarball checksum"
+(cd "$aur_dir" && makepkg --printsrcinfo > .SRCINFO) || die "makepkg --printsrcinfo failed for the public AUR recipe"
+aur_stage="$stage/aur-upload"
+rm -rf "$aur_stage"
+mkdir -p "$aur_stage/taur"
+cp "$aur_dir/PKGBUILD" "$aur_dir/.SRCINFO" "$aur_dir/taur.install" "$aur_stage/taur/"
+aur_name="taur-${version}-arch-aur.tar.gz"
+tar --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner \
+  -C "$aur_stage" -czf "$output/$aur_name" taur
+echo "package: wrote public AUR recipe $output/$aur_name"
+
 echo "package: $version $commit"
 echo "package: wrote $output"
 cat "$output/SHA256SUMS"
