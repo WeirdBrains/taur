@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ### Fixed
 
+- The package page no longer renders a literal `null` above the title when the package is not archived. That slot is the optional archived banner.
+
 - Package smoke accepts a login PATH that reports `/usr/sbin/taur` when that path is the same file as `/usr/bin/taur` (usr-merged Fedora and Arch).
 - The public Arch recipe (`packaging/arch/PKGBUILD`) now points at the published GitHub release tarball instead of a local `payload.tar.gz`, so yay can download sources. Official `.pkg.tar.zst` builds still use `packaging/arch-internal/PKGBUILD`. `scripts/release.sh` resets the tarball `sha256sums` to the `UPSTREAM_TARBALL_SHA256` placeholder when bumping `pkgver` so a previous hash is never left in place.
 
