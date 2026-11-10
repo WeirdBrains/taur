@@ -241,6 +241,25 @@ sudo pacman -U ./taur-1.3.2-1-x86_64.pkg.tar.zst
 sudo pacman -R taur
 ```
 
+## Upgrade with taurctl
+
+On a machine that already has a TAUR package installed, `taurctl upgrade` downloads
+the published Linux x86_64 package for this distro, checks `SHA256SUMS`, and
+installs it with `apt-get`, `dnf`, or `pacman`. Configuration and `/var/lib/taur`
+stay in place. The service is not restarted unless you pass `--restart`. If a
+restarted service fails its health check, the previous package is reinstalled when
+it could be retained. Rolling the package back cannot undo a database schema
+migration.
+
+```sh
+taurctl upgrade --version 1.5.0
+taurctl upgrade --version 1.5.0 --restart -y
+taurctl upgrade --version 1.5.0 --dry-run
+```
+
+See [cli.md](cli.md) for flags and limitations. Only Linux x86_64 packages are
+published today.
+
 ## Start the service
 
 This command was not executed. `systemctl is-enabled taur` was `disabled`, and the unit file contains `WantedBy=multi-user.target` under `[Install]`.

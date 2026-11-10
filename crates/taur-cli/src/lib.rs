@@ -1,7 +1,9 @@
-//! `taurctl`: a thin command-line client over the TAUR HTTP API.
+//! `taurctl`: a command-line client over the TAUR HTTP API, plus a local
+//! `upgrade` command that installs a published native package.
 
 pub mod client;
 pub mod config;
+pub mod upgrade;
 
 use clap::{Args, Parser, Subcommand};
 use client::Client;
@@ -128,6 +130,31 @@ pub enum Cmd {
     /// Run an MCP server on stdio that forwards to the TAUR server's /mcp endpoint
     /// (uses the stored session token, if any).
     Mcp,
+    /// Upgrade the installed TAUR package from a GitHub Release.
+    ///
+    /// Downloads the native package for this machine (Debian/Ubuntu, Fedora/RHEL,
+    /// or Arch; Linux x86_64 only), verifies SHA256SUMS, and installs it with
+    /// apt-get, dnf, or pacman. Configuration, the database, and git repositories
+    /// are left in place. A package rollback cannot undo a database schema
+    /// migration. The service is not restarted unless `--restart` is given.
+    #[command(
+        after_help = "Examples:\n  taurctl upgrade\n  taurctl upgrade --version 1.5.0\n  taurctl upgrade --version 1.5.0 --restart -y\n"
+    )]
+    Upgrade {
+        /// Release tag or version (for example 1.5.0 or v1.5.0). Default: the latest GitHub Release.
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
+        /// Restart the taur service after installing and check GET /api/v1/server.
+        /// If the check fails, the previous package is reinstalled when it was retained.
+        #[arg(long)]
+        restart: bool,
+        /// Print the planned package and commands without downloading or installing.
+        #[arg(long)]
+        dry_run: bool,
+        /// URL used for the post-restart health check (default: http://127.0.0.1:<TAUR_BIND port>).
+        #[arg(long, value_name = "URL")]
+        health_url: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -424,9 +451,27 @@ fn execute(cli: Cli) -> Result<(), CliError> {
         }
         return Ok(());
     }
+    if let Cmd::Upgrade {
+        version,
+        restart,
+        dry_run,
+        health_url,
+    } = &cli.cmd
+    {
+        upgrade::run(upgrade::Options {
+            version: version.clone(),
+            restart: *restart,
+            dry_run: *dry_run,
+            yes: g.yes,
+            json: g.json,
+            health_url: health_url.clone(),
+        })?;
+        return Ok(());
+    }
     let c = Client::new(&server(g, &dir)?, config::read_token(&dir));
     match &cli.cmd {
         Cmd::Config(_) => unreachable!(),
+        Cmd::Upgrade { .. } => unreachable!(),
         Cmd::Mcp => {
             use std::io::{BufRead, Write};
             let stdin = std::io::stdin();

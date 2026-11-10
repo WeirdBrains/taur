@@ -1,0 +1,50 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-upgrade 1  "taurctl-upgrade " 
+.SH NAME
+taurctl\-upgrade \- Upgrade the installed TAUR package from a GitHub Release
+.SH SYNOPSIS
+\fBtaurctl upgrade\fR [\fB\-\-server\fR] [\fB\-\-version\fR] [\fB\-\-config\-dir\fR] [\fB\-\-restart\fR] [\fB\-\-dry\-run\fR] [\fB\-\-json\fR] [\fB\-\-health\-url\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Upgrade the installed TAUR package from a GitHub Release.
+.PP
+Downloads the native package for this machine (Debian/Ubuntu, Fedora/RHEL, or Arch; Linux x86_64 only), verifies SHA256SUMS, and installs it with apt\-get, dnf, or pacman. Configuration, the database, and git repositories are left in place. A package rollback cannot undo a database schema migration. The service is not restarted unless `\-\-restart` is given.
+.SH OPTIONS
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-version\fR \fI<VERSION>\fR
+Release tag or version (for example 1.5.0 or v1.5.0). Default: the latest GitHub Release
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-restart\fR
+Restart the taur service after installing and check GET /api/v1/server. If the check fails, the previous package is reinstalled when it was retained
+.TP
+\fB\-\-dry\-run\fR
+Print the planned package and commands without downloading or installing
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-\-health\-url\fR \fI<URL>\fR
+URL used for the post\-restart health check (default: http://127.0.0.1:<TAUR_BIND port>)
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.SH EXTRA
+Examples:
+  taurctl upgrade
+  taurctl upgrade \-\-version 1.5.0
+  taurctl upgrade \-\-version 1.5.0 \-\-restart \-y
