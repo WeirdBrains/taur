@@ -41,6 +41,9 @@ fn send(method: &str, uri: &str, token: Option<&str>, body: Value) -> Request<Bo
         .header(header::CONTENT_TYPE, "application/json");
     if let Some(t) = token {
         b = b.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        if method != "GET" && method != "HEAD" {
+            b = b.header("x-csrf-token", t);
+        }
     }
     b.body(Body::from(body.to_string())).unwrap()
 }
@@ -570,6 +573,17 @@ async fn token(app: &axum::Router, home: &std::path::Path, name: &str) -> String
 #[tokio::test]
 async fn org_and_package_api() {
     let (d, app) = setup();
+    // The first account is the site owner. alice stays an ordinary maintainer.
+    call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/register",
+            None,
+            json!({"name": "owner", "email": "owner@x", "password": "longenough"}),
+        ),
+    )
+    .await;
     let a = token(&app, d.path(), "alice").await;
     let b = token(&app, d.path(), "bob").await;
     let c = token(&app, d.path(), "carol").await;
@@ -867,6 +881,17 @@ async fn resend_reports_an_unreachable_mail_server() {
             "POST",
             "/api/v1/register",
             None,
+            json!({"name": "ada", "email": "ada@x", "password": "longenough"}),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (st, _) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/register",
+            None,
             json!({"name": "erin", "email": "erin@x", "password": "longenough"}),
         ),
     )
@@ -901,9 +926,441 @@ async fn resend_reports_an_unreachable_mail_server() {
 }
 
 #[tokio::test]
+async fn admin_pages_follow_the_same_roles_as_the_api() {
+    let (d, app) = setup();
+    let outbox = d.path().join("outbox");
+    let owner = token(&app, d.path(), "ada").await;
+    let plain = token(&app, d.path(), "erin").await;
+    let (st, body) = call(
+        &app,
+        send(
+            "GET",
+            "/api/v1/admin/users?q=ada",
+            Some(&owner),
+            json!(null),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let text = String::from_utf8(body).unwrap();
+    assert!(text.contains("ada@x"), "{text}");
+    assert_eq!(
+        call(&app, send("GET", "/api/v1/admin/users", None, json!(null)))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("GET", "/api/v1/admin/users", Some(&plain), json!(null))
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/admin/moderators/erin",
+                Some(&plain),
+                json!({"on": true}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/admin/moderators/erin",
+                Some(&owner),
+                json!({"on": true}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let mod_token = {
+        let (_, b) = call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/login",
+                None,
+                json!({"name": "erin", "password": "longenough"}),
+            ),
+        )
+        .await;
+        serde_json::from_slice::<Value>(&b).unwrap()["token"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let (st, body) = call(
+        &app,
+        send(
+            "GET",
+            "/api/v1/admin/users?q=ada",
+            Some(&mod_token),
+            json!(null),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let text = String::from_utf8(body).unwrap();
+    assert!(!text.contains("ada@x"), "{text}");
+    assert!(text.contains("ada"), "{text}");
+    for (method, path, body) in [
+        ("POST", "/api/v1/admin/users/erin/verify", json!(null)),
+        ("PUT", "/api/v1/admin/users/erin/admin", json!({"on": true})),
+        ("POST", "/api/v1/registries", json!({"name": "vendor"})),
+        (
+            "POST",
+            "/api/v1/mirrors",
+            json!({"name": "aur", "url": "http://127.0.0.1:9/recipes"}),
+        ),
+        ("GET", "/api/v1/audit", json!(null)),
+    ] {
+        assert_eq!(
+            call(&app, send(method, path, Some(&mod_token), body))
+                .await
+                .0,
+            StatusCode::FORBIDDEN,
+            "{method} {path}"
+        );
+    }
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/moderation/users/ada/reject",
+                Some(&mod_token),
+                json!({"reason": "no"}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/register",
+            None,
+            json!({"name": "gary", "email": "gary@x", "password": "longenough"}),
+        ),
+    )
+    .await;
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/admin/users/gary/verify",
+                Some(&owner),
+                json!(null)
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/admin/users/gary/password-reset",
+                Some(&owner),
+                json!(null),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::ACCEPTED
+    );
+    let reset = taur_core::mail::FileMailer::find_token(&outbox, "gary@x", "reset").unwrap();
+    let (st, body) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/admin/users/gary/password-reset",
+            Some(&owner),
+            json!(null),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::ACCEPTED);
+    assert!(!String::from_utf8(body).unwrap().contains(&reset));
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/admin/users/ada/admin",
+                Some(&owner),
+                json!({"on": false}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (st, sessions) = call(
+        &app,
+        send("GET", "/api/v1/sessions", Some(&owner), json!(null)),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let sessions: Vec<Value> = serde_json::from_slice(&sessions).unwrap();
+    assert!(sessions.iter().any(|s| s["current"] == true));
+    assert!(!String::from_utf8_lossy(&serde_json::to_vec(&sessions).unwrap()).contains(&owner));
+    let no_csrf = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/users/gary/resend")
+        .header(header::AUTHORIZATION, format!("Bearer {owner}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let (st, body) = call(&app, no_csrf).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    assert!(String::from_utf8(body).unwrap().contains("CSRF"));
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/registries",
+                Some(&owner),
+                json!({"name": "vendor"})
+            ),
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/mirrors",
+                Some(&owner),
+                json!({"name": "lab", "url": "http://127.0.0.1:9/recipes"}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/mirrors/lab/select",
+                Some(&owner),
+                json!({"pkgbases": ["demo"]}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (st, body) = call(
+        &app,
+        send("GET", "/api/v1/mirrors/lab", Some(&owner), json!(null)),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(String::from_utf8(body).unwrap().contains("demo"));
+    assert_eq!(
+        call(
+            &app,
+            send("DELETE", "/api/v1/mirrors/lab", Some(&owner), json!(null)),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
+async fn guides_follow_the_role() {
+    let (d, app) = setup();
+    let (st, body) = get(&app, "/api/v1/docs").await;
+    assert_eq!(st, StatusCode::OK);
+    let text = String::from_utf8(body).unwrap();
+    assert!(text.contains("\"slug\":\"publish\""), "{text}");
+    assert!(!text.contains("operating"), "{text}");
+    assert!(!text.contains("administration"), "{text}");
+    assert!(!text.contains("\"slug\":\"moderation\""), "{text}");
+    let (st, body) = get(&app, "/api/v1/docs/publish").await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(String::from_utf8(body).unwrap().contains("git push"));
+    assert_eq!(
+        get(&app, "/api/v1/docs/operating").await.0,
+        StatusCode::NOT_FOUND
+    );
+    let owner = token(&app, d.path(), "ada").await;
+    assert_eq!(
+        call(
+            &app,
+            send("GET", "/api/v1/docs/operating", Some(&owner), json!(null)),
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let admin = token(&app, d.path(), "erin").await;
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/admin/users/erin/admin",
+                Some(&owner),
+                json!({"on": true}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send("GET", "/api/v1/docs/operating", Some(&admin), json!(null)),
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "GET",
+                "/api/v1/docs/administration",
+                Some(&admin),
+                json!(null),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/registries",
+                Some(&admin),
+                json!({"name": "vendor"}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/admin/users/ada/admin",
+                Some(&admin),
+                json!({"on": false}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let moderator = token(&app, d.path(), "modd").await;
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/admin/moderators/modd",
+                Some(&admin),
+                json!({"on": true}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "GET",
+                "/api/v1/docs/moderation",
+                Some(&moderator),
+                json!(null)
+            ),
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "GET",
+                "/api/v1/docs/administration",
+                Some(&moderator),
+                json!(null),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/admin/users/ada/owner",
+                Some(&owner),
+                json!({"on": false}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+}
+
+#[tokio::test]
 async fn verification_and_reset_api() {
     let (d, app) = setup();
     let outbox = d.path().join("outbox");
+    // The first account on a fresh server is the site admin. dave is the ordinary one.
+    call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/register",
+            None,
+            json!({"name": "ada", "email": "ada@x", "password": "longenough"}),
+        ),
+    )
+    .await;
     let reg = json!({"name": "dave", "email": "dave@x", "password": "longenough"});
     call(&app, send("POST", "/api/v1/register", None, reg)).await;
     let (_, b) = call(
@@ -1261,6 +1718,8 @@ async fn web_ui_is_served() {
         "/orgs",
         "/orgs/x",
         "/requests",
+        "/docs",
+        "/docs/publish",
         "/?q=hello",
     ] {
         let r = app
@@ -1307,6 +1766,7 @@ async fn web_ui_is_served() {
         "/api/v1/ssh-keys",
         "/api/v1/orgs",
         "/api/v1/requests",
+        "/api/v1/docs",
     ] {
         assert!(js.contains(p), "{p}");
     }

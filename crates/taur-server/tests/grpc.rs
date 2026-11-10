@@ -64,7 +64,14 @@ async fn grpc_api() {
         .unwrap_err();
     assert_eq!(e.code(), Code::InvalidArgument);
 
-    // accounts
+    // accounts. The first registration is the site admin; alice stays an ordinary account.
+    acct.register(RegisterRequest {
+        name: "owner".into(),
+        email: "owner@x".into(),
+        password: "longenough".into(),
+    })
+    .await
+    .unwrap();
     acct.register(RegisterRequest {
         name: "alice".into(),
         email: "alice@x".into(),

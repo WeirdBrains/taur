@@ -249,6 +249,9 @@ fn org_and_package_management() {
 fn email_verification_and_reset() {
     use taur_core::mail::FileMailer;
     let (d, s) = store();
+    // This test is the normal unverified path. TAUR_ADMINS reserves the
+    // bootstrap slot the same way.
+    s.reserve_admin_bootstrap(true);
     let outbox = d.path().join("outbox");
     let u = s.register("erin", "e@x", "longenough").unwrap();
     assert!(!u.verified);
@@ -435,4 +438,60 @@ fn community_features() {
     assert_eq!(s.comments("hello-new").unwrap().len(), 1);
     assert_eq!(s.info(&["hello-new".into()]).unwrap()[0].num_votes, 1);
     assert!(d.path().join("repos/.deleted").is_dir());
+}
+
+#[test]
+fn first_account_becomes_the_site_admin_until_one_exists() {
+    let (_d, s) = store();
+    let first = s.register("alice", "a@x", "longenough").unwrap();
+    assert!(first.is_admin && first.is_owner);
+    assert!(first.verified);
+    let audit = s.list_audit(first.id).unwrap();
+    assert!(
+        audit.iter().any(|e| {
+            e.action == "grant"
+                && e.source == "bootstrap"
+                && e.target == "alice"
+                && !e.reason.contains("longenough")
+        }),
+        "{audit:?}"
+    );
+    let second = s.register("bob", "b@x", "longenough").unwrap();
+    assert!(!second.is_admin && !second.is_owner);
+    assert!(!second.verified);
+
+    let (_d, s) = store();
+    s.reserve_admin_bootstrap(true);
+    let reserved = s.register("alice", "a@x", "longenough").unwrap();
+    assert!(!reserved.is_admin, "TAUR_ADMINS reserves the slot");
+    assert!(!reserved.verified);
+    s.set_admin(reserved.id, true).unwrap();
+    let later = s.register("bob", "b@x", "longenough").unwrap();
+    assert!(!later.is_admin, "taur admin already created one");
+}
+
+#[test]
+fn concurrent_registrations_grant_a_single_admin() {
+    use std::sync::Arc;
+    let d = tempfile::tempdir().unwrap();
+    let s = Arc::new(Store::open(d.path()).unwrap());
+    let mut threads = Vec::new();
+    for i in 0..8 {
+        let s = s.clone();
+        threads.push(std::thread::spawn(move || {
+            s.register(&format!("user{i:02}"), &format!("u{i}@x"), "longenough")
+                .unwrap()
+        }));
+    }
+    let users: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+    assert_eq!(users.iter().filter(|u| u.is_admin).count(), 1);
+    let stored = (0..8)
+        .filter(|i| {
+            s.user_by_name(&format!("user{i:02}"))
+                .unwrap()
+                .unwrap()
+                .is_admin
+        })
+        .count();
+    assert_eq!(stored, 1);
 }

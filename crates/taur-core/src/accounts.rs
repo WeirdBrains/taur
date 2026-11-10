@@ -7,7 +7,7 @@ use crate::{Error, Result, Store, hex, now};
 use argon2::Argon2;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use rand_core::{OsRng, RngCore};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -23,6 +23,7 @@ pub struct User {
     pub verified: bool,
     pub is_admin: bool,
     pub is_moderator: bool,
+    pub is_owner: bool,
 }
 
 /// Email verification links are valid for 24 hours; password reset links for 1 hour.
@@ -37,6 +38,7 @@ fn user_row(r: &rusqlite::Row) -> rusqlite::Result<User> {
         verified: r.get::<_, Option<i64>>(3)?.is_some(),
         is_admin: r.get::<_, i64>(4)? != 0,
         is_moderator: r.get::<_, i64>(5)? != 0,
+        is_owner: r.get::<_, i64>(6)? != 0,
     })
 }
 
@@ -107,8 +109,12 @@ impl Store {
         }
         self.guard_registration(name, email)?;
         let hash = hash_password(password)?;
-        let conn = self.lock();
-        let taken: Option<i64> = conn
+        let created = now();
+        let mut conn = self.lock();
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(Error::from)?;
+        let taken: Option<i64> = tx
             .query_row(
                 "SELECT id FROM users WHERE name = ?1 OR email = ?2",
                 params![name, email],
@@ -120,21 +126,48 @@ impl Store {
                 "user name or email already registered".into(),
             ));
         }
-        conn.execute(
-            "INSERT INTO users (name, email, password_hash, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![name, email, hash, now()],
+        let privileged: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM users WHERE is_admin != 0 OR is_owner != 0",
+            [],
+            |r| r.get(0),
         )?;
+        // One winner: the write lock is held until commit. TAUR_ADMINS,
+        // TAUR_OWNERS, `taur admin`, and `taur owner` leave a privileged
+        // account or reserve the slot, and then this stays off.
+        let bootstrap = privileged == 0 && !self.admin_bootstrap_reserved();
+        if bootstrap {
+            tx.execute(
+                "INSERT INTO users (name, email, password_hash, created_at, verified_at, is_admin, is_owner) VALUES (?1, ?2, ?3, ?4, ?5, 1, 1)",
+                params![name, email, hash, created, created],
+            )?;
+            tx.execute(
+                "INSERT INTO audit_events (at, action, target_kind, target, reason, actor_name, source, reverses) VALUES (?1, 'grant', 'user', ?2, ?3, ?2, 'bootstrap', NULL)",
+                params![
+                    created,
+                    name,
+                    "first account; no site owner or admin existed and TAUR_ADMINS and TAUR_OWNERS were not set"
+                ],
+            )?;
+        } else {
+            tx.execute(
+                "INSERT INTO users (name, email, password_hash, created_at) VALUES (?1, ?2, ?3, ?4)",
+                params![name, email, hash, created],
+            )?;
+        }
         let user = User {
-            id: conn.last_insert_rowid(),
+            id: tx.last_insert_rowid(),
             name: name.to_string(),
             email: email.to_string(),
-            verified: false,
-            is_admin: false,
+            verified: bootstrap,
+            is_admin: bootstrap,
             is_moderator: false,
+            is_owner: bootstrap,
         };
+        tx.commit()?;
         drop(conn);
         self.bind_registered_user(user.id, &user.name, &user.email)?;
         // A delivery failure doesn't undo registration; the user can ask for a resend.
+        // The bootstrap admin is already verified, because a new server often has no SMTP.
         if let Err(e) = self.send_verification(&user) {
             eprintln!(
                 "taur: could not send verification mail to user {}: {e}",
@@ -213,7 +246,7 @@ impl Store {
         let user = self
             .lock()
             .query_row(
-                "SELECT id, name, email, verified_at, is_admin, is_moderator FROM users WHERE email = ?1",
+                "SELECT id, name, email, verified_at, is_admin, is_moderator, is_owner FROM users WHERE email = ?1",
                 [email.trim()],
                 user_row,
             )
@@ -261,7 +294,7 @@ impl Store {
     pub fn user_by_id(&self, id: i64) -> Result<User> {
         self.lock()
             .query_row(
-                "SELECT id, name, email, verified_at, is_admin, is_moderator FROM users WHERE id = ?1",
+                "SELECT id, name, email, verified_at, is_admin, is_moderator, is_owner FROM users WHERE id = ?1",
                 [id],
                 user_row,
             )
@@ -273,9 +306,9 @@ impl Store {
         Ok(self
             .lock()
             .query_row(
-                "SELECT id, name, email, verified_at, is_admin, is_moderator, password_hash FROM users WHERE name = ?1",
+                "SELECT id, name, email, verified_at, is_admin, is_moderator, is_owner, password_hash FROM users WHERE name = ?1",
                 [name],
-                |r| Ok((user_row(r)?, r.get(6)?)),
+                |r| Ok((user_row(r)?, r.get(7)?)),
             )
             .optional()?)
     }
@@ -306,7 +339,7 @@ impl Store {
         let user = self
             .lock()
             .query_row(
-                "SELECT u.id, u.name, u.email, u.verified_at, u.is_admin, u.is_moderator FROM sessions s JOIN users u ON u.id = s.user_id \
+                "SELECT u.id, u.name, u.email, u.verified_at, u.is_admin, u.is_moderator, u.is_owner FROM sessions s JOIN users u ON u.id = s.user_id \
                  WHERE s.token_hash = ?1 AND s.expires_at > ?2",
                 params![token_hash(token), now()],
                 user_row,
@@ -373,4 +406,159 @@ impl Store {
     pub fn user_by_name(&self, name: &str) -> Result<Option<User>> {
         Ok(self.credentials(name)?.map(|(u, _)| u))
     }
+
+    fn require_admin(&self, actor: i64) -> Result<()> {
+        if self.is_admin(actor)? {
+            Ok(())
+        } else {
+            Err(Error::Forbidden)
+        }
+    }
+
+    fn require_staff(&self, actor: i64) -> Result<bool> {
+        let admin = self.is_admin(actor)?;
+        if admin || self.is_moderator(actor)? {
+            Ok(admin)
+        } else {
+            Err(Error::Forbidden)
+        }
+    }
+
+    /// Accounts a moderator or site admin can see. Email addresses are included
+    /// only for site admins.
+    pub fn search_users(&self, actor: i64, query: &str) -> Result<Vec<DirectoryUser>> {
+        let admin = self.require_staff(actor)?;
+        let q = query.trim();
+        let conn = self.lock();
+        let mut sql = String::from(
+            "SELECT id, name, email, verified_at, is_admin, is_moderator, is_owner, suspended_at FROM users",
+        );
+        let like = if q.is_empty() {
+            sql.push_str(" ORDER BY name LIMIT 50");
+            None
+        } else {
+            sql.push_str(" WHERE name LIKE ?1 ESCAPE '\\' ORDER BY name LIMIT 50");
+            let escaped = q
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            Some(format!("%{escaped}%"))
+        };
+        let mut st = conn.prepare(&sql)?;
+        let map = |r: &rusqlite::Row| {
+            let email: String = r.get(2)?;
+            Ok(DirectoryUser {
+                name: r.get(1)?,
+                email: if admin { Some(email) } else { None },
+                verified: r.get::<_, Option<i64>>(3)?.is_some(),
+                is_admin: r.get::<_, i64>(4)? != 0,
+                is_moderator: r.get::<_, i64>(5)? != 0,
+                is_owner: r.get::<_, i64>(6)? != 0,
+                suspended: r.get::<_, Option<i64>>(7)?.is_some(),
+            })
+        };
+        let rows = if let Some(like) = like.as_deref() {
+            st.query_map([like], map)?
+        } else {
+            st.query_map([], map)?
+        };
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Mark an account verified. Site admin only. Same effect as `taur verify-user`.
+    pub fn admin_verify_user(&self, actor: i64, name: &str) -> Result<()> {
+        self.require_admin(actor)?;
+        let user = self
+            .user_by_name(name)?
+            .ok_or_else(|| Error::NotFound(format!("user {name}")))?;
+        self.mark_verified(user.id)
+    }
+
+    /// Send that account's verification mail again. Site admin only.
+    pub fn admin_resend_verification(&self, actor: i64, name: &str) -> Result<()> {
+        self.require_admin(actor)?;
+        let user = self
+            .user_by_name(name)?
+            .ok_or_else(|| Error::NotFound(format!("user {name}")))?;
+        self.resend_verification(&user)
+    }
+
+    /// Email a password-reset link. The token is not returned.
+    pub fn admin_request_password_reset(&self, actor: i64, name: &str) -> Result<()> {
+        self.require_admin(actor)?;
+        let user = self
+            .user_by_name(name)?
+            .ok_or_else(|| Error::NotFound(format!("user {name}")))?;
+        let token = self.issue_email_token(user.id, "reset", RESET_TTL_SECS)?;
+        let base = self.base_url();
+        let body = format!(
+            "Hi {},\n\nA site admin asked to reset your TAUR password. To choose a new one, open:\n\n  {base}/reset?token={token}\n\nor run: taurctl reset-password confirm --token <token from the link>\n\nThe link expires in 1 hour and works once. If this wasn't you, ignore this message.\n",
+            user.name
+        );
+        self.mailer()
+            .send(&user.email, "Reset your TAUR password", &body)
+            .map_err(|e| Error::Mail(format!("password reset: {e}")))
+    }
+
+    pub fn list_sessions(&self, user: i64, current_token: &str) -> Result<Vec<SessionInfo>> {
+        let current = token_hash(current_token);
+        let conn = self.lock();
+        let mut st = conn.prepare(
+            "SELECT rowid, created_at, expires_at, token_hash FROM sessions WHERE user_id = ?1 AND expires_at > ?2 ORDER BY created_at",
+        )?;
+        let rows = st.query_map(params![user, now()], |r| {
+            let hash: String = r.get(3)?;
+            Ok(SessionInfo {
+                id: r.get(0)?,
+                created_at: r.get(1)?,
+                expires_at: r.get(2)?,
+                current: hash == current,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// End one of your own sessions. The token itself is not shown.
+    pub fn revoke_session(&self, user: i64, session_id: i64) -> Result<()> {
+        let n = self.lock().execute(
+            "DELETE FROM sessions WHERE rowid = ?1 AND user_id = ?2",
+            params![session_id, user],
+        )?;
+        if n == 0 {
+            return Err(Error::NotFound("session".into()));
+        }
+        Ok(())
+    }
+
+    /// End every session for an account. Site admin only. Moderators cannot.
+    pub fn revoke_user_sessions(&self, actor: i64, name: &str) -> Result<()> {
+        self.require_admin(actor)?;
+        let user = self
+            .user_by_name(name)?
+            .ok_or_else(|| Error::NotFound(format!("user {name}")))?;
+        self.lock()
+            .execute("DELETE FROM sessions WHERE user_id = ?1", [user.id])?;
+        Ok(())
+    }
+}
+
+/// A directory row. `email` is omitted unless the viewer is a site admin.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DirectoryUser {
+    pub name: String,
+    pub email: Option<String>,
+    pub verified: bool,
+    pub is_admin: bool,
+    pub is_moderator: bool,
+    pub is_owner: bool,
+    pub suspended: bool,
+}
+
+/// A session without its token.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SessionInfo {
+    pub id: i64,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub current: bool,
 }

@@ -88,10 +88,135 @@ impl Store {
                 "{name} is suspended; reverse that rejection first"
             )));
         }
+        if user.is_moderator == on {
+            return Ok(());
+        }
         self.lock().execute(
             "UPDATE users SET is_moderator = ?1 WHERE id = ?2",
             params![i64::from(on), user.id],
         )?;
+        let actor_name = self.user_by_id(actor)?.name;
+        let reason = if on {
+            "granted moderator"
+        } else {
+            "removed moderator"
+        };
+        self.record(AuditWrite {
+            action: if on { "grant" } else { "ungrant" },
+            kind: "moderator",
+            target: name,
+            reason,
+            actor_name: Some(&actor_name),
+            source: "admin",
+            reverses: None,
+        })?;
+        Ok(())
+    }
+
+    /// Grant or remove site admin. Site owners only. An owner stays an admin.
+    pub fn set_site_admin(&self, actor: i64, name: &str, on: bool) -> Result<()> {
+        if !self.is_owner(actor)? {
+            return Err(Error::Forbidden);
+        }
+        let user = self
+            .user_by_name(name)?
+            .ok_or_else(|| Error::NotFound(format!("user {name}")))?;
+        if user.is_admin == on {
+            return Ok(());
+        }
+        if !on {
+            let n: i64 = self.lock().query_row(
+                "SELECT COUNT(*) FROM users WHERE is_admin != 0",
+                [],
+                |r| r.get(0),
+            )?;
+            if n <= 1 {
+                return Err(Error::Conflict(
+                    "the last site admin cannot be removed".into(),
+                ));
+            }
+        }
+        if self.user_suspended(user.id)? {
+            return Err(Error::Conflict(format!(
+                "{name} is suspended; reverse that rejection first"
+            )));
+        }
+        self.set_admin(user.id, on)?;
+        let actor_name = self.user_by_id(actor)?.name;
+        let reason = if on {
+            "granted site admin"
+        } else {
+            "removed site admin"
+        };
+        self.record(AuditWrite {
+            action: if on { "grant" } else { "ungrant" },
+            kind: "site-admin",
+            target: name,
+            reason,
+            actor_name: Some(&actor_name),
+            source: "owner",
+            reverses: None,
+        })?;
+        Ok(())
+    }
+
+    /// On-machine grant. The last site owner cannot be removed. Granting owner
+    /// also grants site admin. Revoking owner leaves the admin flag.
+    pub fn grant_owner(&self, user: i64, on: bool) -> Result<()> {
+        if !on {
+            let n: i64 = self.lock().query_row(
+                "SELECT COUNT(*) FROM users WHERE is_owner != 0",
+                [],
+                |r| r.get(0),
+            )?;
+            if n <= 1 && self.is_owner(user)? {
+                return Err(Error::Conflict(
+                    "the last site owner cannot be removed".into(),
+                ));
+            }
+        }
+        let n = self.lock().execute(
+            "UPDATE users SET is_owner = ?1, is_admin = CASE WHEN ?1 = 1 THEN 1 ELSE is_admin END WHERE id = ?2",
+            params![i64::from(on), user],
+        )?;
+        if n == 0 {
+            return Err(Error::NotFound("user".into()));
+        }
+        Ok(())
+    }
+
+    /// Grant or remove site owner. Owners only. The last owner stays.
+    pub fn set_site_owner(&self, actor: i64, name: &str, on: bool) -> Result<()> {
+        if !self.is_owner(actor)? {
+            return Err(Error::Forbidden);
+        }
+        let user = self
+            .user_by_name(name)?
+            .ok_or_else(|| Error::NotFound(format!("user {name}")))?;
+        if user.is_owner == on {
+            return Ok(());
+        }
+        if self.user_suspended(user.id)? {
+            return Err(Error::Conflict(format!(
+                "{name} is suspended; reverse that rejection first"
+            )));
+        }
+        self.grant_owner(user.id, on)?;
+        let actor_name = self.user_by_id(actor)?.name;
+        let reason = if on {
+            "granted site owner"
+        } else {
+            "removed site owner"
+        };
+        self.record(AuditWrite {
+            action: if on { "grant" } else { "ungrant" },
+            kind: "site-owner",
+            target: name,
+            reason,
+            actor_name: Some(&actor_name),
+            source: "owner",
+            reverses: None,
+        })?;
         Ok(())
     }
 

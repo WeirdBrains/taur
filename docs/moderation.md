@@ -2,9 +2,17 @@
 
 A **moderator** can reject a package base or an ordinary account. That is the only extra
 ability. A moderator cannot grant roles, accept requests, manage other people's packages,
-or reverse a rejection. Site admins (`taur admin`, or `PUT /api/v1/admin/moderators/{name}`
-with `{"on":true}`) grant and remove the role. Moderators cannot suspend a site admin or
-another moderator.
+or reverse a rejection. Site admins (`taur admin`, or `PUT /api/v1/admin/users/{name}/admin`
+and `PUT /api/v1/admin/moderators/{name}` with `{"on":true}`) grant and remove roles.
+Moderators cannot suspend a site admin or another moderator. The last site admin cannot
+be removed from the web.
+
+On a fresh database, with `TAUR_ADMINS` and `TAUR_OWNERS` unset and no site admin
+or site owner yet, the first successful registration is the site owner and a site
+admin, and is verified. That decision is an audit row with source `bootstrap`.
+Either variable, or an existing admin or owner (`taur admin`, `taur owner`), turns
+this off. An existing server that already has an admin does not gain an owner until
+`taur owner`.
 
 Rejection does not delete the row or the git repository. The package disappears from
 search, info, suggest, and metadata dumps, and git clone and push of that base are

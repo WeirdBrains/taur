@@ -174,6 +174,35 @@ pub fn parse_hex_key(text: &str, len: usize) -> Result<Vec<u8>> {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RegistryKeyInfo {
+    pub label: String,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RegistryIdentityInfo {
+    pub nick: String,
+    pub email: String,
+    pub provenance: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RegistryExpectationInfo {
+    pub pkgbase: String,
+    pub repository: String,
+    pub version: String,
+    pub provenance: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RegistryTrust {
+    pub name: String,
+    pub keys: Vec<RegistryKeyInfo>,
+    pub identities: Vec<RegistryIdentityInfo>,
+    pub expectations: Vec<RegistryExpectationInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RegistryInfo {
     pub name: String,
     pub enforcement: String,
@@ -278,7 +307,7 @@ pub fn registration_scope(registry: &str, nick: &str, email: &str) -> String {
 
 impl Store {
     pub fn create_registry(&self, actor: i64, name: &str) -> Result<()> {
-        if !self.is_admin(actor)? {
+        if !self.is_owner(actor)? {
             return Err(Error::Forbidden);
         }
         self.insert_registry(name, ENFORCE)
@@ -323,6 +352,58 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Keys, identity bindings, and expected recipes. Site admin only.
+    /// Public keys are not returned; the fingerprint is.
+    pub fn registry_trust(&self, actor: i64, name: &str) -> Result<RegistryTrust> {
+        if !self.is_owner(actor)? {
+            return Err(Error::Forbidden);
+        }
+        let (id, _) = self.registry_row(name)?;
+        let conn = self.lock();
+        let mut keys = conn.prepare(
+            "SELECT label, fingerprint FROM registry_keys WHERE registry_id = ?1 ORDER BY label",
+        )?;
+        let keys = keys
+            .query_map([id], |r| {
+                Ok(RegistryKeyInfo {
+                    label: r.get(0)?,
+                    fingerprint: r.get(1)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut ids = conn.prepare(
+            "SELECT nick, email, provenance FROM registry_identities WHERE registry_id = ?1 ORDER BY nick",
+        )?;
+        let identities = ids
+            .query_map([id], |r| {
+                Ok(RegistryIdentityInfo {
+                    nick: r.get(0)?,
+                    email: r.get(1)?,
+                    provenance: r.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut exp = conn.prepare(
+            "SELECT pkgbase, repository, version, provenance FROM registry_expectations WHERE registry_id = ?1 ORDER BY pkgbase",
+        )?;
+        let expectations = exp
+            .query_map([id], |r| {
+                Ok(RegistryExpectationInfo {
+                    pkgbase: r.get(0)?,
+                    repository: r.get(1)?,
+                    version: r.get(2)?,
+                    provenance: r.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(RegistryTrust {
+            name: name.to_string(),
+            keys,
+            identities,
+            expectations,
+        })
+    }
+
     pub fn add_registry_key(
         &self,
         actor: i64,
@@ -330,7 +411,7 @@ impl Store {
         label: &str,
         public_key: &[u8],
     ) -> Result<String> {
-        if !self.is_admin(actor)? {
+        if !self.is_owner(actor)? {
             return Err(Error::Forbidden);
         }
         self.insert_registry_key(registry, label, public_key)
@@ -369,7 +450,7 @@ impl Store {
     /// It does not claim Arch or the AUR checked them. `user_id` is set only when
     /// that person registers with both values, or is already that account.
     pub fn bind_identity(&self, actor: i64, registry: &str, nick: &str, email: &str) -> Result<()> {
-        if !self.is_admin(actor)? {
+        if !self.is_owner(actor)? {
             return Err(Error::Forbidden);
         }
         self.insert_identity(registry, nick, email)
@@ -407,7 +488,7 @@ impl Store {
         key_fingerprint: &str,
         nick: &str,
     ) -> Result<()> {
-        if !self.is_admin(actor)? {
+        if !self.is_owner(actor)? {
             return Err(Error::Forbidden);
         }
         self.insert_expectation(

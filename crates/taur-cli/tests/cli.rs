@@ -97,13 +97,9 @@ fn full_management_flow() {
     let (code, _) = e.fail(e.cfg.path(), &["whoami"], "");
     assert_eq!(code, 3);
     let out = e.ok(&["--password-stdin", "login", "alice"], pw);
-    assert!(e.ok(&["whoami"], "").contains("(unverified)"));
-    assert!(
-        e.fail(e.cfg.path(), &["org", "create", "early"], "")
-            .1
-            .contains("not verified")
-    );
-    e.ok(&["resend-verification"], "");
+    let alice = e.store.user_by_name("alice").unwrap().unwrap();
+    assert!(alice.is_admin && alice.verified);
+    assert!(e.ok(&["whoami"], "").contains("(verified)"));
     let vt = e.token("a@x", "verify");
     e.ok(&["verify", &vt], "");
     let token = std::fs::read_to_string(e.cfg.path().join("token")).unwrap();
@@ -145,6 +141,16 @@ fn full_management_flow() {
         pw,
     );
     e.ok_as(bob.path(), &["--password-stdin", "login", "bob"], pw);
+    assert!(
+        e.ok_as(bob.path(), &["whoami"], "")
+            .contains("(unverified)")
+    );
+    assert!(
+        e.fail(bob.path(), &["org", "create", "early"], "")
+            .1
+            .contains("not verified")
+    );
+    e.ok_as(bob.path(), &["resend-verification"], "");
     e.ok_as(bob.path(), &["verify", &e.token("b@x", "verify")], "");
 
     // community commands
@@ -211,7 +217,7 @@ fn full_management_flow() {
             .contains("orphan hello-taur by bob [pending]")
     );
     assert!(
-        e.fail(e.cfg.path(), &["request", "accept", &rid], "")
+        e.fail(bob.path(), &["request", "accept", &rid], "")
             .1
             .contains("403")
     );
@@ -368,7 +374,14 @@ fn moderation_accept_is_admin_only_and_the_gate_reads_it() {
     assert!(audit.contains("registration"));
     assert!(!audit.contains("other@example.com"));
     assert!(!audit.contains("correct horse"));
-    let id = audit.split_whitespace().next().unwrap().to_string();
+    let id = audit
+        .lines()
+        .find(|line| line.contains("registration"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
     let (_code, err) = e.fail(mod_cfg.path(), &["moderation", "accept", &id, "no"], "");
     assert!(err.contains("forbidden"), "{err}");
     assert!(

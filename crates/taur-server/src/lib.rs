@@ -1,6 +1,6 @@
 //! HTTP front end: a thin axum layer over `taur_core`.
 
-use axum::extract::{ConnectInfo, DefaultBodyLimit, FromRef, Path, RawQuery, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, FromRef, Path, Query, RawQuery, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -19,6 +19,7 @@ pub mod acme;
 pub mod cli;
 pub mod githttp;
 pub mod grpc;
+pub mod guides;
 pub mod mcp;
 pub mod ssh;
 pub mod web;
@@ -119,6 +120,42 @@ pub fn app_with(state: AppState) -> Router {
             "/api/v1/admin/moderators/{name}",
             axum::routing::put(set_moderator),
         )
+        .route("/api/v1/admin/users", get(search_users))
+        .route("/api/v1/admin/users/{name}/verify", post(admin_verify))
+        .route("/api/v1/admin/users/{name}/resend", post(admin_resend))
+        .route(
+            "/api/v1/admin/users/{name}/password-reset",
+            post(admin_password_reset),
+        )
+        .route(
+            "/api/v1/admin/users/{name}/sessions",
+            axum::routing::delete(admin_revoke_sessions),
+        )
+        .route(
+            "/api/v1/admin/users/{name}/admin",
+            axum::routing::put(set_site_admin),
+        )
+        .route(
+            "/api/v1/admin/users/{name}/owner",
+            axum::routing::put(set_site_owner),
+        )
+        .route("/api/v1/docs", get(list_docs))
+        .route("/api/v1/docs/{slug}", get(show_doc))
+        .route("/api/v1/sessions", get(list_sessions))
+        .route(
+            "/api/v1/sessions/{id}",
+            axum::routing::delete(revoke_session),
+        )
+        .route("/api/v1/registries/{name}", get(show_registry))
+        .route("/api/v1/mirrors", get(list_mirrors).post(add_mirror))
+        .route(
+            "/api/v1/mirrors/{name}",
+            get(mirror_status).delete(remove_mirror),
+        )
+        .route("/api/v1/mirrors/{name}/select", post(select_mirror))
+        .route("/api/v1/mirrors/{name}/unselect", post(unselect_mirror))
+        .route("/api/v1/mirrors/{name}/sync", post(sync_mirror))
+        .route("/api/v1/mirrors/{name}/drop", post(drop_mirror))
         .route(
             "/api/v1/moderation/packages/{name}/reject",
             post(reject_package),
@@ -148,11 +185,69 @@ pub fn app_with(state: AppState) -> Router {
         .route("/api/v1/ssh-keys/{id}", axum::routing::delete(remove_key))
         .fallback(githttp::handle)
         .layer(DefaultBodyLimit::max(githttp::MAX_BODY))
+        .layer(middleware::from_fn(require_csrf))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             limit_requests,
         ))
         .with_state(state)
+}
+
+fn csrf_exempt(path: &str) -> bool {
+    matches!(
+        path,
+        "/api/v1/register"
+            | "/api/v1/login"
+            | "/api/v1/verify"
+            | "/api/v1/password-reset"
+            | "/api/v1/password-reset/confirm"
+    )
+}
+
+fn tokens_match(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// Authenticated `/api/v1` changes must repeat the bearer token in
+/// `X-CSRF-Token`. The browser does not attach that header on a cross-site
+/// form post. Login, registration, and the emailed links stay exempt.
+async fn require_csrf(req: axum::extract::Request, next: Next) -> Response {
+    let method = req.method().as_str();
+    let path = req.uri().path();
+    let changes = matches!(method, "POST" | "PUT" | "PATCH" | "DELETE");
+    if changes && path.starts_with("/api/v1/") && !csrf_exempt(path) {
+        let bearer = req
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .unwrap_or("");
+        // No session yet: the handler answers 401. A presented session must
+        // repeat its token, which a cross-site form cannot do.
+        if !bearer.is_empty() {
+            let csrf = req
+                .headers()
+                .get("x-csrf-token")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            if !tokens_match(bearer, csrf) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": "missing or invalid CSRF token" })),
+                )
+                    .into_response();
+            }
+        }
+    }
+    next.run(req).await
 }
 
 fn limit_class(path: &str) -> Option<LimitClass> {
@@ -673,7 +768,7 @@ struct ExpectationBody {
 
 async fn list_registries(State(s): St, h: HeaderMap) -> Result<Json<Value>, ApiError> {
     let u = auth_verified(&s, &h)?;
-    if !s.is_admin(u.id)? {
+    if !s.is_owner(u.id)? {
         return Err(Error::Forbidden.into());
     }
     Ok(Json(
@@ -733,6 +828,263 @@ async fn expect_registry_package(
         &body.nick,
     )?;
     Ok(StatusCode::CREATED)
+}
+
+#[derive(Deserialize)]
+struct UserSearch {
+    q: Option<String>,
+}
+
+async fn search_users(
+    State(s): St,
+    h: HeaderMap,
+    Query(q): Query<UserSearch>,
+) -> Result<Json<Value>, ApiError> {
+    let u = auth(&s, &h)?;
+    let rows = s.search_users(u.id, q.q.as_deref().unwrap_or(""))?;
+    Ok(Json(serde_json::to_value(rows).map_err(Error::from)?))
+}
+
+async fn admin_verify(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.admin_verify_user(u.id, &name)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn admin_resend(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.admin_resend_verification(u.id, &name)?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn admin_password_reset(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.admin_request_password_reset(u.id, &name)?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn admin_revoke_sessions(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.revoke_user_sessions(u.id, &name)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn set_site_owner(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<ModeratorBody>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.set_site_owner(u.id, &name, body.on)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn viewer(s: &Store, h: &HeaderMap) -> Result<Option<User>, ApiError> {
+    match bearer(h) {
+        Ok(token) => Ok(Some(s.user_for_token(&token)?)),
+        Err(ApiError(Error::Unauthorized)) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+async fn list_docs(State(s): St, h: HeaderMap) -> Result<Json<Value>, ApiError> {
+    let rank = guides::rank(viewer(&s, &h)?.as_ref());
+    let rows: Vec<Value> = guides::list(rank)
+        .into_iter()
+        .map(|g| {
+            json!({
+                "slug": g.slug,
+                "title": g.title,
+                "summary": g.summary,
+                "audience": g.audience,
+            })
+        })
+        .collect();
+    Ok(Json(json!(rows)))
+}
+
+async fn show_doc(
+    State(s): St,
+    h: HeaderMap,
+    Path(slug): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let rank = guides::rank(viewer(&s, &h)?.as_ref());
+    let Some(g) = guides::get(&slug, rank) else {
+        return Err(Error::NotFound("guide".into()).into());
+    };
+    Ok(Json(json!({
+        "slug": g.slug,
+        "title": g.title,
+        "summary": g.summary,
+        "audience": g.audience,
+        "body": g.body,
+    })))
+}
+
+async fn set_site_admin(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<ModeratorBody>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    s.set_site_admin(u.id, &name, body.on)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_sessions(State(s): St, h: HeaderMap) -> Result<Json<Value>, ApiError> {
+    let token = bearer(&h)?;
+    let u = s.user_for_token(&token)?;
+    let rows = s.list_sessions(u.id, &token)?;
+    Ok(Json(serde_json::to_value(rows).map_err(Error::from)?))
+}
+
+async fn revoke_session(
+    State(s): St,
+    h: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    let u = auth(&s, &h)?;
+    s.revoke_session(u.id, id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn show_registry(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let u = auth_verified(&s, &h)?;
+    let trust = s.registry_trust(u.id, &name)?;
+    Ok(Json(serde_json::to_value(trust).map_err(Error::from)?))
+}
+
+#[derive(Deserialize)]
+struct MirrorAdd {
+    name: String,
+    url: String,
+}
+
+#[derive(Deserialize)]
+struct MirrorPkgs {
+    pkgbases: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct MirrorPkg {
+    pkgbase: String,
+}
+
+fn require_admin_user(s: &Store, h: &HeaderMap) -> Result<User, ApiError> {
+    let u = auth_verified(s, h)?;
+    if !s.is_admin(u.id)? {
+        return Err(Error::Forbidden.into());
+    }
+    Ok(u)
+}
+
+async fn list_mirrors(State(s): St, h: HeaderMap) -> Result<Json<Value>, ApiError> {
+    require_admin_user(&s, &h)?;
+    Ok(Json(
+        serde_json::to_value(s.list_mirrors()?).map_err(Error::from)?,
+    ))
+}
+
+async fn add_mirror(
+    State(s): St,
+    h: HeaderMap,
+    Json(body): Json<MirrorAdd>,
+) -> Result<StatusCode, ApiError> {
+    require_admin_user(&s, &h)?;
+    s.add_mirror(&body.name, &body.url)?;
+    Ok(StatusCode::CREATED)
+}
+
+async fn mirror_status(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin_user(&s, &h)?;
+    Ok(Json(
+        serde_json::to_value(s.mirror_status(&name)?).map_err(Error::from)?,
+    ))
+}
+
+async fn remove_mirror(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    require_admin_user(&s, &h)?;
+    s.remove_mirror(&name)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn select_mirror(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<MirrorPkgs>,
+) -> Result<StatusCode, ApiError> {
+    require_admin_user(&s, &h)?;
+    if body.pkgbases.is_empty() {
+        return Err(Error::Invalid("name at least one package base".into()).into());
+    }
+    for pkg in &body.pkgbases {
+        s.select_mirror_package(&name, pkg)?;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn unselect_mirror(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<MirrorPkg>,
+) -> Result<StatusCode, ApiError> {
+    require_admin_user(&s, &h)?;
+    s.unselect_mirror_package(&name, &body.pkgbase)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sync_mirror(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin_user(&s, &h)?;
+    Ok(Json(
+        serde_json::to_value(s.sync_mirror(&name)?).map_err(Error::from)?,
+    ))
+}
+
+async fn drop_mirror(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<MirrorPkg>,
+) -> Result<StatusCode, ApiError> {
+    require_admin_user(&s, &h)?;
+    s.drop_mirrored_package(&name, &body.pkgbase)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn set_moderator(

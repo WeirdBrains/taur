@@ -46,6 +46,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             for w in taur_server::cli::bootstrap_admins(&store, &cfg.admins) {
                 eprintln!("taur: warning: {w}");
             }
+            for w in taur_server::cli::bootstrap_owners(&store, &cfg.owners) {
+                eprintln!("taur: warning: {w}");
+            }
             store.configure_rate_limits(&cfg.rate);
             log_limits(&cfg.rate);
             let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
@@ -213,6 +216,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             store.set_admin(id, !revoke)?;
             println!(
                 "{name} is {}a site admin",
+                if revoke { "no longer " } else { "" }
+            );
+        }
+        Cmd::Owner { name, revoke } => {
+            let id = store.user_id(&name)?;
+            store.grant_owner(id, !revoke)?;
+            println!(
+                "{name} is {}a site owner",
                 if revoke { "no longer " } else { "" }
             );
         }

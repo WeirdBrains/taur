@@ -4,7 +4,7 @@
 .SH NAME
 taur\-serve \- Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .SH SYNOPSIS
-\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-tls\fR] [\fB\-\-domain\fR] [\fB\-\-acme\-directory\fR] [\fB\-\-acme\-staging\fR] [\fB\-\-acme\-contact\fR] [\fB\-\-acme\-accept\-terms\fR] [\fB\-\-acme\-http\-bind\fR] [\fB\-\-acme\-cache\fR] [\fB\-\-acme\-renew\-before\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-ssh\-public\-host\fR] [\fB\-\-ssh\-public\-port\fR] [\fB\-\-grpc\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-\-admins\fR] [\fB\-\-rpc\-rate\-limit\fR] [\fB\-\-rpc\-rate\-window\fR] [\fB\-\-auth\-rate\-limit\fR] [\fB\-\-auth\-rate\-window\fR] [\fB\-\-git\-rate\-limit\fR] [\fB\-\-git\-rate\-window\fR] [\fB\-\-api\-rate\-limit\fR] [\fB\-\-api\-rate\-window\fR] [\fB\-\-dump\-rate\-limit\fR] [\fB\-\-dump\-rate\-window\fR] [\fB\-\-mcp\-rate\-limit\fR] [\fB\-\-mcp\-rate\-window\fR] [\fB\-\-grpc\-rate\-limit\fR] [\fB\-\-grpc\-rate\-window\fR] [\fB\-\-ssh\-rate\-limit\fR] [\fB\-\-ssh\-rate\-window\fR] [\fB\-\-trusted\-proxies\fR] [\fB\-\-rate\-max\-keys\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-tls\fR] [\fB\-\-domain\fR] [\fB\-\-acme\-directory\fR] [\fB\-\-acme\-staging\fR] [\fB\-\-acme\-contact\fR] [\fB\-\-acme\-accept\-terms\fR] [\fB\-\-acme\-http\-bind\fR] [\fB\-\-acme\-cache\fR] [\fB\-\-acme\-renew\-before\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-ssh\-public\-host\fR] [\fB\-\-ssh\-public\-port\fR] [\fB\-\-grpc\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-\-admins\fR] [\fB\-\-owners\fR] [\fB\-\-rpc\-rate\-limit\fR] [\fB\-\-rpc\-rate\-window\fR] [\fB\-\-auth\-rate\-limit\fR] [\fB\-\-auth\-rate\-window\fR] [\fB\-\-git\-rate\-limit\fR] [\fB\-\-git\-rate\-window\fR] [\fB\-\-api\-rate\-limit\fR] [\fB\-\-api\-rate\-window\fR] [\fB\-\-dump\-rate\-limit\fR] [\fB\-\-dump\-rate\-window\fR] [\fB\-\-mcp\-rate\-limit\fR] [\fB\-\-mcp\-rate\-window\fR] [\fB\-\-grpc\-rate\-limit\fR] [\fB\-\-grpc\-rate\-window\fR] [\fB\-\-ssh\-rate\-limit\fR] [\fB\-\-ssh\-rate\-window\fR] [\fB\-\-trusted\-proxies\fR] [\fB\-\-rate\-max\-keys\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .SH OPTIONS
@@ -121,6 +121,12 @@ May also be specified with the \fBTAUR_MAIL_FROM\fR environment variable.
 Comma\-separated user names granted site admin at startup (grant only; removing a name does not revoke; use `taur admin NAME \-\-revoke`)
 .RS
 May also be specified with the \fBTAUR_ADMINS\fR environment variable. 
+.RE
+.TP
+\fB\-\-owners\fR \fI<OWNERS>\fR
+Comma\-separated user names granted site owner at startup (grant only; also grants site admin). Removing a name does not revoke; use `taur owner NAME \-\-revoke`. When this or `TAUR_ADMINS` is set, the first registration is not auto\-promoted
+.RS
+May also be specified with the \fBTAUR_OWNERS\fR environment variable. 
 .RE
 .TP
 \fB\-\-rpc\-rate\-limit\fR \fI<RPC_RATE_LIMIT>\fR [default: 300]
@@ -292,6 +298,9 @@ Sender address for outgoing mail. Default: TAUR <noreply@taur.weirdbrains.com>.
 .TP
 \fBTAUR_ADMINS\fR
 Comma\-separated user names granted site admin at startup (grant only, never revokes). Default: unset.
+.TP
+\fBTAUR_OWNERS\fR
+Comma\-separated user names granted site owner at startup (also grants admin; grant only). When set, or when TAUR_ADMINS is set, the first registration is not promoted. Default: unset.
 .TP
 \fBTAUR_RPC_RATE_LIMIT\fR
 AUR RPC requests per window per client. 0 disables this class. Default: 300.

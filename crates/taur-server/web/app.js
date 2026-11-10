@@ -33,7 +33,10 @@ const val = (form, name) => form.elements[name].value;
 async function api(method, path, body, auth = true) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (auth && token()) headers["Authorization"] = `Bearer ${token()}`;
+  if (auth && token()) {
+    headers["Authorization"] = `Bearer ${token()}`;
+    if (method !== "GET" && method !== "HEAD") headers["X-CSRF-Token"] = token();
+  }
   const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();
   let data = null;
@@ -55,10 +58,12 @@ async function loadMe() {
 
 function nav() {
   const n = document.getElementById("nav");
-  const items = [link("/", "Packages"), link("/requests", "Requests")];
+  const items = [link("/", "Packages"), link("/docs", "Docs"), link("/requests", "Requests")];
   if (me) {
     items.push(link("/orgs", "Organizations"), link("/account", me.name));
-    if (me.is_admin) items.push(link("/audit", "Audit"));
+    if (me.is_admin || me.is_moderator) items.push(link("/admin", "Admin"));
+    if (me.is_admin) items.push(link("/audit", "Audit"), link("/mirrors", "Mirrors"));
+    if (me.is_owner) items.push(link("/registries", "Registries"));
     items.push(h("a", { href: "#", class: "right", onclick: async (e) => { e.preventDefault(); await logout(); } }, "Log out"));
   } else {
     items.push(h("span", { class: "right" }), link("/login", "Log in"), link("/register", "Register"));
@@ -177,7 +182,7 @@ async function pagePackage(name) {
     }
 
     const rq = h("form", { class: "stack", onsubmit: guard(() => api("POST", `${P}/requests`, { kind: val(rq, "kind"), merge_into: val(rq, "into") || null, comment: val(rq, "comment") }), "Request filed.") },
-      h("select", { name: "kind", "aria-label": "Request type" }, ["orphan", "deletion", "merge"].map((k) => h("option", { value: k }, k))),
+      h("select", { name: "kind", "aria-label": "Request type" }, ["orphan", "deletion", "merge", "adoption"].map((k) => h("option", { value: k }, k))),
       h("input", { name: "into", placeholder: "merge into (merge requests only)", "aria-label": "Merge into" }),
       h("textarea", { name: "comment", placeholder: "Reason", required: true, "aria-label": "Reason" }), h("button", {}, "File request"));
     out.push(h("div", { class: "card" }, h("h2", {}, "File a request"), rq));
@@ -242,20 +247,44 @@ async function pageUser(name) {
     h("h2", {}, "Maintains"), h("div", { class: "card" }, pkgTable(maintained)),
     h("h2", {}, "Co-maintains"), h("div", { class: "card" }, pkgTable(co))];
   if (me && (me.is_admin || me.is_moderator)) blocks.push(rejectCard("user", name));
+  if (me && me.is_admin && me.name !== name) blocks.push(adminUserCard(name));
   render(...blocks);
+}
+function confirmAct(question, fn, okText) {
+  return guard(async () => {
+    if (!confirm(question)) throw new Error("Cancelled.");
+    await fn();
+  }, okText);
 }
 function rejectCard(kind, name) {
   const path = kind === "user"
     ? `/api/v1/moderation/users/${enc(name)}/reject`
     : `/api/v1/moderation/packages/${enc(name)}/reject`;
-  const f = h("form", { class: "stack", onsubmit: guard(() => api("POST", path, { reason: val(f, "reason") }), "Rejected.") },
+  const label = kind === "user" ? "Reject user" : "Reject package";
+  const f = h("form", { class: "stack", onsubmit: confirmAct(`Reject ${kind} ${name}? It disappears from search and, for an account, existing sessions end.`, () => api("POST", path, { reason: val(f, "reason") }), "Rejected.") },
     h("textarea", { name: "reason", required: true, placeholder: "Reason", "aria-label": "Reason" }),
-    h("button", { class: "danger" }, kind === "user" ? "Reject user" : "Reject package"));
+    h("button", { class: "danger" }, label));
   return h("div", { class: "card" }, h("h2", {}, "Moderation"), f);
+}
+function adminUserCard(name) {
+  const base = `/api/v1/admin/users/${enc(name)}`;
+  return h("div", { class: "card" }, h("h2", {}, "Site admin"),
+    h("div", { class: "actions" },
+      h("button", { class: "secondary", onclick: guard(() => api("POST", `${base}/verify`), "Marked verified.") }, "Verify email"),
+      h("button", { class: "secondary", onclick: guard(() => api("POST", `${base}/resend`), "Verification email sent.") }, "Resend verification"),
+      h("button", { class: "secondary", onclick: confirmAct(`Email ${name} a password reset link?`, () => api("POST", `${base}/password-reset`), "Reset link sent.") }, "Send password reset"),
+      h("button", { onclick: guard(() => api("PUT", `/api/v1/admin/moderators/${enc(name)}`, { on: true }), "Moderator granted.") }, "Grant moderator"),
+      h("button", { class: "secondary", onclick: confirmAct(`Remove moderator from ${name}?`, () => api("PUT", `/api/v1/admin/moderators/${enc(name)}`, { on: false }), "Moderator removed.") }, "Remove moderator"),
+      me.is_owner ? h("button", { onclick: guard(() => api("PUT", `${base}/admin`, { on: true }), "Site admin granted.") }, "Grant site admin") : null,
+      me.is_owner ? h("button", { class: "danger", onclick: confirmAct(`Remove site admin from ${name}?`, () => api("PUT", `${base}/admin`, { on: false }), "Site admin removed.") }, "Remove site admin") : null,
+      me.is_owner ? h("button", { onclick: guard(() => api("PUT", `${base}/owner`, { on: true }), "Site owner granted.") }, "Grant site owner") : null,
+      me.is_owner ? h("button", { class: "danger", onclick: confirmAct(`Remove site owner from ${name}? They stay a site admin.`, () => api("PUT", `${base}/owner`, { on: false }), "Site owner removed.") }, "Remove site owner") : null,
+      h("button", { class: "danger", onclick: confirmAct(`Sign ${name} out of every session?`, () => api("DELETE", `${base}/sessions`), "Sessions revoked.") }, "Revoke sessions")));
 }
 async function pageAudit() {
   if (!me || !me.is_admin) { render(msg("Site admins audit rejections.")); return; }
   const rows = await api("GET", "/api/v1/audit");
+  const revoked = new Set((rows || []).filter((e) => e.action === "revoke").map((e) => e.reverses));
   render(h("h1", {}, "Audit"),
     h("p", { class: "muted" }, "Rejections, acceptances, and reversals. Accept lets that same rejected upload or registration be submitted again. It does not create an account or store a recipe. Reverse clears a package or user suspension and does not permit a rejected upload or registration. A rejected request stays closed."),
     h("table", {}, h("thead", {}, h("tr", {}, ["When", "Action", "Target", "Reason", "Actor", "Source", ""].map((t) => h("th", {}, t)))),
@@ -270,11 +299,16 @@ async function pageAudit() {
           const reason = prompt("Why accept this rejected attempt? The same upload or registration can then be retried.");
           if (!reason) throw new Error("A reason is required.");
           await api("POST", `/api/v1/audit/${e.id}/accept`, { reason });
-        }, "Accepted.") }, "Accept") : e.open && e.target_kind !== "request" ? h("button", { onclick: guard(async () => {
+        }, "Accepted.") }, "Accept") : e.open && e.action === "reject" && e.target_kind !== "request" ? h("button", { onclick: guard(async () => {
           const reason = prompt("Why reverse this rejection?");
           if (!reason) throw new Error("A reason is required.");
           await api("POST", `/api/v1/audit/${e.id}/reverse`, { reason });
-        }, "Reversed.") }, "Reverse") : null))))));
+        }, "Reversed.") }, "Reverse") : e.action === "accept" && !revoked.has(e.id) ? h("button", { class: "danger", onclick: guard(async () => {
+          if (!confirm("Revoke this acceptance? The original rule applies again.")) throw new Error("Cancelled.");
+          const reason = prompt("Why revoke this acceptance?");
+          if (!reason) throw new Error("A reason is required.");
+          await api("POST", `/api/v1/audit/${e.id}/revoke`, { reason });
+        }, "Revoked.") }, "Revoke") : null))))));
 }
 function pageLogin() {
   const f = h("form", { class: "stack", onsubmit: async (e) => {
@@ -360,14 +394,21 @@ async function pageAccount() {
   out.push(h("div", { class: "card" }, h("h2", {}, "Your packages"),
     pkgs.length ? h("table", {}, h("tr", {}, h("th", {}, "Package base"), h("th", {}, "Maintainer"), h("th", {}, "Organization")),
       pkgs.map((p) => h("tr", {}, h("td", {}, link(`/packages/${enc(p.pkgbase)}`, p.pkgbase)), h("td", {}, p.maintainer || "orphan"), h("td", {}, p.org || "—"))))
-      : h("p", { class: "muted" }, "None yet. Push one with git (see the docs)."),
+      : h("p", { class: "muted" }, "None yet. ", link("/docs/publish", "Publish a package"), " with git."),
   ));
   const kf = h("form", { class: "stack", onsubmit: guard(() => api("POST", "/api/v1/ssh-keys", { public_key: val(kf, "key") }), "Key added.") },
     h("textarea", { name: "key", placeholder: "ssh-ed25519 AAAA… you@host", required: true, "aria-label": "Public key" }), h("button", {}, "Add SSH key"));
   out.push(h("div", { class: "card" }, h("h2", {}, "SSH keys"),
     keys.length ? h("table", {}, keys.map((k) => h("tr", {}, h("td", {}, h("code", {}, k.fingerprint)), h("td", {}, k.algorithm), h("td", {}, k.comment),
-      h("td", {}, h("button", { class: "secondary", onclick: guard(() => api("DELETE", `/api/v1/ssh-keys/${k.id}`), "Key removed.") }, "Remove"))))) : h("p", { class: "muted" }, "No keys."),
+      h("td", {}, h("button", { class: "secondary", onclick: confirmAct("Remove this SSH key?", () => api("DELETE", `/api/v1/ssh-keys/${k.id}`), "Key removed.") }, "Remove"))))) : h("p", { class: "muted" }, "No keys."),
     kf));
+  const sessions = await api("GET", "/api/v1/sessions").catch(() => []);
+  out.push(h("div", { class: "card" }, h("h2", {}, "Sessions"),
+    sessions.length ? h("table", {}, sessions.map((s) => h("tr", {},
+      h("td", {}, fmtTime(s.created_at)),
+      h("td", {}, s.current ? "this session" : "other"),
+      h("td", {}, h("button", { class: "secondary", onclick: confirmAct(s.current ? "Sign out this session?" : "Revoke this session?", () => api("DELETE", `/api/v1/sessions/${s.id}`), "Session revoked.") }, "Revoke")))))
+      : h("p", { class: "muted" }, "No sessions.")));
   const df = h("form", { class: "stack", onsubmit: async (e) => {
     e.preventDefault();
     if (!confirm("Delete your account permanently? Packages you maintain become orphans.")) return;
@@ -434,6 +475,204 @@ async function pageRequests(params) {
       : h("p", { class: "muted" }, "No requests.")));
 }
 
+async function pageAdmin(params) {
+  if (!me || (!me.is_admin && !me.is_moderator)) return render(msg("Moderators and site admins can search accounts."));
+  const q = params.get("q") || "";
+  const f = h("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); go(`/admin?q=${enc(val(f, "q"))}`); } },
+    h("input", { name: "q", value: q, placeholder: "User name", "aria-label": "User name" }),
+    h("button", {}, "Search"));
+  let rows = [];
+  try { rows = await api("GET", `/api/v1/admin/users?q=${enc(q)}`); }
+  catch (e) { return render(msg(e.message)); }
+  render(h("h1", {}, "Users"),
+    h("p", { class: "muted" }, me.is_admin ? "Site admin. Email addresses are visible to you." : "Moderator. You can reject an ordinary account. You cannot grant roles, accept requests, or see email addresses."),
+    h("div", { class: "card" }, f, h("table", {},
+      h("tr", {}, ["Name", "Email", "Status", "Roles"].map((t) => h("th", {}, t))),
+      rows.map((u) => h("tr", {},
+        h("td", {}, link(`/users/${enc(u.name)}`, u.name)),
+        h("td", {}, u.email || "—"),
+        h("td", {}, `${u.verified ? "verified" : "unverified"}${u.suspended ? ", suspended" : ""}`),
+        h("td", {}, [u.is_admin ? "admin" : null, u.is_moderator ? "moderator" : null].filter(Boolean).join(", ") || "—"))))));
+}
+
+async function pageRegistries() {
+  if (!me || !me.is_owner) return render(msg("Site owners manage package registries."));
+  let rows = [];
+  try { rows = await api("GET", "/api/v1/registries"); }
+  catch (e) { return render(msg(e.message)); }
+  const f = h("form", { class: "inline", onsubmit: guard(() => api("POST", "/api/v1/registries", { name: val(f, "name") }), "Registry created.") },
+    h("input", { name: "name", placeholder: "registry name", required: true, "aria-label": "Registry name" }),
+    h("button", {}, "Create enforcing registry"));
+  render(h("h1", {}, "Registries"),
+    h("p", { class: "muted" }, "Operator trust records. Signing a recipe and generating a key stay on the machine that holds the secret seed (`taur registry keygen` and `taur registry sign`)."),
+    h("div", { class: "card" },
+      rows.length ? h("table", {}, rows.map((r) => h("tr", {},
+        h("td", {}, link(`/registries/${enc(r.name)}`, r.name)),
+        h("td", {}, r.enforcement),
+        h("td", {}, r.provenance)))) : h("p", { class: "muted" }, "Only the built-in local registry."),
+      h("p", {}), f));
+}
+
+async function pageRegistry(name) {
+  if (!me || !me.is_owner) return render(msg("Site owners manage package registries."));
+  let trust;
+  try { trust = await api("GET", `/api/v1/registries/${enc(name)}`); }
+  catch (e) { return render(msg(e.message)); }
+  const key = h("form", { class: "stack", onsubmit: guard(() => api("POST", `/api/v1/registries/${enc(name)}/keys`, { label: val(key, "label"), public_key_hex: val(key, "hex").trim() }), "Key added.") },
+    h("input", { name: "label", placeholder: "label", required: true, "aria-label": "Key label" }),
+    h("textarea", { name: "hex", placeholder: "32-byte Ed25519 public key, hex", required: true, "aria-label": "Public key hex" }),
+    h("button", {}, "Add operator key"));
+  const idn = h("form", { class: "inline", onsubmit: guard(() => api("POST", `/api/v1/registries/${enc(name)}/identities`, { nick: val(idn, "nick"), email: val(idn, "email") }), "Identity recorded.") },
+    h("input", { name: "nick", placeholder: "nick", required: true, "aria-label": "Nick" }),
+    h("input", { name: "email", type: "email", placeholder: "email", required: true, "aria-label": "Email" }),
+    h("button", {}, "Bind identity"));
+  const exp = h("form", { class: "stack", onsubmit: guard(() => api("POST", `/api/v1/registries/${enc(name)}/expectations`, {
+    pkgbase: val(exp, "pkgbase"), repository: val(exp, "repository"), version: val(exp, "version"),
+    signature_hex: val(exp, "signature").trim(), key_fingerprint: val(exp, "fingerprint").trim(), nick: val(exp, "nick"),
+  }), "Expectation recorded.") },
+    h("input", { name: "pkgbase", placeholder: "package base", required: true, "aria-label": "Package base" }),
+    h("input", { name: "repository", placeholder: "repository", required: true, "aria-label": "Repository" }),
+    h("input", { name: "version", placeholder: "version", required: true, "aria-label": "Version" }),
+    h("input", { name: "fingerprint", placeholder: "key fingerprint", required: true, "aria-label": "Key fingerprint" }),
+    h("input", { name: "nick", placeholder: "nick", required: true, "aria-label": "Nick" }),
+    h("textarea", { name: "signature", placeholder: "64-byte signature, hex", required: true, "aria-label": "Signature hex" }),
+    h("button", {}, "Record expected recipe"));
+  const list = (title, rows, cells) => h("div", { class: "card" }, h("h2", {}, title),
+    rows.length ? h("table", {}, rows.map((row) => h("tr", {}, cells(row).map((c) => h("td", {}, c))))) : h("p", { class: "muted" }, "None."));
+  render(h("h1", {}, name),
+    list("Keys", trust.keys, (k) => [k.label, k.fingerprint]),
+    h("div", { class: "card" }, h("h2", {}, "Add key"), key),
+    list("Identities", trust.identities, (i) => [i.nick, i.email, i.provenance]),
+    h("div", { class: "card" }, h("h2", {}, "Bind identity"), idn),
+    list("Expected recipes", trust.expectations, (e) => [e.pkgbase, e.repository, e.version, e.provenance]),
+    h("div", { class: "card" }, h("h2", {}, "Expect a recipe"), exp));
+}
+
+async function pageMirrors() {
+  if (!me || !me.is_admin) return render(msg("Site admins manage recipe mirrors."));
+  let rows = [];
+  try { rows = await api("GET", "/api/v1/mirrors"); }
+  catch (e) { return render(msg(e.message)); }
+  const f = h("form", { class: "inline", onsubmit: guard(() => api("POST", "/api/v1/mirrors", { name: val(f, "name"), url: val(f, "url") }), "Mirror added. Nothing has been fetched.") },
+    h("input", { name: "name", placeholder: "name", required: true, "aria-label": "Mirror name" }),
+    h("input", { name: "url", placeholder: "https://example.com", required: true, "aria-label": "Base URL" }),
+    h("button", {}, "Add mirror"));
+  render(h("h1", {}, "Mirrors"),
+    h("p", { class: "muted" }, "Copies recipes from an AUR-style Git source. Not a pacman repository and not an operator signature. Nothing is fetched until you sync."),
+    h("div", { class: "card" },
+      rows.length ? h("table", {}, rows.map((m) => h("tr", {},
+        h("td", {}, link(`/mirrors/${enc(m.name)}`, m.name)),
+        h("td", {}, m.base_url),
+        h("td", {}, m.provenance)))) : h("p", { class: "muted" }, "No mirrors."),
+      h("p", {}), f));
+}
+
+async function pageMirror(name) {
+  if (!me || !me.is_admin) return render(msg("Site admins manage recipe mirrors."));
+  let rows;
+  try { rows = await api("GET", `/api/v1/mirrors/${enc(name)}`); }
+  catch (e) { return render(msg(e.message)); }
+  const sel = h("form", { class: "inline", onsubmit: guard(() => api("POST", `/api/v1/mirrors/${enc(name)}/select`, { pkgbases: val(sel, "pkgs").split(/[\s,]+/).filter(Boolean) }), "Selected. Not fetched yet.") },
+    h("input", { name: "pkgs", placeholder: "pkgbase pkgbase", required: true, "aria-label": "Package bases" }),
+    h("button", {}, "Select"));
+  render(h("h1", {}, name),
+    h("div", { class: "card" }, h("h2", {}, "Selection"),
+      rows.length ? h("table", {},
+        h("tr", {}, ["Package", "Status", "Revision", "Stale", ""].map((t) => h("th", {}, t))),
+        rows.map((p) => h("tr", {},
+          h("td", {}, p.pkgbase),
+          h("td", {}, p.status),
+          h("td", {}, p.revision || "—"),
+          h("td", {}, p.stale ? "yes" : "no"),
+          h("td", {}, h("div", { class: "actions" },
+            h("button", { class: "secondary", onclick: guard(() => api("POST", `/api/v1/mirrors/${enc(name)}/unselect`, { pkgbase: p.pkgbase }), "Unselected.") }, "Unselect"),
+            h("button", { class: "danger", onclick: confirmAct(`Drop ${p.pkgbase} from this mirror?`, () => api("POST", `/api/v1/mirrors/${enc(name)}/drop`, { pkgbase: p.pkgbase }), "Dropped.") }, "Drop"))))))
+        : h("p", { class: "muted" }, "Nothing selected."),
+      h("p", {}), sel,
+      h("div", { class: "actions" },
+        h("button", { onclick: guard(() => api("POST", `/api/v1/mirrors/${enc(name)}/sync`), "Sync finished.") }, "Sync"),
+        h("button", { class: "danger", onclick: confirmAct(`Remove mirror ${name}? Drop its packages first.`, () => api("DELETE", `/api/v1/mirrors/${enc(name)}`).then(() => go("/mirrors")), "Mirror removed.") }, "Remove mirror"))));
+}
+
+function inline(text) {
+  const out = [];
+  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)\s]+\))/g;
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith("`")) out.push(h("code", {}, tok.slice(1, -1)));
+    else if (tok.startsWith("**")) out.push(h("strong", {}, tok.slice(2, -2)));
+    else {
+      const label = tok.slice(1, tok.indexOf("]"));
+      const href = tok.slice(tok.indexOf("(") + 1, -1);
+      if (href.startsWith("/") || href.startsWith("https://") || href.startsWith("http://")) {
+        out.push(h("a", { href, "data-link": href.startsWith("/"), rel: href.startsWith("/") ? null : "nofollow noopener" }, label));
+      } else out.push(label);
+    }
+    last = m.index + tok.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+function renderMarkdown(src) {
+  const root = h("div", { class: "doc" });
+  const lines = src.replace(/\r\n/g, "\n").split("\n");
+  let i = 0;
+  const blocks = (line) => line.startsWith("#") || line.startsWith("- ") || line.startsWith("```") || /^\d+\. /.test(line);
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === "") { i++; continue; }
+    if (line.startsWith("```")) {
+      const buf = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) { buf.push(lines[i]); i++; }
+      if (i < lines.length) i++;
+      root.append(h("pre", {}, h("code", {}, buf.join("\n"))));
+      continue;
+    }
+    const heading = line.match(/^(#{1,3}) (.+)$/);
+    if (heading) {
+      root.append(h(`h${heading[1].length}`, {}, inline(heading[2])));
+      i++;
+      continue;
+    }
+    if (line.startsWith("- ")) {
+      const ul = h("ul");
+      while (i < lines.length && lines[i].startsWith("- ")) { ul.append(h("li", {}, inline(lines[i].slice(2)))); i++; }
+      root.append(ul);
+      continue;
+    }
+    if (/^\d+\. /.test(line)) {
+      const ol = h("ol");
+      while (i < lines.length && /^\d+\. /.test(lines[i])) { ol.append(h("li", {}, inline(lines[i].replace(/^\d+\. /, "")))); i++; }
+      root.append(ol);
+      continue;
+    }
+    const buf = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() !== "" && !blocks(lines[i])) { buf.push(lines[i]); i++; }
+    root.append(h("p", {}, inline(buf.join(" "))));
+  }
+  return root;
+}
+async function pageDocs() {
+  let rows;
+  try { rows = await api("GET", "/api/v1/docs", undefined, !!token()); }
+  catch (e) { return render(msg(e.message)); }
+  const lead = rows[0];
+  const rest = rows.slice(1);
+  render(h("h1", {}, "Docs"),
+    lead ? h("div", { class: "card" }, h("h2", {}, link(`/docs/${enc(lead.slug)}`, lead.title)), h("p", {}, lead.summary)) : null,
+    h("div", { class: "card" }, rest.length ? h("ul", {}, rest.map((g) => h("li", {}, link(`/docs/${enc(g.slug)}`, g.title), " — ", g.summary))) : h("p", { class: "muted" }, "No further guides for this account.")));
+}
+async function pageDoc(slug) {
+  let doc;
+  try { doc = await api("GET", `/api/v1/docs/${enc(slug)}`, undefined, !!token()); }
+  catch (e) { return render(msg(e.message || "That guide is not available.")); }
+  render(h("p", {}, link("/docs", "Docs")), h("h1", {}, doc.title), h("div", { class: "card" }, renderMarkdown(doc.body)));
+}
+
 // ---- router ----
 async function route() {
   const path = decodeURIComponent(location.pathname);
@@ -452,6 +691,13 @@ async function route() {
   if ((m = path.match(/^\/orgs\/([^/]+)\/?$/))) return pageOrg(m[1]);
   if (path === "/requests") return pageRequests(params);
   if (path === "/audit") return pageAudit();
+  if (path === "/docs") return pageDocs();
+  if ((m = path.match(/^\/docs\/([^/]+)\/?$/))) return pageDoc(m[1]);
+  if (path === "/admin") return pageAdmin(params);
+  if (path === "/registries") return pageRegistries();
+  if ((m = path.match(/^\/registries\/([^/]+)\/?$/))) return pageRegistry(m[1]);
+  if (path === "/mirrors") return pageMirrors();
+  if ((m = path.match(/^\/mirrors\/([^/]+)\/?$/))) return pageMirror(m[1]);
   render(msg("Page not found."));
 }
 

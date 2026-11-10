@@ -137,6 +137,7 @@ fn user(u: User) -> pb::User {
         verified: u.verified,
         is_admin: u.is_admin,
         is_moderator: u.is_moderator,
+        is_owner: u.is_owner,
     }
 }
 

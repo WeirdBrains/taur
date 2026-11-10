@@ -120,6 +120,13 @@ pub enum Cmd {
         #[arg(long)]
         revoke: bool,
     },
+    /// Grant (or with --revoke, remove) site owner. Also grants site admin.
+    /// Revoke leaves the admin flag and refuses to remove the last owner.
+    Owner {
+        name: String,
+        #[arg(long)]
+        revoke: bool,
+    },
     /// Prune unreachable Git objects older than the grace period.
     ///
     /// A repository with a push quarantine or a lock file is skipped. This does
@@ -258,6 +265,11 @@ pub struct ServeArgs {
     /// a name does not revoke; use `taur admin NAME --revoke`).
     #[arg(long, env = "TAUR_ADMINS", value_delimiter = ',')]
     pub admins: Vec<String>,
+    /// Comma-separated user names granted site owner at startup (grant only; also
+    /// grants site admin). Removing a name does not revoke; use `taur owner NAME --revoke`.
+    /// When this or `TAUR_ADMINS` is set, the first registration is not auto-promoted.
+    #[arg(long, env = "TAUR_OWNERS", value_delimiter = ',')]
+    pub owners: Vec<String>,
     /// AUR RPC requests allowed per window for each client. 0 disables this class.
     #[arg(long, env = "TAUR_RPC_RATE_LIMIT", default_value_t = rate_defaults::RPC)]
     pub rpc_rate_limit: u32,
@@ -323,6 +335,7 @@ pub struct ServeConfig {
     pub smtp_url: Option<String>,
     pub mail_from: String,
     pub admins: Vec<String>,
+    pub owners: Vec<String>,
     pub rate: RatePolicy,
 }
 
@@ -592,6 +605,25 @@ impl ServeArgs {
                 admins.push(a.to_string());
             }
         }
+        let mut owners = Vec::new();
+        for a in self
+            .owners
+            .iter()
+            .map(|a| a.trim())
+            .filter(|a| !a.is_empty())
+        {
+            if !a
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+            {
+                return Err(format!(
+                    "TAUR_OWNERS/--owners: \"{a}\" is not a valid user name"
+                ));
+            }
+            if !owners.iter().any(|x| x == a) {
+                owners.push(a.to_string());
+            }
+        }
         if self.ssh_public_port == Some(0) {
             return Err("TAUR_SSH_PUBLIC_PORT/--ssh-public-port: must be 1-65535".into());
         }
@@ -670,6 +702,7 @@ impl ServeArgs {
             smtp_url,
             mail_from,
             admins,
+            owners,
             rate,
         })
     }
@@ -749,6 +782,9 @@ impl PublicUrl {
 /// Grant site admin to each named user that exists (idempotent). Returns warnings for
 /// unknown names; they are granted on a later start once registered.
 pub fn bootstrap_admins(store: &taur_core::Store, names: &[String]) -> Vec<String> {
+    if !names.is_empty() {
+        store.reserve_admin_bootstrap(true);
+    }
     let mut warnings = Vec::new();
     for n in names {
         match store.user_by_name(n) {
@@ -761,6 +797,29 @@ pub fn bootstrap_admins(store: &taur_core::Store, names: &[String]) -> Vec<Strin
                 "TAUR_ADMINS: user {n} does not exist yet; restart after they register"
             )),
             Err(e) => warnings.push(format!("TAUR_ADMINS: lookup of {n} failed: {e}")),
+        }
+    }
+    warnings
+}
+
+/// Grant site owner (and site admin) to each named user that exists.
+/// Reserves first-account promotion when any name is set.
+pub fn bootstrap_owners(store: &taur_core::Store, names: &[String]) -> Vec<String> {
+    if !names.is_empty() {
+        store.reserve_admin_bootstrap(true);
+    }
+    let mut warnings = Vec::new();
+    for n in names {
+        match store.user_by_name(n) {
+            Ok(Some(u)) => {
+                if let Err(e) = store.grant_owner(u.id, true) {
+                    warnings.push(format!("could not grant site owner to {n}: {e}"));
+                }
+            }
+            Ok(None) => warnings.push(format!(
+                "TAUR_OWNERS: user {n} does not exist yet; restart after they register"
+            )),
+            Err(e) => warnings.push(format!("TAUR_OWNERS: lookup of {n} failed: {e}")),
         }
     }
     warnings
@@ -862,6 +921,11 @@ pub const ENV_VARS: &[(&str, &str, &str)] = &[
         "TAUR_ADMINS",
         "unset",
         "Comma-separated user names granted site admin at startup (grant only, never revokes).",
+    ),
+    (
+        "TAUR_OWNERS",
+        "unset",
+        "Comma-separated user names granted site owner at startup (also grants admin; grant only). When set, or when TAUR_ADMINS is set, the first registration is not promoted.",
     ),
     (
         "TAUR_RPC_RATE_LIMIT",
