@@ -155,7 +155,7 @@ fn package_sh_builds_official_arch_packages_from_the_internal_recipe() {
     assert!(smoke.contains(".SRCINFO"));
     assert!(smoke.contains("taur.install"));
     assert!(
-        smoke.contains("payload.tar.gz") == false
+        !smoke.contains("payload.tar.gz")
             || smoke.contains("must not")
             || smoke.contains("only files")
     );
