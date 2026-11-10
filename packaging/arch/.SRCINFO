@@ -1,0 +1,19 @@
+pkgbase = taur
+	pkgdesc = AUR-compatible package server
+	pkgver = 1.5.0
+	pkgrel = 1
+	url = https://github.com/WeirdBrains/taur
+	install = taur.install
+	arch = x86_64
+	license = MIT
+	license = Apache-2.0
+	depends = git
+	depends = systemd
+	options = !strip
+	options = !debug
+	options = !lto
+	backup = etc/taur/taur.env
+	source = payload.tar.gz
+	sha256sums = SKIP
+
+pkgname = taur

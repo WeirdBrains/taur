@@ -9,6 +9,7 @@ use std::sync::OnceLock;
 const INDEX_TEMPLATE: &str = include_str!("../web/index.html");
 const APP_JS: &str = include_str!("../web/app.js");
 const STYLE: &str = include_str!("../web/style.css");
+const FAVICON: &[u8] = include_bytes!("../web/favicon.ico");
 const VERSION_PLACEHOLDER: &str = "__TAUR_VERSION__";
 
 fn index_html() -> &'static str {
@@ -45,6 +46,10 @@ pub const PAGES: [&str; 21] = [
 const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 fn asset(body: &'static str, ctype: &'static str) -> Response {
+    asset_bytes(body.as_bytes(), ctype)
+}
+
+fn asset_bytes(body: &'static [u8], ctype: &'static str) -> Response {
     (
         [
             (header::CONTENT_TYPE, ctype),
@@ -70,6 +75,10 @@ pub async fn style() -> Response {
     asset(STYLE, "text/css; charset=utf-8")
 }
 
+pub async fn favicon() -> Response {
+    asset_bytes(FAVICON, "image/x-icon")
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -86,5 +95,16 @@ mod tests {
         let html = super::index_html();
         assert!(html.contains(env!("CARGO_PKG_VERSION")));
         assert!(!html.contains(super::VERSION_PLACEHOLDER));
+        assert!(html.contains(r#"href="/favicon.ico""#));
+    }
+
+    #[test]
+    fn favicon_is_a_windows_icon() {
+        assert_eq!(
+            &super::FAVICON[..4],
+            &[0, 0, 1, 0],
+            "favicon.ico must be an ICO"
+        );
+        assert!(super::FAVICON.len() > 16);
     }
 }

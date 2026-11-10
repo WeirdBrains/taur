@@ -24,11 +24,24 @@ guest="$(mktemp)"
 cat >"$guest" <<'EOF'
 set -eu
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# Login-style PATH from a directory that is not the package or a build tree.
+# Native packages install both binaries in /usr/bin.
+check_bins_on_path() {
+  local when="${1:-}" out taur_path ctl_path
+  out=$(cd /tmp && env -i PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME="/tmp" \
+    /bin/sh -c "command -v taur && command -v taurctl && taur --version && taurctl --version") \
+    || fail "taur and taurctl are not both on PATH $when"
+  taur_path=$(printf "%s\n" "$out" | sed -n "1p")
+  ctl_path=$(printf "%s\n" "$out" | sed -n "2p")
+  [ "$taur_path" = /usr/bin/taur ] || fail "taur resolved to $taur_path, expected /usr/bin/taur $when"
+  [ "$ctl_path" = /usr/bin/taurctl ] || fail "taurctl resolved to $ctl_path, expected /usr/bin/taurctl $when"
+  ver=$(printf "%s\n" "$out" | sed -n "3p" | awk "{print \$NF}")
+  ctl=$(printf "%s\n" "$out" | sed -n "4p" | awk "{print \$NF}")
+  [ -n "$ver" ] && [ "$ver" = "$ctl" ] || fail "taurctl $ctl != taur $ver $when"
+  echo "$ver" | grep -Eq "^[0-9]+\.[0-9]+\.[0-9]+$" || fail "version $ver $when"
+}
 echo "CHECK_START kind=${KIND:-unset}"
-ver=$(/usr/bin/taur --version | awk '{print $NF}')
-ctl=$(/usr/bin/taurctl --version | awk '{print $NF}')
-[ "$ver" = "$ctl" ] || fail "taurctl $ctl != taur $ver"
-echo "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || fail "version $ver"
+check_bins_on_path "after install"
 acme=$(mktemp -d)
 TAUR_HOME="$acme" TAUR_TLS=acme TAUR_BIND=127.0.0.1:18080 TAUR_DOMAIN=pkg.example.com \
   TAUR_ACME_CONTACT=mailto:admin@example.com TAUR_ACME_ACCEPT_TERMS=yes \
@@ -163,31 +176,31 @@ run_image() {
 failed=0
 run_image debian-12 docker.io/library/debian:12 deb \
   'export DEBIAN_FRONTEND=noninteractive; apt-get update >/tmp/apt.log && apt-get install -y curl login /pkg/'"$deb"'; echo APT_EXIT:$?' \
-  "apt-get install -y --reinstall /pkg/$deb >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && apt-get remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && test -f /etc/taur/taur.env && apt-get purge -y taur >/tmp/purge.log && test ! -f /etc/taur/taur.env && test -f /var/lib/taur/kept && echo SMOKE_OK" \
+  "apt-get install -y --reinstall /pkg/$deb >/tmp/reinstall.log && check_bins_on_path after reinstall && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && apt-get remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && test -f /etc/taur/taur.env && apt-get purge -y taur >/tmp/purge.log && test ! -f /etc/taur/taur.env && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 run_image ubuntu-22.04 docker.io/library/ubuntu:22.04 deb \
   'export DEBIAN_FRONTEND=noninteractive; apt-get update >/tmp/apt.log && apt-get install -y curl login /pkg/'"$deb"'; echo APT_EXIT:$?' \
-  "apt-get install -y --reinstall /pkg/$deb >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && apt-get remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && test -f /etc/taur/taur.env && apt-get purge -y taur >/tmp/purge.log && test ! -f /etc/taur/taur.env && test -f /var/lib/taur/kept && echo SMOKE_OK" \
+  "apt-get install -y --reinstall /pkg/$deb >/tmp/reinstall.log && check_bins_on_path after reinstall && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && apt-get remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && test -f /etc/taur/taur.env && apt-get purge -y taur >/tmp/purge.log && test ! -f /etc/taur/taur.env && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 run_image ubuntu-24.04 docker.io/library/ubuntu:24.04 deb \
   'export DEBIAN_FRONTEND=noninteractive; apt-get update >/tmp/apt.log && apt-get install -y curl login /pkg/'"$deb"'; echo APT_EXIT:$?' \
-  "apt-get install -y --reinstall /pkg/$deb >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && apt-get remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && test -f /etc/taur/taur.env && apt-get purge -y taur >/tmp/purge.log && test ! -f /etc/taur/taur.env && test -f /var/lib/taur/kept && echo SMOKE_OK" \
+  "apt-get install -y --reinstall /pkg/$deb >/tmp/reinstall.log && check_bins_on_path after reinstall && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && apt-get remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && test -f /etc/taur/taur.env && apt-get purge -y taur >/tmp/purge.log && test ! -f /etc/taur/taur.env && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 run_image fedora docker.io/library/fedora:latest rpm \
   "if ! command -v curl >/dev/null; then dnf install -y curl; fi; dnf install -y /pkg/$rpm" \
-  "rpm -Uvh --nosignature --replacepkgs /pkg/$rpm >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && dnf remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
+  "rpm -Uvh --nosignature --replacepkgs /pkg/$rpm >/tmp/reinstall.log && check_bins_on_path after reinstall && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && dnf remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 run_image rockylinux-9 docker.io/library/rockylinux:9 rpm \
   "if ! command -v curl >/dev/null; then dnf install -y curl; fi; dnf install -y /pkg/$rpm" \
-  "rpm -Uvh --nosignature --replacepkgs /pkg/$rpm >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && dnf remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
+  "rpm -Uvh --nosignature --replacepkgs /pkg/$rpm >/tmp/reinstall.log && check_bins_on_path after reinstall && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && dnf remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 run_image almalinux-9 docker.io/library/almalinux:9 rpm \
   "if ! command -v curl >/dev/null; then dnf install -y curl; fi; dnf install -y /pkg/$rpm" \
-  "rpm -Uvh --nosignature --replacepkgs /pkg/$rpm >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && dnf remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
+  "rpm -Uvh --nosignature --replacepkgs /pkg/$rpm >/tmp/reinstall.log && check_bins_on_path after reinstall && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && dnf remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 run_image arch docker.io/library/archlinux:latest arch \
   "pacman -Syu --noconfirm --needed curl && pacman -U --noconfirm /pkg/$pkg" \
-  "pacman -U --noconfirm /pkg/$pkg >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && pacman -R --noconfirm taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
+  "pacman -U --noconfirm /pkg/$pkg >/tmp/reinstall.log && check_bins_on_path after reinstall && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && pacman -R --noconfirm taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 
 rm -f "$guest"

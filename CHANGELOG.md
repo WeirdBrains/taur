@@ -9,10 +9,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - The web UI footer shows the running server's version.
 - `TAUR_DB` / `--db` sets the SQLite database path (default `$TAUR_HOME/taur.db`).
 - `taurctl upgrade` installs a published Linux x86_64 package with apt, dnf, or pacman after verifying SHA256SUMS.
+- The package-server web UI serves the TAUR mark at `/favicon.ico`.
+- System installs place `taur` and `taurctl` in `/usr/bin`, and user installs in `$HOME/.local/bin`, without editing shell profiles.
+- `packaging/arch/.SRCINFO` is generated from the PKGBUILD (`makepkg --printsrcinfo`) and shipped with the source Arch recipe, not installed as a runtime file.
 
 ### Fixed
 
 - The release upload job treats a missing GitHub Release as missing, so a tag push can create the release and attach packages.
+- `scripts/release.sh` updates the Arch `PKGBUILD` `pkgver` and `.SRCINFO` with the workspace version and checks Debian/RPM `@VERSION@` templates so package metadata cannot silently drift.
 
 ## [1.5.0] - 2026-11-10
 

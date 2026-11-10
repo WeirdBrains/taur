@@ -3,7 +3,7 @@
 `taur serve` serves a static web interface (plain HTML/CSS/JavaScript in
 `crates/taur-server/web/`, embedded in the binary; no Node toolchain). It is a thin
 client of the JSON API, like `taurctl`. The footer shows the running server's version
-(`CARGO_PKG_VERSION` of the `taur` binary).
+(`CARGO_PKG_VERSION` of the `taur` binary). The same TAUR mark used on the project site is served as `/favicon.ico` (embedded `web/favicon.ico`, `image/x-icon`) and linked from the page.
 
 ## Pages
 | Path | What |
