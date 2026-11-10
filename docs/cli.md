@@ -29,6 +29,7 @@ taurctl org add-member ORG USER [--role contributor|admin|owner]
 taurctl org set-role ORG USER ROLE | remove-member ORG USER
 taurctl pkg list | adopt PKGBASE | disown PKGBASE
 taurctl pkg transfer PKGBASE (--org ORG | --user USER)
+taurctl pkg upload ARCHIVE [--org ORG]
 taurctl key list | add FILE|- | remove ID
 taurctl pkg vote|unvote|notify|unnotify|flag|unflag|comments|comment|comaintainers …   # see community.md
 taurctl comment edit|delete|pin|unpin …
@@ -55,4 +56,14 @@ taurctl login alice
 taurctl org create weirdbrains
 taurctl org add-member weirdbrains bob --role admin
 taurctl pkg transfer hello-taur --org weirdbrains
+taurctl pkg upload ./webup.tar.gz
+taurctl pkg upload ./webup.tar.gz --org weirdbrains
 ```
+
+`taurctl pkg upload` takes a `.tar.gz`, `.tar`, or `.zip` with `PKGBUILD` and `.SRCINFO`,
+the same archive as [Upload](guides/publish.md) on the site. `--org` is the organization's
+exact name (3-16 characters of `A-Z` `a-z` `0-9` `.` `_` `-`, starting and ending
+alphanumeric), the same rule as `taurctl org create`. You must be an Owner, Admin, or
+Contributor of that organization. Omit `--org` to publish a new package under your
+account. An update keeps the current owner; if `--org` is given then, it must already
+be that package's organization or the upload is refused and nothing is moved.

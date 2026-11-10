@@ -157,8 +157,20 @@ fn pages_render_in_chromium() {
         .set_admin(store.user_by_name("alice").unwrap().unwrap().id, true)
         .unwrap();
     let session = store.login("alice", "longenough").unwrap().token;
+    let filter_hook = format!(
+        "(() => {{ localStorage.setItem('taur.token', {session:?}); if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} if (window.__taurFilter) return; const toggle = document.getElementById('upload-owner-toggle'); const hidden = document.querySelector('input[name=owner]'); const filter = document.querySelector('input.combo-filter'); if (!toggle || !hidden || !filter) return; if (hidden.value !== '') return; toggle.click(); const menu = document.querySelector('.combo-menu'); if (!menu || menu.hidden || menu.firstElementChild !== filter) return; filter.value = 'zzz-no-such'; filter.dispatchEvent(new Event('input', {{ bubbles: true }})); if (![...document.querySelectorAll('.combo-empty')].some((el) => el.textContent === 'No matches')) return; document.body.append('no-owner-matches'); filter.value = 'web'; filter.dispatchEvent(new Event('input', {{ bubbles: true }})); const opt = [...document.querySelectorAll('.combo-option')].find((o) => o.textContent === 'weborg'); if (!opt || document.querySelectorAll('.combo-option').length !== 1) return; opt.click(); if (hidden.value !== 'weborg') return; window.__taurFilter = 1; document.body.append('owner-filter-ok'); }})()"
+    );
+    let filtered = dump_hook(
+        &format!("{url}/upload"),
+        profile.path(),
+        "owner-filter-ok",
+        Some(&filter_hook),
+    );
+    assert!(filtered.contains("owner-filter-ok"), "{filtered}");
+    assert!(filtered.contains("no-owner-matches"), "{filtered}");
+    assert!(filtered.contains("weborg"), "{filtered}");
     let upload_hook = format!(
-        "(() => {{ localStorage.setItem('taur.token', {session:?}); if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} const input = document.querySelector('input[name=archive]'); const owner = document.querySelector('select[name=owner]'); if (input && owner && [...owner.options].some((o) => o.value === 'weborg') && !window.__taurSent) {{ window.__taurSent = 1; owner.value = 'weborg'; const bin = Uint8Array.from(atob({b64:?}), c => c.charCodeAt(0)); const file = new File([bin], 'webup.tar.gz', {{type:'application/gzip'}}); const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files; input.form.requestSubmit(); }} }})()",
+        "(() => {{ localStorage.setItem('taur.token', {session:?}); if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} const input = document.querySelector('input[name=archive]'); const hidden = document.querySelector('input[name=owner]'); const toggle = document.getElementById('upload-owner-toggle'); if (input && hidden && toggle && !window.__taurSent) {{ toggle.click(); const opt = [...document.querySelectorAll('.combo-option')].find((o) => o.textContent === 'weborg'); if (!opt) return; window.__taurSent = 1; opt.click(); if (hidden.value !== 'weborg') {{ window.__taurSent = 0; return; }} const bin = Uint8Array.from(atob({b64:?}), c => c.charCodeAt(0)); const file = new File([bin], 'webup.tar.gz', {{type:'application/gzip'}}); const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files; input.form.requestSubmit(); }} }})()",
         b64 = b64(&webup_gzip())
     );
     let uploaded = dump_hook(

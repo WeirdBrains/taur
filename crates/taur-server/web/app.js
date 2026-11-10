@@ -681,6 +681,117 @@ async function pageDoc(slug) {
   render(h("p", {}, link("/docs", "Docs")), h("h1", {}, doc.title), h("div", { class: "card" }, renderMarkdown(doc.body)));
 }
 
+
+function ownerPicker(choices, selected) {
+  let value = selected;
+  let open = false;
+  let active = 0;
+  const hidden = h("input", { type: "hidden", name: "owner", value, "aria-label": "Owner" });
+  const button = h("button", {
+    type: "button",
+    id: "upload-owner-toggle",
+    class: "combo-toggle",
+    "aria-haspopup": "listbox",
+    "aria-expanded": "false",
+    "aria-controls": "upload-owner-list",
+    "aria-label": "Owner",
+  }, labelOf(value));
+  const filter = h("input", {
+    type: "search",
+    class: "combo-filter",
+    placeholder: "Filter owners",
+    "aria-label": "Filter owners",
+    autocomplete: "off",
+    role: "combobox",
+    "aria-autocomplete": "list",
+    "aria-controls": "upload-owner-list",
+    "aria-expanded": "false",
+  });
+  const list = h("div", { class: "combo-options", role: "listbox", id: "upload-owner-list", "aria-label": "Owner" });
+  const menu = h("div", { class: "combo-menu", hidden: true }, filter, list);
+  const wrap = h("div", { class: "combo" }, hidden, button, menu);
+  function labelOf(v) {
+    const found = choices.find((c) => c.value === v);
+    return found ? found.label : (choices[0] ? choices[0].label : "");
+  }
+  function matches() {
+    const q = filter.value.trim().toLowerCase();
+    return choices.filter((c) => !q || c.label.toLowerCase().includes(q) || String(c.value).toLowerCase().includes(q));
+  }
+  function setOpen(next) {
+    open = next;
+    menu.hidden = !open;
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+    filter.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) {
+      const rows = matches();
+      const idx = rows.findIndex((c) => c.value === value);
+      active = idx >= 0 ? idx : 0;
+      draw();
+      filter.focus();
+      filter.select();
+    } else {
+      filter.value = "";
+    }
+  }
+  function select(choice) {
+    value = choice.value;
+    hidden.value = value;
+    button.replaceChildren(document.createTextNode(labelOf(value)));
+    setOpen(false);
+    button.focus();
+  }
+  function draw() {
+    const rows = matches();
+    if (!rows.length) {
+      active = 0;
+      filter.removeAttribute("aria-activedescendant");
+      list.replaceChildren(h("div", { class: "combo-empty muted", role: "status" }, "No matches"));
+      return;
+    }
+    if (active >= rows.length) active = rows.length - 1;
+    if (active < 0) active = 0;
+    list.replaceChildren(...rows.map((c, i) => h("div", {
+      class: "combo-option" + (i === active ? " active" : "") + (c.value === value ? " selected" : ""),
+      role: "option",
+      id: "upload-owner-opt-" + i,
+      "aria-selected": (c.value === value) ? "true" : "false",
+      onclick: (e) => { e.preventDefault(); select(c); },
+      onmouseenter: () => { active = i; draw(); },
+    }, c.label)));
+    const cur = list.children[active];
+    if (cur) {
+      filter.setAttribute("aria-activedescendant", cur.id);
+      cur.scrollIntoView({ block: "nearest" });
+    }
+  }
+  button.addEventListener("click", (e) => { e.preventDefault(); setOpen(!open); });
+  button.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setOpen(true);
+    }
+  });
+  filter.addEventListener("input", () => { active = 0; draw(); });
+  filter.addEventListener("keydown", (e) => {
+    const rows = matches();
+    if (e.key === "ArrowDown") { e.preventDefault(); if (rows.length) { active = Math.min(active + 1, rows.length - 1); draw(); } }
+    else if (e.key === "ArrowUp") { e.preventDefault(); if (rows.length) { active = Math.max(active - 1, 0); draw(); } }
+    else if (e.key === "Home") { e.preventDefault(); active = 0; draw(); }
+    else if (e.key === "End") { e.preventDefault(); if (rows.length) { active = rows.length - 1; draw(); } }
+    else if (e.key === "Enter") { e.preventDefault(); if (rows[active]) select(rows[active]); }
+    else if (e.key === "Escape") { e.preventDefault(); setOpen(false); button.focus(); }
+  });
+  document.addEventListener("mousedown", function onDoc(e) {
+    if (!document.body.contains(wrap)) {
+      document.removeEventListener("mousedown", onDoc);
+      return;
+    }
+    if (open && !wrap.contains(e.target)) setOpen(false);
+  });
+  return wrap;
+}
+
 async function pageUpload() {
   if (!me) return needLogin();
   if (!me.verified) {
@@ -713,11 +824,11 @@ async function pageUpload() {
       flash(`Published ${data.pkgbase} ${data.version}.`);
     } catch (err) { flash(err.message, "error"); }
   } },
-    h("label", {}, "Owner", h("select", { name: "owner", "aria-label": "Owner" }, choices.map((c) => h("option", { value: c.value, selected: c.value === "" }, c.label)))),
+    h("div", {}, h("label", { for: "upload-owner-toggle" }, "Owner"), ownerPicker(choices, "")),
     h("input", { name: "archive", type: "file", accept: ".tar,.tar.gz,.tgz,.zip,application/gzip,application/zip", required: true, "aria-label": "Package archive" }),
     h("button", {}, "Upload"));
   render(h("h1", {}, "Upload a package"), h("div", { class: "card" },
-    h("p", {}, "Upload a .tar.gz, .tar, or .zip of one package directory. It needs PKGBUILD and .SRCINFO at the top, or inside a single folder. The server checks the recipe and does not run the PKGBUILD. A new package is adopted by the owner you pick: your account, or an organization where you can manage packages. Updating a package does not move it to a different owner."),
+    h("p", {}, "Upload a .tar.gz, .tar, or .zip of one package directory. It needs PKGBUILD and .SRCINFO at the top, or inside a single folder. The server checks the recipe and does not run the PKGBUILD. A new package is adopted by the owner you pick: your account, or an organization where you can manage packages (Owner, Admin, or Contributor). The default is your account. Open the list and type in the filter at the top to narrow it. Updating a package does not move it to a different owner."),
     h("p", {}, link("/docs/publish", "Publish guide")),
     f));
 }

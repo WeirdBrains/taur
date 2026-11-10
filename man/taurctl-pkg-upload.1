@@ -1,0 +1,43 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH taurctl-pkg-upload 1  "taurctl-pkg-upload " 
+.SH NAME
+taurctl\-pkg\-upload \- Publish or update a package from a recipe archive
+.SH SYNOPSIS
+\fBtaurctl pkg upload\fR [\fB\-\-org\fR] [\fB\-\-server\fR] [\fB\-\-config\-dir\fR] [\fB\-\-json\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIARCHIVE\fR> 
+.SH DESCRIPTION
+Publish or update a package from a recipe archive.
+.PP
+The archive is a `.tar.gz`, `.tar`, or `.zip` with `PKGBUILD` and `.SRCINFO`. A new package is adopted by your account, or by `\-\-org` when you are an Owner, Admin, or Contributor of that organization. An update keeps the current owner. If `\-\-org` is given on an update, it must already be that package\*(Aqs organization.
+.SH OPTIONS
+.TP
+\fB\-\-org\fR \fI<ORG>\fR
+Organization that should own a new package. Use the exact name (3\-16 characters of A\-Z a\-z 0\-9 . _ \-, starting and ending alphanumeric). You must be an Owner, Admin, or Contributor. Omit to publish under your account. On an update, the name must already be the package\*(Aqs organization
+.TP
+\fB\-\-server\fR \fI<SERVER>\fR
+Server URL (overrides TAUR_SERVER and the config file)
+.RS
+May also be specified with the \fBTAUR_SERVER\fR environment variable. 
+.RE
+.TP
+\fB\-\-config\-dir\fR \fI<CONFIG_DIR>\fR
+Config directory (default: $TAURCTL_CONFIG_DIR, else $XDG_CONFIG_HOME/taurctl)
+.TP
+\fB\-\-json\fR
+Print raw JSON
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Don\*(Aqt ask for confirmation
+.TP
+\fB\-\-password\-stdin\fR
+Read the password from the first line of stdin instead of prompting
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+<\fIARCHIVE\fR>
+Path to a .tar.gz, .tar, or .zip of the package directory
+.SH EXTRA
+Examples:
+  taurctl pkg upload ./webup.tar.gz
+  taurctl pkg upload ./webup.tar.gz \-\-org brains

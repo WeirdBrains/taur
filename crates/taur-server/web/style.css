@@ -30,3 +30,13 @@ button.danger { background:var(--bad); border-color:var(--bad); }
 .comment { border-top:1px solid var(--line); padding:.6rem 0; } .comment pre { white-space:pre-wrap; font:inherit; margin:.3rem 0; }
 .actions { display:flex; gap:.5rem; flex-wrap:wrap; margin:.5rem 0; }
 code { background:var(--line); padding:.1rem .3rem; border-radius:4px; }
+
+.combo { position: relative; }
+.combo-toggle { width: 100%; text-align: left; background: var(--card); color: var(--fg); border-color: var(--line); }
+.combo-menu { position: absolute; z-index: 5; left: 0; right: 0; top: 100%; margin-top: 2px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .35rem; display: grid; gap: .35rem; }
+.combo-menu[hidden] { display: none; }
+.combo-filter { width: 100%; }
+.combo-options { max-height: 12rem; overflow: auto; display: grid; }
+.combo-option { padding: .35rem .5rem; border-radius: 4px; cursor: pointer; }
+.combo-option.active, .combo-option:hover { background: var(--line); }
+.combo-empty { padding: .35rem .5rem; }

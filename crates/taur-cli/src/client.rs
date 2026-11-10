@@ -211,6 +211,81 @@ impl Client {
     pub fn my_packages(&self) -> Result<Value, CliError> {
         self.get("/api/v1/packages")
     }
+
+    pub fn upload(
+        &self,
+        archive: &[u8],
+        filename: &str,
+        org: Option<&str>,
+    ) -> Result<Value, CliError> {
+        let t = self.token.as_deref().ok_or(CliError::NotLoggedIn)?;
+        let boundary = format!(
+            "----taurctl{}{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let safe_name = filename
+            .chars()
+            .all(|c| c.is_ascii() && c != '"' && c != '\\' && !c.is_control())
+            .then_some(filename)
+            .filter(|n| !n.is_empty())
+            .unwrap_or("archive");
+        let mut body = Vec::new();
+        let mut part = |name: &str, filename: Option<&str>, data: &[u8]| {
+            body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            match filename {
+                Some(file) => body.extend_from_slice(
+                    format!(
+                        "Content-Disposition: form-data; name=\"{name}\"; filename=\"{file}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+                    )
+                    .as_bytes(),
+                ),
+                None => body.extend_from_slice(
+                    format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n")
+                        .as_bytes(),
+                ),
+            }
+            body.extend_from_slice(data);
+            body.extend_from_slice(b"\r\n");
+        };
+        if let Some(org) = org {
+            part("organization", None, org.as_bytes());
+        }
+        part("archive", Some(safe_name), archive);
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+        let req = self
+            .agent
+            .post(&format!("{}/api/v1/packages/upload", self.base))
+            .set("Authorization", &format!("Bearer {t}"))
+            .set("X-CSRF-Token", t)
+            .set(
+                "Content-Type",
+                &format!("multipart/form-data; boundary={boundary}"),
+            );
+        let resp = match req.send_bytes(&body) {
+            Ok(r) => r,
+            Err(ureq::Error::Status(code, r)) => {
+                let msg = r
+                    .into_json::<Value>()
+                    .ok()
+                    .and_then(|v| v["error"].as_str().map(String::from))
+                    .unwrap_or_else(|| "request failed".into());
+                return Err(CliError::Api(code, msg));
+            }
+            Err(e) => return Err(CliError::Transport(e.kind().to_string())),
+        };
+        let text = resp
+            .into_string()
+            .map_err(|e| CliError::Transport(e.to_string()))?;
+        if text.trim().is_empty() {
+            return Ok(Value::Null);
+        }
+        serde_json::from_str(&text).map_err(|e| CliError::Transport(format!("bad response: {e}")))
+    }
+
     pub fn pkg_action(
         &self,
         pkgbase: &str,
