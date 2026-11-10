@@ -433,6 +433,178 @@ fn config_server_setting() {
     assert!(run(&["search", "nothing-here"]).is_empty());
 }
 
+fn recipe_tar(base: &str, rel: &str) -> Vec<u8> {
+    let pkg = format!("pkgbase={base}\npkgname=({base})\npkgver=1.0.0\npkgrel={rel}\narch=(any)\n");
+    let src = format!(
+        "pkgbase = {base}\n\tpkgdesc = Uploaded\n\tpkgver = 1.0.0\n\tpkgrel = {rel}\n\tarch = any\n\npkgname = {base}\n"
+    );
+    fn ustar(name: &str, body: &[u8]) -> Vec<u8> {
+        let mut h = vec![0u8; 512];
+        h[..name.len()].copy_from_slice(name.as_bytes());
+        let put = |h: &mut [u8], at: usize, text: &str| {
+            h[at..at + text.len()].copy_from_slice(text.as_bytes());
+        };
+        put(&mut h, 100, "0000644\0");
+        put(&mut h, 108, "0000000\0");
+        put(&mut h, 116, "0000000\0");
+        put(&mut h, 124, &format!("{:011o}\0", body.len()));
+        put(&mut h, 136, "00000000000\0");
+        h[148..156].fill(b' ');
+        h[156] = b'0';
+        h[257..262].copy_from_slice(b"ustar");
+        h[263] = b'0';
+        h[264] = b'0';
+        let sum: u32 = h.iter().map(|b| u32::from(*b)).sum();
+        put(&mut h, 148, &format!("{sum:06o}\0 "));
+        let mut out = h;
+        out.extend_from_slice(body);
+        while !out.len().is_multiple_of(512) {
+            out.push(0);
+        }
+        out
+    }
+    let mut raw = Vec::new();
+    raw.extend(ustar("PKGBUILD", pkg.as_bytes()));
+    raw.extend(ustar(".SRCINFO", src.as_bytes()));
+    raw.extend(vec![0u8; 1024]);
+    raw
+}
+
+fn write_recipe(dir: &Path, name: &str, base: &str, rel: &str) -> PathBuf {
+    let path = dir.join(name);
+    std::fs::write(&path, recipe_tar(base, rel)).unwrap();
+    path
+}
+
+#[test]
+fn upload_publishes_to_an_organization() {
+    let e = start();
+    let pw = "correct horse\n";
+    e.ok(
+        &["--password-stdin", "register", "alice", "--email", "a@x"],
+        pw,
+    );
+    e.ok(&["--password-stdin", "login", "alice"], pw);
+    let help = e.ok(&["pkg", "upload", "--help"], "");
+    assert!(help.contains("--org"), "{help}");
+    assert!(
+        help.contains("taurctl pkg upload ./webup.tar.gz --org brains"),
+        "{help}"
+    );
+
+    let personal = write_recipe(e.cfg.path(), "mine.tar", "mine", "1");
+    let out = e.ok(&["pkg", "upload", personal.to_str().unwrap()], "");
+    assert!(out.contains("published mine 1.0.0-1"), "{out}");
+    let info = e.ok(&["--json", "info", "mine"], "");
+    let v: serde_json::Value = serde_json::from_str(&info).unwrap();
+    assert!(v["results"][0]["Organization"].is_null(), "{info}");
+    assert_eq!(v["results"][0]["Maintainer"], "alice");
+
+    e.ok(&["org", "create", "brains"], "");
+    let org_pkg = write_recipe(e.cfg.path(), "webup.tar", "webup", "1");
+    let out = e.ok(
+        &[
+            "pkg",
+            "upload",
+            org_pkg.to_str().unwrap(),
+            "--org",
+            "brains",
+        ],
+        "",
+    );
+    assert!(
+        out.contains("published webup 1.0.0-1 to organization brains"),
+        "{out}"
+    );
+    let info = e.ok(&["--json", "info", "webup"], "");
+    let v: serde_json::Value = serde_json::from_str(&info).unwrap();
+    assert_eq!(v["results"][0]["Organization"], "brains");
+    assert_eq!(v["results"][0]["Maintainer"], "alice");
+
+    let update = write_recipe(e.cfg.path(), "webup2.tar", "webup", "2");
+    let out = e.ok(&["pkg", "upload", update.to_str().unwrap()], "");
+    assert!(out.contains("updated webup 1.0.0-2"), "{out}");
+    let v: serde_json::Value =
+        serde_json::from_str(&e.ok(&["--json", "info", "webup"], "")).unwrap();
+    assert_eq!(v["results"][0]["Organization"], "brains");
+    assert!(v["results"][0]["Version"].as_str().unwrap().ends_with("-2"));
+
+    let again = write_recipe(e.cfg.path(), "webup3.tar", "webup", "3");
+    let out = e.ok(
+        &["pkg", "upload", again.to_str().unwrap(), "--org", "brains"],
+        "",
+    );
+    assert!(out.contains("updated webup 1.0.0-3"), "{out}");
+
+    let rejected = write_recipe(e.cfg.path(), "webup4.tar", "webup", "4");
+    let (code, err) = e.fail(
+        e.cfg.path(),
+        &[
+            "pkg",
+            "upload",
+            rejected.to_str().unwrap(),
+            "--org",
+            "elsewhere",
+        ],
+        "",
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("does not change its owner"), "{err}");
+    let v: serde_json::Value =
+        serde_json::from_str(&e.ok(&["--json", "info", "webup"], "")).unwrap();
+    assert!(
+        v["results"][0]["Version"].as_str().unwrap().ends_with("-3"),
+        "{v}"
+    );
+    assert_eq!(v["results"][0]["Organization"], "brains");
+
+    let (code, err) = e.fail(
+        e.cfg.path(),
+        &[
+            "pkg",
+            "upload",
+            write_recipe(e.cfg.path(), "ghost.tar", "ghost", "1")
+                .to_str()
+                .unwrap(),
+            "--org",
+            "no-such",
+        ],
+        "",
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("was not found"), "{err}");
+    let v: serde_json::Value =
+        serde_json::from_str(&e.ok(&["--json", "info", "ghost"], "")).unwrap();
+    assert_eq!(v["resultcount"], 0);
+
+    let bob = tempfile::tempdir().unwrap();
+    e.ok_as(
+        bob.path(),
+        &["--password-stdin", "register", "bob", "--email", "b@x"],
+        pw,
+    );
+    e.ok_as(bob.path(), &["--password-stdin", "login", "bob"], pw);
+    e.ok_as(bob.path(), &["verify", &e.token("b@x", "verify")], "");
+    let (code, err) = e.fail(
+        bob.path(),
+        &[
+            "pkg",
+            "upload",
+            write_recipe(bob.path(), "solo.tar", "solo", "1")
+                .to_str()
+                .unwrap(),
+            "--org",
+            "brains",
+        ],
+        "",
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("not a member"), "{err}");
+    let v: serde_json::Value =
+        serde_json::from_str(&e.ok(&["--json", "info", "solo"], "")).unwrap();
+    assert_eq!(v["resultcount"], 0);
+}
+
 #[test]
 fn man_pages_up_to_date() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../man");

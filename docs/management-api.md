@@ -26,13 +26,16 @@ org keeps its packages' maintainers and clears the org link. The last Owner can'
 removed or demoted.
 
 `POST /api/v1/packages/upload` is multipart, not JSON, and still requires
-`X-CSRF-Token` equal to the bearer. An absent or empty `organization` field publishes
-a new package under the uploader. A name publishes it under that organization in the
-same insert; the caller must belong to the organization and be allowed to manage its
-packages. Site admin is not a substitute for membership. On an update the field must
-be empty or name the package's current organization. A different name is 409 and the
-owner is not changed. Selecting your account while updating an organization package
-is allowed and also leaves the owner unchanged.
+`X-CSRF-Token` equal to the bearer. `taurctl pkg upload ARCHIVE [--org ORG]` sends
+the same request. An absent or empty `organization` field (or an omitted `--org`)
+publishes a new package under the uploader. A name publishes it under that
+organization in the same insert. The name is the organization's exact name (3-16
+characters of `A-Z` `a-z` `0-9` `.` `_` `-`, starting and ending alphanumeric), and
+the caller must be an Owner, Admin, or Contributor of that organization. Site admin
+is not a substitute for membership. On an update the field must be empty or name the
+package's current organization. A different name is 409 and the owner is not changed.
+Selecting your account while updating an organization package is allowed and also
+leaves the owner unchanged.
 
 Errors: 400 bad body, 401 no/invalid session, 403 not allowed, 404 unknown org/user/package,
 409 conflict (name taken, not orphaned, last Owner, upload owner does not match).

@@ -271,6 +271,23 @@ pub enum PkgCmd {
         #[arg(long)]
         user: Option<String>,
     },
+    /// Publish or update a package from a recipe archive.
+    ///
+    /// The archive is a `.tar.gz`, `.tar`, or `.zip` with `PKGBUILD` and `.SRCINFO`.
+    /// A new package is adopted by your account, or by `--org` when you are an
+    /// Owner, Admin, or Contributor of that organization. An update keeps the
+    /// current owner. If `--org` is given on an update, it must already be that
+    /// package's organization.
+    #[command(
+        after_help = "Examples:\n  taurctl pkg upload ./webup.tar.gz\n  taurctl pkg upload ./webup.tar.gz --org brains\n"
+    )]
+    Upload {
+        /// Path to a .tar.gz, .tar, or .zip of the package directory
+        archive: PathBuf,
+        /// Organization that should own a new package. Use the exact name (3-16 characters of A-Z a-z 0-9 . _ -, starting and ending alphanumeric). You must be an Owner, Admin, or Contributor. Omit to publish under your account. On an update, the name must already be the package's organization.
+        #[arg(long, value_name = "ORG")]
+        org: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -925,6 +942,27 @@ fn execute(cli: Cli) -> Result<(), CliError> {
                 };
                 c.pkg_action(pkgbase, "owner", Some(body))?;
                 done(g, format!("transferred {pkgbase} to {to}"));
+            }
+            PkgCmd::Upload { archive, org } => {
+                let data = std::fs::read(archive)
+                    .map_err(|e| CliError::Input(format!("{}: {e}", archive.display())))?;
+                let name = archive
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("archive");
+                let org = org.as_deref().map(str::trim).filter(|s| !s.is_empty());
+                let v = c.upload(&data, name, org)?;
+                let pkgbase = s(&v["pkgbase"]);
+                let version = s(&v["version"]);
+                let msg = if v["created"] == true {
+                    match org {
+                        Some(o) => format!("published {pkgbase} {version} to organization {o}"),
+                        None => format!("published {pkgbase} {version}"),
+                    }
+                } else {
+                    format!("updated {pkgbase} {version}")
+                };
+                print(g, &v, |_| println!("{msg}"));
             }
         },
     }

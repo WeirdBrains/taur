@@ -6,7 +6,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ### Added
 
-- The upload form can publish a new package to your account or to an organization you can manage.
+- The upload form can publish a new package to your account or to an organization you can manage, and the owner list can be filtered by typing at the top.
+- `taurctl pkg upload` publishes a recipe archive, optionally to an organization with `--org`.
 
 ## [1.4.0] - 2026-11-10
 

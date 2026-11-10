@@ -8,7 +8,7 @@ client of the JSON API, like `taurctl`.
 | Path | What |
 |---|---|
 | `/docs`, `/docs/<slug>` | Task guides compiled from `docs/guides/`. The server hides a guide the role cannot read (404). |
-| `/upload` | Verified users upload a `.tar.gz`, `.tar`, or `.zip` containing `PKGBUILD` and `.SRCINFO`. The owner list defaults to their account and includes organizations where they can manage packages. |
+| `/upload` | Verified users upload a `.tar.gz`, `.tar`, or `.zip` containing `PKGBUILD` and `.SRCINFO`. The owner list defaults to their account and includes organizations where they can manage packages (Owner, Admin, or Contributor). Open the list and type in the filter at the top to narrow it. |
 | `/packages/<name>` | Also: maintainers archive or unarchive, and mark a package out of date or clear that flag. Anyone signed in can flag it. |
 | `/`, `/packages?q=&by=` | Search packages (all RPC `by` fields), sorted by popularity |
 | `/packages/<name>` | Package details (deps, maintainers, org, votes, popularity, flag, clone URL, snapshot), comments; when signed in: vote, flag/unflag, adopt/disown, comment/edit/delete, file requests; maintainers also edit co-maintainers and transfer to an org or user. Same URL yay shows as "AUR URL". Maintainer and co-maintainer names link to `/users/<name>`. |

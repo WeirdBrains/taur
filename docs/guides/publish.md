@@ -11,7 +11,7 @@ This is how a package you maintain shows up in search.
 
 Open [Upload](/upload) after your email is verified. Choose a `.tar.gz`, `.tar`, or `.zip` of the package directory. `PKGBUILD` and `.SRCINFO` sit at the top of that directory, or inside one folder. The archive is at most 8 MiB, with at most 64 files, and each file is at most 256 KiB. Nested directories, symlinks, and paths that leave the directory are refused.
 
-The owner list is your account and every organization where you can manage packages. The default is your account. A new package is created under that owner immediately. An update keeps the current owner. If you name an organization that is not the package's organization, the upload is refused and nothing is moved.
+The Owner control lists your account and every organization where you can manage packages (Owner, Admin, or Contributor). The default is your account. Open the list and type in the filter at the top to narrow the options; if nothing matches, the list says so and the current owner stays selected. A new package is created under that owner immediately. An update keeps the current owner. If you name an organization that is not the package's organization, the upload is refused and nothing is moved.
 
 The server checks `.SRCINFO`, the literal `PKGBUILD` assignments, architectures, maintainership, and any registry rule. It does not run the PKGBUILD or `makepkg`. A new package base is adopted by the owner selected above. An update is accepted only when you could also `git push` that base: you maintain it, you co-maintain it, or your organization can manage it. A rejected package stays rejected.
 
@@ -55,7 +55,18 @@ Use the SSH clone line on the server's package page if the port is not 2222. The
 
 An orphan can be adopted from its package page. If you are not a site admin, that files an adoption request. A site admin accepts it.
 
-To publish a new package under an organization from the site, pick that organization on Upload. With git, create the organization, push the package, then transfer the package base from the package page. Members who can manage packages in that organization can push updates.
+To publish a new package under an organization from the site, pick that organization on Upload. From the CLI, use `taurctl pkg upload ./webup.tar.gz --org ORG`, where `ORG` is the organization's exact name. With git, create the organization, push the package, then transfer the package base from the package page. Members who can manage packages in that organization can push updates.
+
+## Upload with taurctl
+
+After you are signed in with a verified account:
+
+```sh
+taurctl pkg upload ./webup.tar.gz
+taurctl pkg upload ./webup.tar.gz --org brains
+```
+
+`--org` uses the exact organization name (3-16 characters of `A-Z` `a-z` `0-9` `.` `_` `-`, starting and ending alphanumeric). You must be an Owner, Admin, or Contributor. Omit the flag to publish a new package under your account. An update without `--org` still succeeds and does not move the package. An update with `--org` is accepted only when that name is already the package's organization.
 
 ## What the server checks
 
