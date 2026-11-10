@@ -14,7 +14,13 @@ errors add `"error"` with `"type": "error"`.
 `by` fields: `name`, `name-desc` (default), `maintainer`, `submitter`, `depends`,
 `makedepends`, `optdepends`, `checkdepends`, `provides`, `conflicts`, `replaces`,
 `groups`, `keywords`, `comaintainers`. Dependency fields match the name without version
-constraints or optdepends descriptions.
+constraints or optdepends descriptions. `by=keywords` is an exact match on a stored
+keyword (set with SSH `set-keywords` or the API, not from the PKGBUILD). Default
+`name-desc` search does not include keywords.
+
+```sh
+curl 'http://127.0.0.1:8080/rpc/v5/search/aur?by=keywords'
+```
 
 Package fields: `ID, Name, PackageBaseID, PackageBase, Version, Description, URL,
 NumVotes, Popularity, OutOfDate, Maintainer, Submitter, FirstSubmitted, LastModified,
