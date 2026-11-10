@@ -1,13 +1,14 @@
 # Configuration and data directory
 
-`taur [--home DIR] <command>`. Every deployment setting of `taur serve` can come from an
+`taur [--home DIR] [--db FILE] <command>`. Every deployment setting of `taur serve` can come from an
 environment variable. **Precedence: command-line flag > environment variable > default.**
 Values are validated at startup; an invalid value stops the server with an error naming
 the variable (the SMTP URL is never printed or logged).
 
 | Variable | Flag | Default | Meaning |
 |---|---|---|---|
-| `TAUR_HOME` | `--home` | `~/.local/share/taur` | Data directory: `taur.db` (SQLite), `repos/<pkgbase>.git`, `outbox/`, `ssh_host_ed25519_key`. Used by every `taur` command. |
+| `TAUR_HOME` | `--home` | `~/.local/share/taur` | Data directory: `repos/<pkgbase>.git`, `outbox/`, `ssh_host_ed25519_key`, and the default SQLite file. Used by every `taur` command. |
+| `TAUR_DB` | `--db` | `<home>/taur.db` | SQLite database file. Use this to put the database on another partition. WAL and SHM sidecars (`taur.db-wal`, `taur.db-shm`) are created beside the file. The parent directory must already exist; it is not created. This does not move an existing database. Used by every `taur` command. |
 | `TAUR_BIND` | `--bind` | `127.0.0.1:8080` | Listen address. Plaintext HTTP when `TAUR_TLS=off`. HTTPS when `TAUR_TLS=acme` (never downgraded). |
 | `TAUR_TLS` | `--tls` | `off` | `off` or `acme`. `off` is local HTTP or a TLS reverse proxy. |
 | `TAUR_DOMAIN` | `--domain` | unset | DNS names, comma-separated or repeated. Required for `acme`. First name is the default public host. Example: `packages.example.com`. |
@@ -68,8 +69,9 @@ Notes:
   shares that proxy's address. List only the proxy CIDR, and configure the proxy to append
   the client. HTML pages and `/static` are not limited. See [rpc.md](rpc.md) and
   [security.md](security.md).
-- Git hooks receive the mail settings from the server process, so they need no extra
-  configuration.
+- Git hooks receive the mail settings and the database path from the server process, so
+  they need no extra configuration. A hook started by hand still needs `TAUR_HOME`, and
+  `TAUR_DB` when the database is not `<TAUR_HOME>/taur.db`.
 
 [`.env.example`](../.env.example) at the repo root has a commented example entry for
 every variable (copy to `.env`, which git ignores). A minimal production file for systemd

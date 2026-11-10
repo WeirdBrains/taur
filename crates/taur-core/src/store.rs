@@ -324,6 +324,7 @@ fn strings(conn: &Connection, sql: &str, arg: i64) -> Result<Vec<String>> {
 pub struct Store {
     conn: Mutex<Connection>,
     home: PathBuf,
+    db_path: PathBuf,
     mailer: std::sync::RwLock<std::sync::Arc<dyn crate::mail::Mailer>>,
     base_url: std::sync::RwLock<String>,
     hook_env: std::sync::RwLock<Vec<(String, String)>>,
@@ -344,10 +345,22 @@ fn read_line(dir: &Path, name: &str) -> Option<String> {
 }
 
 impl Store {
-    /// Open (creating if needed) the store in `home` (`taur.db`, `repos/`).
+    /// Open (creating if needed) the store in `home` (`<home>/taur.db`, `repos/`).
     pub fn open(home: &Path) -> Result<Store> {
+        Self::open_with_db(home, &home.join("taur.db"))
+    }
+
+    /// Open the store in `home` using an explicit SQLite path (for `TAUR_DB` / `--db`).
+    ///
+    /// `home` still holds git repositories, the mail outbox, and the SSH host key.
+    /// The database parent directory must already exist; it is not created. The
+    /// path is stored absolute so git hooks can open the same file.
+    pub fn open_with_db(home: &Path, db: &Path) -> Result<Store> {
         std::fs::create_dir_all(home.join("repos"))?;
-        let conn = Connection::open(home.join("taur.db"))?;
+        let db_path = absolutize_db_path(db)?;
+        let conn = Connection::open(&db_path).map_err(|e| {
+            Error::Invalid(format!("cannot open database {}: {e}", db_path.display()))
+        })?;
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
@@ -391,6 +404,7 @@ impl Store {
         Ok(Store {
             conn: Mutex::new(conn),
             home: home.to_path_buf(),
+            db_path,
             mailer: std::sync::RwLock::new(std::sync::Arc::new(mailer)),
             base_url: std::sync::RwLock::new(crate::DEFAULT_BASE_URL.to_string()),
             hook_env: std::sync::RwLock::new(Vec::new()),
@@ -515,6 +529,11 @@ impl Store {
 
     pub fn home(&self) -> &Path {
         &self.home
+    }
+
+    /// Absolute path of the open SQLite database.
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
     }
 
     pub fn repos_dir(&self) -> PathBuf {
@@ -931,4 +950,45 @@ impl Store {
         let rows = st.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
     }
+}
+
+fn absolutize_db_path(db: &Path) -> Result<PathBuf> {
+    if db.as_os_str().is_empty() {
+        return Err(Error::Invalid(
+            "database path is empty (TAUR_DB / --db)".into(),
+        ));
+    }
+    let db = if db.is_absolute() {
+        db.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(db)
+    };
+    if db.is_dir() {
+        return Err(Error::Invalid(format!(
+            "database path {} is a directory (TAUR_DB / --db)",
+            db.display()
+        )));
+    }
+    match db.parent() {
+        None => {
+            return Err(Error::Invalid(format!(
+                "database path {} has no parent directory (TAUR_DB / --db)",
+                db.display()
+            )));
+        }
+        Some(parent) if !parent.exists() => {
+            return Err(Error::Invalid(format!(
+                "database directory {} does not exist (TAUR_DB / --db)",
+                parent.display()
+            )));
+        }
+        Some(parent) if !parent.is_dir() => {
+            return Err(Error::Invalid(format!(
+                "database directory {} is not a directory (TAUR_DB / --db)",
+                parent.display()
+            )));
+        }
+        Some(_) => {}
+    }
+    Ok(db)
 }

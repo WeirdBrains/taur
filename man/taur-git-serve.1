@@ -4,7 +4,7 @@
 .SH NAME
 taur\-git\-serve \- aurweb\-style SSH command handler. Reads `SSH_ORIGINAL_COMMAND`
 .SH SYNOPSIS
-\fBtaur git\-serve\fR [\fB\-\-home\fR] <\fB\-\-user\fR> [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtaur git\-serve\fR [\fB\-\-home\fR] <\fB\-\-user\fR> [\fB\-\-db\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 aurweb\-style SSH command handler. Reads `SSH_ORIGINAL_COMMAND`.
 .PP
@@ -20,10 +20,19 @@ May also be specified with the \fBTAUR_HOME\fR environment variable.
 \fB\-\-user\fR \fI<USER>\fR
 Account that owns the key OpenSSH accepted
 .TP
+\fB\-\-db\fR \fI<DB>\fR
+SQLite database path (default: <home>/taur.db)
+.RS
+May also be specified with the \fBTAUR_DB\fR environment variable. 
+.RE
+.TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)
 .SH ENVIRONMENT
 Command\-line flags take precedence over environment variables, which take precedence over defaults.
 .TP
 \fBTAUR_HOME\fR
-Data directory (database, git repos, outbox, SSH host key). Default: ~/.local/share/taur.
+Data directory (git repos, outbox, SSH host key; default database). Default: ~/.local/share/taur.
+.TP
+\fBTAUR_DB\fR
+SQLite database file. WAL and SHM sidecars are created beside it. The parent directory must already exist. Default: <home>/taur.db.

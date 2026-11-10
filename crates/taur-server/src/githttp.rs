@@ -113,6 +113,7 @@ pub async fn handle(
         .env("REMOTE_ADDR", "127.0.0.1")
         .env("TAUR_HOOK_BIN", &state.hook_bin)
         .env("TAUR_HOME", state.store.home())
+        .env("TAUR_DB", state.store.db_path())
         .envs(state.store.hook_env());
     if let Some(u) = &user {
         cmd.env("REMOTE_USER", u).env("TAUR_PUSHER", u);
