@@ -14,6 +14,9 @@ Authenticated JSON endpoints (`Authorization: Bearer <token>`, see
 | DELETE | `/api/v1/orgs/{org}/members/{user}` | | Owner, Admin (not Owners) | 204 |
 | GET | `/api/v1/packages` | | any user | `[{"pkgbase","maintainer","org"}]` you can manage |
 | POST | `/api/v1/packages/upload` | multipart field `archive` (`.tar.gz`, `.tar`, or `.zip`) | verified user who could push that base | 201 create or 200 update: `{"pkgbase","name","version","created"}` |
+| GET | `/api/v1/packages/by-name/{name}` | | anyone | package page JSON, including archived packages; `CanManage` when the caller could push |
+| POST | `/api/v1/packages/{pkgbase}/archive` | | verified maintainer, co-maintainer, or org member who can manage it | 204; hidden from search, RPC info, and dumps; git history kept |
+| DELETE | `/api/v1/packages/{pkgbase}/archive` | | same | 204; restored to search and dumps |
 | POST | `/api/v1/packages/{pkgbase}/owner` | `{"org"}` or `{"user"}` | anyone who can manage it (+ ManagePackages in target org) | 204 |
 | POST | `/api/v1/packages/{pkgbase}/disown` | | anyone who can manage it | 204 (orphaned; org link kept) |
 | POST | `/api/v1/packages/{pkgbase}/adopt` | | anyone if orphaned and not org-owned; org members otherwise | 204 |

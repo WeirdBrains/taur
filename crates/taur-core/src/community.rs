@@ -189,6 +189,25 @@ impl Store {
         Ok(())
     }
 
+    /// Hide a package from search, suggest, RPC info, and metadata dumps.
+    /// The row and git history stay. Someone who can manage the package may restore it.
+    pub fn set_archived(&self, user: i64, pkgbase: &str, archived: bool) -> Result<()> {
+        let id = self.require_pkgbase(pkgbase)?;
+        if !self.can_manage_pkgbase(user, id)? {
+            return Err(Error::Forbidden);
+        }
+        if archived {
+            self.lock().execute(
+                "UPDATE pkgbases SET archived_at = COALESCE(archived_at, ?1) WHERE id = ?2",
+                params![now(), id],
+            )?;
+        } else {
+            self.lock()
+                .execute("UPDATE pkgbases SET archived_at = NULL WHERE id = ?1", [id])?;
+        }
+        Ok(())
+    }
+
     /// Maintainers (and anyone who can manage the package) or the flagger may unflag.
     pub fn unflag(&self, user: i64, pkgbase: &str) -> Result<()> {
         let pb = self.require_pkgbase(pkgbase)?;
