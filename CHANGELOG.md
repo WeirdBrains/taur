@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Package smoke accepts a login PATH that reports `/usr/sbin/taur` when that path is the same file as `/usr/bin/taur` (usr-merged Fedora and Arch).
+
 ## [1.6.0] - 2026-11-10
 
 ### Added

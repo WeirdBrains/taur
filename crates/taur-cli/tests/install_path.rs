@@ -136,8 +136,58 @@ fn package_stage_and_smoke_script_use_usr_bin() {
     assert!(
         smoke.contains(r#"PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin""#)
     );
-    assert!(smoke.contains(r#"[ "$taur_path" = /usr/bin/taur ]"#));
-    assert!(smoke.contains(r#"[ "$ctl_path" = /usr/bin/taurctl ]"#));
+    assert!(smoke.contains("[ -x /usr/bin/taur ]"));
+    assert!(smoke.contains("[ -x /usr/bin/taurctl ]"));
+    assert!(smoke.contains(r#"readlink -f /usr/bin/taur"#));
+    assert!(smoke.contains(r#"readlink -f /usr/bin/taurctl"#));
     assert!(smoke.contains("cd /tmp"));
     assert!(smoke.contains("check_bins_on_path after reinstall"));
+}
+
+#[test]
+fn system_path_accepts_usr_merge_sbin_symlink() {
+    let root = tempfile::tempdir().unwrap();
+    let prefix = root.path().join("sys");
+    fs::create_dir_all(prefix.join("usr/bin")).unwrap();
+    std::os::unix::fs::symlink("bin", prefix.join("usr/sbin")).unwrap();
+    write_stub(&prefix.join("usr/bin/taur"), "taur");
+    write_stub(&prefix.join("usr/bin/taurctl"), "taurctl");
+
+    let elsewhere = root.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    let usr_bin = prefix.join("usr/bin");
+    let usr_sbin = prefix.join("usr/sbin");
+    // Login PATH lists sbin first, as package-smoke.sh does.
+    let path = format!("{}:{}:/bin", usr_sbin.display(), usr_bin.display());
+    let script = format!(
+        r#"
+set -eu
+out=$(command -v taur && command -v taurctl && taur --version && taurctl --version)
+taur_path=$(printf "%s\n" "$out" | sed -n "1p")
+ctl_path=$(printf "%s\n" "$out" | sed -n "2p")
+[ -x "{bin}/taur" ] || {{ echo "missing {bin}/taur"; exit 1; }}
+[ -x "{bin}/taurctl" ] || {{ echo "missing {bin}/taurctl"; exit 1; }}
+[ "$(readlink -f "$taur_path")" = "$(readlink -f "{bin}/taur")" ] || {{
+  echo "taur resolved to $taur_path, which is not {bin}/taur"; exit 1;
+}}
+[ "$(readlink -f "$ctl_path")" = "$(readlink -f "{bin}/taurctl")" ] || {{
+  echo "taurctl resolved to $ctl_path, which is not {bin}/taurctl"; exit 1;
+}}
+printf "%s\n" "$out"
+"#,
+        bin = usr_bin.display()
+    );
+    let (ok, text) = run_in(&elsewhere, &path, root.path(), &script);
+    assert!(ok, "{text}");
+    let taur_path = text.lines().next().unwrap();
+    assert_eq!(
+        PathBuf::from(taur_path),
+        usr_sbin.join("taur"),
+        "command -v should report the sbin path first: {text}"
+    );
+    assert_eq!(
+        fs::canonicalize(taur_path).unwrap(),
+        fs::canonicalize(usr_bin.join("taur")).unwrap(),
+        "{text}"
+    );
 }
