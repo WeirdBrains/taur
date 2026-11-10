@@ -186,7 +186,7 @@ run_image almalinux-9 docker.io/library/almalinux:9 rpm \
   "rpm -Uvh --nosignature --replacepkgs /pkg/$rpm >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && dnf remove -y taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 run_image arch docker.io/library/archlinux:latest arch \
-  "pacman -Sy --noconfirm >/tmp/pacman-sync.log && pacman -S --noconfirm curl && pacman -U --noconfirm /pkg/$pkg" \
+  "pacman -S --needed --noconfirm curl && pacman -U --noconfirm /pkg/$pkg" \
   "pacman -U --noconfirm /pkg/$pkg >/tmp/reinstall.log && grep -q '# taur-smoke-marker' /etc/taur/taur.env && test -f /var/lib/taur/kept && pacman -R --noconfirm taur >/tmp/remove.log && test -f /var/lib/taur/kept && echo SMOKE_OK" \
   || failed=1
 
