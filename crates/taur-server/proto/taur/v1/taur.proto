@@ -57,7 +57,7 @@ service Packages {
 }
 
 // ---- accounts ----
-message User { int64 id = 1; string name = 2; string email = 3; bool verified = 4; bool is_admin = 5; bool is_moderator = 6; }
+message User { int64 id = 1; string name = 2; string email = 3; bool verified = 4; bool is_admin = 5; bool is_moderator = 6; bool is_owner = 7; }
 message RegisterRequest { string name = 1; string email = 2; string password = 3; }
 message LoginRequest { string name = 1; string password = 2; }
 message Session { string token = 1; int64 expires_at = 2; }

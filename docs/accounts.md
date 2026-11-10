@@ -10,7 +10,12 @@ JSON API (logic in `taur_core::accounts`):
 | GET | `/api/v1/account` | — (Bearer token) | 200 `{"id","name","email","verified"}` |
 | DELETE | `/api/v1/account` | `{"password"}` (Bearer token) | 204 |
 
-Authenticate with `Authorization: Bearer <token>`.
+Authenticate with `Authorization: Bearer <token>`. A state-changing request also sends
+`X-CSRF-Token` with that same token, except `register`, `login`, `verify`, and
+`password-reset`. `taurctl` sends it. A browser form on another site does not.
+
+On a fresh server, with `TAUR_ADMINS` unset and no site admin, the first account is
+the site admin and is verified. See [install](install.md).
 
 Rules: names 3–16 chars of `A-Za-z0-9._-`, start/end alphanumeric, unique
 case-insensitively (as are emails); passwords ≥ 8 characters.

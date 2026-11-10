@@ -7,6 +7,7 @@ use rusqlite::{Connection, OptionalExtension, Row, ToSql, params};
 use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
 
@@ -322,6 +323,8 @@ pub struct Store {
     hook_env: std::sync::RwLock<Vec<(String, String)>>,
     ssh_clone_base: std::sync::RwLock<Option<String>>,
     rate: Mutex<Limiter>,
+    /// `TAUR_ADMINS` named someone. Registration must not invent another admin.
+    reserve_admins: AtomicBool,
 }
 
 fn read_line(dir: &Path, name: &str) -> Option<String> {
@@ -340,6 +343,7 @@ impl Store {
         std::fs::create_dir_all(home.join("repos"))?;
         let conn = Connection::open(home.join("taur.db"))?;
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
         // v0.4.0: users.verified_at
         let has_verified: bool = conn
@@ -351,6 +355,7 @@ impl Store {
         // v0.6.0: site admins, out-of-date flagger
         for (table, col, ty) in [
             ("users", "is_admin", "INTEGER NOT NULL DEFAULT 0"),
+            ("users", "is_owner", "INTEGER NOT NULL DEFAULT 0"),
             (
                 "pkgbases",
                 "flagger_id",
@@ -384,7 +389,19 @@ impl Store {
             hook_env: std::sync::RwLock::new(Vec::new()),
             ssh_clone_base: std::sync::RwLock::new(None),
             rate: Mutex::new(Limiter::default()),
+            reserve_admins: AtomicBool::new(false),
         })
+    }
+
+    /// When set, registration does not grant site admin to the first account.
+    /// `taur serve` sets this if `TAUR_ADMINS` names anyone, including a user
+    /// who has not registered yet.
+    pub fn reserve_admin_bootstrap(&self, reserved: bool) {
+        self.reserve_admins.store(reserved, Ordering::SeqCst);
+    }
+
+    pub fn admin_bootstrap_reserved(&self) -> bool {
+        self.reserve_admins.load(Ordering::SeqCst)
     }
 
     /// Replace the in-memory limits. `Store::open` starts with every class disabled

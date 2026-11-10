@@ -11,6 +11,8 @@ taur mirror status aur
 
 Nothing is fetched by `add` or `select`. `sync` copies only the names you selected, at most 200 of them. This server does not mirror the whole AUR unless an administrator names every package and runs `sync`. A fresh install has no mirror configured.
 
+A site admin can do the same from `/mirrors`. `sync` runs on the server.
+
 The copy is stored in a registry of the same name with enforcement `mirror` and provenance `mirror`. That is not the exempt `local` registry and it is not an enforcing registry. Upload, import, and git push into it are refused. The refusal is not an acceptance and it does not record an operator signature.
 
 ## What can be a source

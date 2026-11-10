@@ -25,7 +25,8 @@ the variable (the SMTP URL is never printed or logged).
 | `TAUR_GRPC_BIND` | `--grpc-bind` | unset = gRPC off | gRPC listen address. Plaintext HTTP/2 when TLS is off; the HTTPS certificate when `acme` ([grpc.md](grpc.md)). |
 | `TAUR_SMTP_URL` | `--smtp-url` | unset = mail to `<home>/outbox` | `smtp://` or `smtps://user:pass@host[:port]`. Secret. |
 | `TAUR_MAIL_FROM` | `--mail-from` | `TAUR <noreply@taur.weirdbrains.com>` | Sender address. |
-| `TAUR_ADMINS` | `--admins` | unset | Comma-separated user names made site admins at startup. |
+| `TAUR_ADMINS` | `--admins` | unset | Comma-separated user names made site admins at startup. When this or `TAUR_OWNERS` is set, the first registration is not promoted. |
+| `TAUR_OWNERS` | `--owners` | unset | Comma-separated user names made site owners at startup. Also grants site admin. |
 | `TAUR_RPC_RATE_LIMIT` | `--rpc-rate-limit` | `300` | AUR RPC requests per window per client. `0` disables this class. |
 | `TAUR_RPC_RATE_WINDOW` | `--rpc-rate-window` | `60` | Window for `TAUR_RPC_RATE_LIMIT`. |
 | `TAUR_AUTH_RATE_LIMIT` | `--auth-rate-limit` | `20` | Login, registration, verification, password reset. `0` disables. |

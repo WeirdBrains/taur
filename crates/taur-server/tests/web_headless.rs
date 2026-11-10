@@ -66,6 +66,9 @@ fn pages_render_in_chromium() {
         page.contains("rust&gt;=1.80") || page.contains("rust>=1.80"),
         "{page}"
     );
+    let docs = dump(&format!("{url}/docs"), profile.path(), "Publish a package");
+    assert!(docs.contains("Publish a package"), "{docs}");
+    assert!(!docs.contains("Operating the server"), "{docs}");
     let search = dump(
         &format!("{url}/?q=hello&by=name"),
         profile.path(),
@@ -114,4 +117,17 @@ fn pages_render_in_chromium() {
         .register("carol", "other@example.com", "longenough")
         .unwrap();
     assert!(store.user_by_name("carol").unwrap().is_some());
+
+    let walk = format!(
+        "(() => {{ localStorage.setItem('taur.token', {session:?}); if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); }} }})()"
+    );
+    for (path, marker) in [
+        ("/admin", "Users"),
+        ("/registries", "Registries"),
+        ("/mirrors", "Mirrors"),
+        ("/account", "Sessions"),
+    ] {
+        let page = dump_hook(&format!("{url}{path}"), profile.path(), marker, Some(&walk));
+        assert!(page.contains(marker), "{path}: {page}");
+    }
 }

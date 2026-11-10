@@ -76,8 +76,25 @@ impl Store {
             .unwrap_or(false))
     }
 
+    pub fn is_owner(&self, user: i64) -> Result<bool> {
+        Ok(self
+            .lock()
+            .query_row("SELECT is_owner FROM users WHERE id = ?1", [user], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional()?
+            .unwrap_or(0)
+            != 0)
+    }
+
     /// Grant or revoke site-admin rights (accept requests, manage any package).
+    /// Does not change site owner. Refuses to clear admin on an owner.
     pub fn set_admin(&self, user: i64, admin: bool) -> Result<()> {
+        if !admin && self.is_owner(user)? {
+            return Err(Error::Conflict(
+                "a site owner stays a site admin; revoke owner first".into(),
+            ));
+        }
         self.lock().execute(
             "UPDATE users SET is_admin = ?1 WHERE id = ?2",
             params![admin, user],

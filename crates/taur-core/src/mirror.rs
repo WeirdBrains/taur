@@ -14,6 +14,7 @@ use crate::registry::MIRROR_ENFORCEMENT;
 use crate::srcinfo::{self, literal_mismatches};
 use crate::{Error, Result, Store, now, repo};
 use rusqlite::{OptionalExtension, params};
+use serde::Serialize;
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -61,7 +62,7 @@ CREATE TABLE IF NOT EXISTS mirror_packages (
   UNIQUE (mirror_id, pkgbase));
 "#;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MirrorInfo {
     pub name: String,
     pub base_url: String,
@@ -69,7 +70,7 @@ pub struct MirrorInfo {
     pub provenance: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MirrorPackage {
     pub pkgbase: String,
     pub status: String,

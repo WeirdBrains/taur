@@ -1,0 +1,44 @@
+---
+title: Publish a package
+summary: Push a package base with git, from your key to the first commit.
+audience: user
+order: 0
+---
+
+This is how a package you maintain shows up in search.
+
+## What you need
+
+- A verified account. Open the link in the verification mail, or use **Resend verification** on your account page. A site admin can also mark you verified.
+- An SSH public key on your account. Generate one with `ssh-keygen -t ed25519` and paste the `.pub` line on your account page.
+- A git tree whose top level has both `PKGBUILD` and `.SRCINFO`.
+
+## Create the repository
+
+```sh
+mkdir hello && cd hello
+# write PKGBUILD, then:
+makepkg --printsrcinfo > .SRCINFO
+git init
+git add PKGBUILD .SRCINFO
+git commit -m "Initial import"
+```
+
+The remote name is the package base, not the git host's user:
+
+```sh
+git remote add origin ssh://taur@YOUR-SERVER:2222/hello.git
+git push -u origin master
+```
+
+Use the SSH clone line on the server's package page if the port is not 2222. The branch that is published is `master`.
+
+## If the name already exists
+
+An orphan can be adopted from its package page. If you are not a site admin, that files an adoption request. A site admin accepts it.
+
+To publish under an organization, create the organization, then transfer the package base to it from the package page. Members with a role in that organization can push updates.
+
+## What the server checks
+
+`.SRCINFO` must match the `PKGBUILD` fields helpers understand. An architecture-specific field has to agree with `arch`. A rejected package base cannot be pushed until a site admin reverses that rejection. An enforcing registry only accepts a recipe the site owner expected and signed.

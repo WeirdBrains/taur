@@ -23,3 +23,27 @@ removed or demoted.
 
 Errors: 400 bad body, 401 no/invalid session, 403 not allowed, 404 unknown org/user/package,
 409 conflict (name taken, not orphaned, last Owner).
+
+Site-admin and moderator endpoints use the same bearer token and `X-CSRF-Token`.
+Moderators may `GET /api/v1/admin/users` (no email) and reject an ordinary account or
+package. They cannot grant roles, see email addresses, accept or reverse audit rows,
+or manage registries and mirrors.
+
+| Method | Path | Who |
+|---|---|---|
+| GET | `/api/v1/admin/users?q=` | moderator or site admin |
+| POST | `/api/v1/admin/users/{name}/verify` | site admin |
+| POST | `/api/v1/admin/users/{name}/resend` | site admin |
+| POST | `/api/v1/admin/users/{name}/password-reset` | site admin; the token is only in the mail |
+| DELETE | `/api/v1/admin/users/{name}/sessions` | site admin |
+| PUT | `/api/v1/admin/users/{name}/admin` | site admin; body `{"on":true\|false}` |
+| PUT | `/api/v1/admin/moderators/{name}` | site admin; body `{"on":true\|false}` |
+| GET | `/api/v1/sessions` | the signed-in account |
+| DELETE | `/api/v1/sessions/{id}` | that account's own session |
+| GET | `/api/v1/registries/{name}` | site admin; keys, identities, expectations |
+| GET, POST | `/api/v1/mirrors` | site admin |
+| GET, DELETE | `/api/v1/mirrors/{name}` | site admin |
+| POST | `/api/v1/mirrors/{name}/select\|unselect\|sync\|drop` | site admin |
+
+`taur registry keygen` and `taur registry sign` stay on the machine that holds the
+secret seed. `taur gc`, `taur import`, and `taur serve` stay on the server machine.

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 - SMTP delivery tries every resolved address, and a failed verification resend says the mail server is unreachable.
 
+### Added
+
+- The web UI covers the management commands, and a Docs section with task guides.
+- Site owner, above site admin. With no admin or owner and neither bootstrap list set, the first registration becomes owner and admin.
+
 ## [1.3.2] - 2026-11-09
 ### Fixed
 - `taur serve` with automatic HTTPS no longer panics while choosing a rustls crypto provider.

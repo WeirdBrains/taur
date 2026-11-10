@@ -34,6 +34,9 @@ Grant (or with \-\-revoke, remove) the moderator role: reject packages and ordin
 taur\-admin(1)
 Grant (or with \-\-revoke, remove) site\-admin rights: accept requests, manage any package
 .TP
+taur\-owner(1)
+Grant (or with \-\-revoke, remove) site owner. Also grants site admin. Revoke leaves the admin flag and refuses to remove the last owner
+.TP
 taur\-gc(1)
 Prune unreachable Git objects older than the grace period
 .TP
@@ -113,6 +116,9 @@ Sender address for outgoing mail. Default: TAUR <noreply@taur.weirdbrains.com>.
 .TP
 \fBTAUR_ADMINS\fR
 Comma\-separated user names granted site admin at startup (grant only, never revokes). Default: unset.
+.TP
+\fBTAUR_OWNERS\fR
+Comma\-separated user names granted site owner at startup (also grants admin; grant only). When set, or when TAUR_ADMINS is set, the first registration is not promoted. Default: unset.
 .TP
 \fBTAUR_RPC_RATE_LIMIT\fR
 AUR RPC requests per window per client. 0 disables this class. Default: 300.

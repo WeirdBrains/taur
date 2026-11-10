@@ -34,7 +34,9 @@ impl Client {
         let mut req = self.agent.request(method, &format!("{}{path}", self.base));
         if auth {
             let t = self.token.as_deref().ok_or(CliError::NotLoggedIn)?;
-            req = req.set("Authorization", &format!("Bearer {t}"));
+            req = req
+                .set("Authorization", &format!("Bearer {t}"))
+                .set("X-CSRF-Token", t);
         }
         let res = match body {
             Some(b) => req.send_json(b),

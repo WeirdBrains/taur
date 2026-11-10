@@ -144,7 +144,7 @@ Port 2222 is `TAUR_SSH_BIND` in the shipped env file. Comment that line out if y
 
 `systemctl enable --now taur` and `journalctl -u taur` were not run. What was run is `taur serve` as user `taur` after `set -a; . /etc/taur/taur.env; set +a`.
 
-`TAUR_ADMINS` grants site admin only to an account that already exists. On Debian 12, with `TAUR_ADMINS=alice` and no such user, the log said `TAUR_ADMINS: user alice does not exist yet; restart after they register`. This registration was then accepted:
+`TAUR_ADMINS` grants site admin only to an account that already exists. On Debian 12, with `TAUR_ADMINS=alice` and no such user, the log said `TAUR_ADMINS: user alice does not exist yet; restart after they register`. While that variable names anyone, registration does not make another account admin. This registration was then accepted:
 
 ```sh
 curl -fsS -H 'content-type: application/json' \
@@ -153,6 +153,8 @@ curl -fsS -H 'content-type: application/json' \
 ```
 
 The response had `"is_admin":false`. After the process was started again with the same env file, `users.is_admin` for `alice` was `1` and the warning was gone.
+
+With `TAUR_ADMINS` and `TAUR_OWNERS` unset, and with no site admin or site owner in the database, the first successful registration becomes the site owner and a site admin, and is marked verified. A new server often has no SMTP, so that account can sign in and administer without reading the outbox. A verification message is still written. The grant is one row in the audit (`source` `bootstrap`). Two registrations at the same time produce one owner. `taur admin` and `taur owner` also count: once any admin or owner exists, later registrations stay ordinary accounts. Setting either `TAUR_ADMINS` or `TAUR_OWNERS` reserves that slot even when the named account does not exist yet. An existing deployment that already has an admin is unchanged and has no site owner until `taur owner NAME` or `TAUR_OWNERS`. If you already have accounts and no admin or owner, the next registration becomes owner unless you set one of those variables or run `taur owner` first.
 
 `TAUR_SMTP_URL` is commented out in the shipped file. Leave it that way and mail stays in `/var/lib/taur/outbox`. A real SMTP server was not used. `TAUR_MAIL_FROM` is already set; values with spaces must stay double-quoted. If you set `TAUR_SMTP_URL`, percent-encode `/ ? # % : @` in the username and password. An unencoded `/`, `?`, or `#` cuts the userinfo short and the process dials the wrong host. Startup names that parsed host and refuses it when it is not a hostname or an IP address. The password is not included in the message.
 
