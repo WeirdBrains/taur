@@ -28,6 +28,9 @@ Every new commit is checked; the push is rejected (message shown as `remote: err
 - the ref is not `refs/heads/master`, the push deletes master, or is not fast-forward;
 - a commit lacks `PKGBUILD` or `.SRCINFO`, or `.SRCINFO` fails to parse;
 - `.SRCINFO`'s pkgbase differs from the repository name;
+- an architecture-specific field (such as `depends_x86_64` or `depends_any`) names an
+  architecture the pkgbase `arch` lines have not already listed. `arch = any` with
+  `depends_x86_64` is the case yay and paru both refuse;
 - a simple `pkgbase=`, `pkgver=`, `pkgrel=`, `epoch=` or `pkgname=` line in the PKGBUILD disagrees with `.SRCINFO`. Lines that contain `$` or backticks are not compared. This does not execute the PKGBUILD and does not prove the two files match;
 - the tree contains subdirectories or submodules, or a file over 256 KiB;
 - a pkgname already belongs to another package base;

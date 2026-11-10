@@ -87,3 +87,6 @@
 - *Proposal (2026-11-05):* OpenSSH integration is `taur ssh-auth` + `taur git-serve`
   beside the embedded SSH server. `adopt` takes the orphan immediately; `disown`
   leaves the package orphaned; there is no `restore` of deleted package bases.
+- (2026-11-09): Import and push reject a `.SRCINFO` architecture-specific field unless
+  the pkgbase `arch` lines already name that architecture. `arch = any` with
+  `depends_x86_64`, and any `*_any` field, are refused, matching yay and paru.

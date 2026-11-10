@@ -4,7 +4,7 @@ pkgbase = hello-taur
 	pkgrel = 1
 	epoch = 1
 	url = https://example.com/hello-taur
-	arch = any
+	arch = x86_64
 	license = MIT
 	makedepends = rust>=1.80
 	depends = glibc
