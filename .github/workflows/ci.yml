@@ -1,12 +1,10 @@
 # Runs only on the alien-blue self-hosted runner. Do not add ubuntu-latest or
 # any other GitHub-hosted runner. Do not add pull_request triggers: a fork PR
-# must never execute on this machine.
+# must never execute on this machine. A push to main does not start this
+# workflow; run it with workflow_dispatch.
 name: CI
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:

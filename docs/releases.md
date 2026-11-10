@@ -89,7 +89,7 @@ That command has not been run. `Linger=no` until it is.
 
 ### What is allowed to start a job
 
-`.github/workflows/ci.yml` runs on a push to `main` and on `workflow_dispatch`. `.github/workflows/release.yml` runs on a push of a `v*` tag and on `workflow_dispatch`. There is no `pull_request` or `pull_request_target` trigger, so a fork pull request cannot run code here.
+`.github/workflows/ci.yml` runs on `workflow_dispatch` only. `.github/workflows/release.yml` runs on a push of a `v*` tag and on `workflow_dispatch`. There is no `pull_request` or `pull_request_target` trigger, so a fork pull request cannot run code here. A push to `main` does not start either workflow.
 
 Each job sets `permissions:`. CI is `contents: read`. The release packaging job is `contents: read`. Only the upload job is `contents: write`, and that job is skipped when the manual `upload` input is false. A tag push uploads only when the release has no assets yet. Replacing assets that are already there requires the manual `overwrite` input. The v1.3.2 assets are left in place by a dry run.
 
