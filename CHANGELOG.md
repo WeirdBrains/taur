@@ -6,7 +6,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ### Added
 
-- The home page of the package-server UI is a paginated index (20 packages per page) sortable by last update or popularity. A Downloaded option is shown but falls back to last update, because no download count is stored.
+- The home page of the package-server UI is a paginated index (20 packages per page) sortable by last update, downloads, or popularity. `DownloadCount` is the number of successful snapshot/recipe-archive responses for that package base (current and historic). Existing packages start at 0; past downloads are not backfilled. The count is not installs or unique users.
 - Organizations has a public, searchable directory and a public profile that lists that organization's accessible packages. A package's organization name links to that profile. Membership management stays on the same profile URL for members.
 - A package page lists recorded previous git revisions. Each revision opens its own details and snapshot of that commit, not the current tree.
 

@@ -144,16 +144,15 @@ async function pageSearch(params) {
           h("select", { name: "sort", "aria-label": "Sort packages", onchange: () => sortForm.requestSubmit() },
             [["updated", "Updated at"], ["downloaded", "Downloaded"], ["popularity", "Popularity"]].map(([v, lab]) =>
               h("option", { value: v, selected: v === requested }, lab)))));
-      const note = requested === "downloaded"
-        ? h("p", { class: "muted" }, "Download counts are not recorded. Packages are shown by last update.")
-        : null;
+      const note = h("p", { class: "muted" }, "Downloads count successful snapshot and recipe-archive responses (current and historic). They are not installs or unique users.");
       const rows = r.packages || [];
       const table = rows.length
-        ? h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Version", "Votes", "Popularity", "Description", "Updated"].map((x) => h("th", {}, x)))),
+        ? h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Version", "Votes", "Downloads", "Popularity", "Description", "Updated"].map((x) => h("th", {}, x)))),
             h("tbody", {}, rows.map((pkg) => h("tr", {},
               h("td", {}, link(`/packages/${enc(pkg.Name)}`, pkg.Name)),
               h("td", { class: pkg.OutOfDate ? "flagged" : "" }, pkg.Version),
               h("td", {}, pkg.NumVotes),
+              h("td", {}, pkg.DownloadCount ?? 0),
               h("td", {}, Number(pkg.Popularity || 0).toFixed(2)),
               h("td", {}, pkg.Description || ""),
               h("td", {}, fmtTime(pkg.LastModified))))))
@@ -190,7 +189,9 @@ async function pagePackage(name) {
     ["Provides", list("Provides")], ["Conflicts", list("Conflicts")], ["Replaces", list("Replaces")], ["Groups", list("Groups")],
     ["Maintainer", maintainerLink(info.Maintainer)], ["Co-maintainers", peopleLinks(info.CoMaintainers)],
     ["Organization", info.Organization ? link(`/orgs/${enc(info.Organization)}`, info.Organization) : "—"], ["Submitter", info.Submitter || "—"],
-    ["Votes", info.NumVotes], ["Popularity", info.Popularity.toFixed(2)],
+    ["Votes", info.NumVotes],
+    ["Downloads", info.DownloadCount ?? 0],
+    ["Popularity", info.Popularity.toFixed(2)],
     ["First submitted", fmtTime(info.FirstSubmitted)], ["Last updated", fmtTime(info.LastModified)],
     ["Out of date", info.OutOfDate ? h("span", { class: "flagged" }, `since ${fmtTime(info.OutOfDate)} by ${flag.flagger || "?"}: ${flag.comment || ""}`) : "no"],
   ];
@@ -198,7 +199,7 @@ async function pagePackage(name) {
   const out = [
     info.Archived ? h("p", { class: "flagged" }, `Archived since ${fmtTime(info.Archived)}. It is hidden from search and install. The git history is kept.`) : null,
     h("h1", {}, `${info.Name} ${info.Version}`),
-    h("div", { class: "card" }, dl),
+    h("div", { class: "card" }, dl, h("p", { class: "muted" }, "Downloads count successful snapshot and recipe-archive responses for this package base, including historic revisions. They are not a count of installed binaries or unique users.")),
   ];
 
   if (me) {

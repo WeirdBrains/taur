@@ -73,6 +73,7 @@ fn rpc_shapes() {
     let p = &v["results"][0];
     assert_eq!(p["Maintainer"], serde_json::Value::Null);
     assert_eq!(p["URLPath"], "/cgit/aur.git/snapshot/hello-taur.tar.gz");
+    assert_eq!(p["DownloadCount"], 0);
     assert_eq!(p["MakeDepends"][0], "rust>=1.80");
     assert!(p.get("Conflicts").is_none());
     assert_eq!(p["Keywords"], serde_json::json!([]));

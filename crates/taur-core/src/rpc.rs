@@ -35,6 +35,8 @@ pub fn info_value(p: &PkgInfo, full: bool) -> Value {
     m.insert("URL".into(), json!(p.url));
     m.insert("NumVotes".into(), json!(p.num_votes));
     m.insert("Popularity".into(), json!(p.popularity));
+    // TAUR extension (not in aurweb); clients ignore unknown fields.
+    m.insert("DownloadCount".into(), json!(p.download_count));
     m.insert("OutOfDate".into(), json!(p.out_of_date));
     m.insert("Maintainer".into(), json!(p.maintainer));
     m.insert("Submitter".into(), json!(p.submitter));

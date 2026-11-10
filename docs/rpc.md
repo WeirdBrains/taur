@@ -24,8 +24,10 @@ curl 'http://127.0.0.1:8080/rpc/v5/search/aur?by=keywords'
 
 Package fields: `ID, Name, PackageBaseID, PackageBase, Version, Description, URL,
 NumVotes, Popularity, OutOfDate, Maintainer, Submitter, FirstSubmitted, LastModified,
-URLPath`, plus the TAUR extension `Organization` (owning organization or null; AUR
-clients ignore it). `info` adds `Depends, MakeDepends, OptDepends, CheckDepends, Conflicts,
+URLPath`, plus the TAUR extensions `Organization` (owning organization or null) and
+`DownloadCount` (successful snapshot/recipe-archive responses for the package base,
+including historic revisions; not installs or unique users; existing packages start
+at 0). AUR clients ignore unknown fields. `info` adds `Depends, MakeDepends, OptDepends, CheckDepends, Conflicts,
 Provides, Replaces, Groups` (omitted when empty) and `License, Keywords, CoMaintainers`.
 
 Errors: `No request type/data specified.`, `Incorrect request type specified.`,

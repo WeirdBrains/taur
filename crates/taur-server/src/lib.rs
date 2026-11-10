@@ -3,7 +3,7 @@
 use axum::extract::{
     ConnectInfo, DefaultBodyLimit, FromRef, Multipart, Path, Query, RawQuery, State,
 };
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -59,7 +59,10 @@ pub fn app_with(state: AppState) -> Router {
         .route("/rpc/", get(rpc_legacy).post(rpc_legacy_post))
         .route("/rpc/v5/{kind}", get(rpc_v5).post(rpc_v5_post))
         .route("/rpc/v5/{kind}/{arg}", get(rpc_v5_arg))
-        .route("/cgit/aur.git/snapshot/{file}", get(snapshot))
+        .route(
+            "/cgit/aur.git/snapshot/{file}",
+            get(snapshot).head(snapshot),
+        )
         .route("/cgit/aur.git/plain/{*path}", get(plain_file))
         .route("/packages.gz", get(dump_packages))
         .route("/pkgbase.gz", get(dump_pkgbases))
@@ -567,16 +570,26 @@ fn gz(r: taur_core::Result<Vec<u8>>) -> Response {
 }
 
 async fn snapshot(
+    method: Method,
     State(s): St,
     Path(file): Path<String>,
     axum::extract::Query(q): axum::extract::Query<PlainQuery>,
 ) -> Response {
-    match file.strip_suffix(".tar.gz") {
-        Some(name) => {
-            let rev = q.id.as_deref().filter(|s| !s.is_empty()).unwrap_or("HEAD");
-            gz(s.snapshot_at(name, rev))
+    let Some(name) = file.strip_suffix(".tar.gz") else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let rev = q.id.as_deref().filter(|s| !s.is_empty()).unwrap_or("HEAD");
+    match s.snapshot_at(name, rev) {
+        Ok(body) => {
+            // Count only successful GET bodies. HEAD, failures, and inspection
+            // endpoints (plain files, RPC, git clone, dumps) are not counted.
+            if method == Method::GET {
+                let _ = s.record_snapshot_download(name);
+            }
+            ([(header::CONTENT_TYPE, "application/gzip")], body).into_response()
         }
-        None => StatusCode::NOT_FOUND.into_response(),
+        Err(Error::NotFound(_)) | Err(Error::Invalid(_)) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => ApiError(e).into_response(),
     }
 }
 

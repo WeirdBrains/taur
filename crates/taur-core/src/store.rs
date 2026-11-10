@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS pkgbases (
   org_id INTEGER REFERENCES orgs(id) ON DELETE SET NULL,
   num_votes INTEGER NOT NULL DEFAULT 0,
   popularity REAL NOT NULL DEFAULT 0,
+  download_count INTEGER NOT NULL DEFAULT 0,
   out_of_date INTEGER,
   archived_at INTEGER,
   first_submitted INTEGER NOT NULL,
@@ -184,6 +185,10 @@ pub struct PkgInfo {
     pub url: Option<String>,
     pub num_votes: i64,
     pub popularity: f64,
+    /// Successful snapshot/recipe archive downloads of this package base (current
+    /// and historic). Not a count of installs or unique users. Existing packages
+    /// start at 0; past downloads are not backfilled.
+    pub download_count: i64,
     pub out_of_date: Option<i64>,
     /// Set when a maintainer archived the package. Hidden from search and dumps.
     pub archived_at: Option<i64>,
@@ -277,7 +282,8 @@ pub(crate) fn escape_like(s: &str) -> String {
 }
 
 const SELECT: &str = "SELECT p.id, p.name, b.id, b.name, p.version, p.description, p.url, \
-    b.num_votes, b.popularity, b.out_of_date, m.name, s.name, b.first_submitted, b.last_modified, o.name, b.archived_at \
+    b.num_votes, b.popularity, b.out_of_date, m.name, s.name, b.first_submitted, b.last_modified, o.name, b.archived_at, \
+    b.download_count \
     FROM packages p JOIN pkgbases b ON b.id = p.pkgbase_id \
     LEFT JOIN users m ON m.id = b.maintainer_id LEFT JOIN users s ON s.id = b.submitter_id \
     LEFT JOIN orgs o ON o.id = b.org_id";
@@ -293,6 +299,7 @@ fn row_to_info(r: &Row) -> rusqlite::Result<PkgInfo> {
         url: r.get(6)?,
         num_votes: r.get(7)?,
         popularity: r.get(8)?,
+        download_count: r.get(16)?,
         out_of_date: r.get(9)?,
         archived_at: r.get(15)?,
         maintainer: r.get(10)?,
@@ -388,6 +395,7 @@ impl Store {
             ("pkgbases", "suspended_at", "INTEGER"),
             ("pkgbases", "suspended_reason", "TEXT"),
             ("pkgbases", "archived_at", "INTEGER"),
+            ("pkgbases", "download_count", "INTEGER NOT NULL DEFAULT 0"),
         ] {
             let exists = conn
                 .prepare(&format!(
@@ -970,8 +978,33 @@ impl Store {
         }
     }
 
+    /// Count one successful snapshot/recipe archive download for this package base.
+    /// Current and historic snapshots share the counter. Client addresses and
+    /// identities are not stored. A missing pkgbase is a no-op so a completed
+    /// download is not failed by the counter.
+    pub fn record_snapshot_download(&self, pkgbase: &str) -> Result<()> {
+        self.lock().execute(
+            "UPDATE pkgbases SET download_count = download_count + 1 WHERE name = ?1",
+            [pkgbase],
+        )?;
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn set_download_count(&self, pkgbase: &str, n: i64) -> Result<()> {
+        let changed = self.lock().execute(
+            "UPDATE pkgbases SET download_count = ?1 WHERE name = ?2",
+            params![n, pkgbase],
+        )?;
+        if changed == 0 {
+            Err(Error::NotFound(format!("package base {pkgbase}")))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Paginated public package index. `page` is 1-based; values below 1 become 1.
-    /// An unrecognized sort (including `downloaded`) falls back to `updated`.
+    /// An unrecognized sort falls back to `updated`.
     pub fn package_index(&self, sort: PackageSort, page: u32) -> Result<PackageIndex> {
         let page = page.max(1);
         let per_page = PACKAGE_INDEX_PER_PAGE;
@@ -979,6 +1012,7 @@ impl Store {
         let order = match sort {
             PackageSort::Updated => "b.last_modified DESC, p.name ASC",
             PackageSort::Popularity => "b.popularity DESC, p.name ASC",
+            PackageSort::Downloaded => "b.download_count DESC, p.name ASC",
         };
         let conn = self.lock();
         let total: i64 = conn.query_row(
@@ -1087,15 +1121,16 @@ pub const PACKAGE_INDEX_PER_PAGE: u32 = 20;
 #[serde(rename_all = "lowercase")]
 pub enum PackageSort {
     Updated,
+    Downloaded,
     Popularity,
 }
 
 impl PackageSort {
-    /// Unknown values, including `downloaded` (no download count is stored),
-    /// fall back to last-updated.
+    /// Unknown values fall back to last-updated.
     pub fn parse(raw: Option<&str>) -> Self {
         match raw.unwrap_or("updated") {
             "popularity" => Self::Popularity,
+            "downloaded" => Self::Downloaded,
             _ => Self::Updated,
         }
     }
@@ -1103,6 +1138,7 @@ impl PackageSort {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Updated => "updated",
+            Self::Downloaded => "downloaded",
             Self::Popularity => "popularity",
         }
     }

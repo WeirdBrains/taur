@@ -81,12 +81,53 @@ fn package_index_is_paginated_and_sorts_with_stable_ties() {
     assert_eq!(clamped.page, 1);
     assert_eq!(clamped.packages[0].name, "pkg01");
 
-    assert_eq!(PackageSort::parse(Some("downloaded")), PackageSort::Updated);
+    assert_eq!(
+        PackageSort::parse(Some("downloaded")),
+        PackageSort::Downloaded
+    );
     assert_eq!(PackageSort::parse(Some("nope")), PackageSort::Updated);
     assert_eq!(
         PackageSort::parse(Some("popularity")),
         PackageSort::Popularity
     );
+
+    // New packages start at 0. Higher counts rank first; equal counts tie on name ASC.
+    assert!(updated.packages.iter().all(|p| p.download_count == 0));
+    s.set_download_count("pkg25", 5).unwrap();
+    s.set_download_count("pkg24", 5).unwrap();
+    s.set_download_count("pkg23", 3).unwrap();
+    let dl = s.package_index(PackageSort::Downloaded, 1).unwrap();
+    assert_eq!(dl.sort, PackageSort::Downloaded);
+    assert_eq!(dl.per_page, PACKAGE_INDEX_PER_PAGE);
+    assert_eq!(dl.packages.len(), 20);
+    assert_eq!(dl.packages[0].name, "pkg24");
+    assert_eq!(dl.packages[1].name, "pkg25");
+    assert_eq!(dl.packages[2].name, "pkg23");
+    assert_eq!(dl.packages[0].download_count, 5);
+    let dl2 = s.package_index(PackageSort::Downloaded, 2).unwrap();
+    assert_eq!(dl2.packages.len(), 5);
+    let all_dl: Vec<_> = dl
+        .packages
+        .iter()
+        .chain(dl2.packages.iter())
+        .map(|p| p.name.as_str())
+        .collect();
+    let mut uniq_dl = all_dl.clone();
+    uniq_dl.sort();
+    uniq_dl.dedup();
+    assert_eq!(
+        uniq_dl.len(),
+        25,
+        "downloaded pages skip or duplicate: {all_dl:?}"
+    );
+
+    // The counter persists after a reopen.
+    s.record_snapshot_download("pkg23").unwrap();
+    drop(s);
+    let s = Store::open(d.path()).unwrap();
+    let again = s.package_index(PackageSort::Downloaded, 1).unwrap();
+    assert_eq!(again.packages[2].name, "pkg23");
+    assert_eq!(again.packages[2].download_count, 4);
 
     let alice = s.register("alice", "a@x", "correct horse").unwrap().id;
     let bob = s.register("bob", "b@x", "correct horse").unwrap().id;
@@ -220,4 +261,53 @@ fn replace_rel(dir: &Path, old: &str, new: &str) {
             .replace(&format!("pkgrel={old}"), &format!("pkgrel={new}"));
         fs::write(path, t).unwrap();
     }
+}
+
+#[test]
+fn download_count_defaults_to_zero_on_existing_pkgbases() {
+    let d = tempfile::tempdir().unwrap();
+    // Simulate a database created before download_count existed.
+    let conn = rusqlite::Connection::open(d.path().join("taur.db")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE pkgbases (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            maintainer_id INTEGER,
+            submitter_id INTEGER,
+            org_id INTEGER,
+            num_votes INTEGER NOT NULL DEFAULT 0,
+            popularity REAL NOT NULL DEFAULT 0,
+            out_of_date INTEGER,
+            first_submitted INTEGER NOT NULL,
+            last_modified INTEGER NOT NULL
+        );
+        INSERT INTO pkgbases (name, first_submitted, last_modified) VALUES ('oldpkg', 1, 1);",
+    )
+    .unwrap();
+    drop(conn);
+
+    let s = Store::open(d.path()).unwrap();
+    let conn = rusqlite::Connection::open(d.path().join("taur.db")).unwrap();
+    let count: i64 = conn
+        .query_row(
+            "SELECT download_count FROM pkgbases WHERE name = 'oldpkg'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "migration must default existing rows to 0, not invent history"
+    );
+    drop(conn);
+    s.record_snapshot_download("oldpkg").unwrap();
+    let conn = rusqlite::Connection::open(d.path().join("taur.db")).unwrap();
+    let count: i64 = conn
+        .query_row(
+            "SELECT download_count FROM pkgbases WHERE name = 'oldpkg'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
 }

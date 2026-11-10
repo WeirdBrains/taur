@@ -68,6 +68,16 @@ Deleted package bases keep their repository under `<home>/repos/.deleted/`. See
 
 ## Snapshots and plain files
 `GET /cgit/aur.git/snapshot/<pkgbase>.tar.gz` (the RPC `URLPath`): `git archive` of HEAD.
+Optional `id` selects a recorded revision instead of HEAD, for example
+`/cgit/aur.git/snapshot/<pkgbase>.tar.gz?id=<commit>`.
+
+Each successful `GET` of that snapshot route increments `DownloadCount` on the
+package base, whether the tree is current or historic. The counter starts at 0
+for existing packages; earlier downloads are not backfilled. It is a count of
+successful snapshot/recipe-archive responses, not of installed binaries or
+unique users, and it does not store client addresses. `HEAD` requests, failed
+responses, `/cgit/aur.git/plain/` file inspection, RPC info/search, git clones,
+and the site-wide metadata dumps are not counted.
 
 `GET /cgit/aur.git/plain/<path>?h=<pkgbase>` returns one file from that package base
 (`PKGBUILD`, `.SRCINFO`, …). `h` is the package base name — TAUR keeps a separate
