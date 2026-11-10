@@ -64,7 +64,7 @@ pub use ratelimit::{LimitClass, RatePolicy};
 pub use roles::{Action, Role};
 pub use store::{PkgInfo, SearchBy, Store};
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Resolve the data directory: explicit flag, then `TAUR_HOME`, then `~/.local/share/taur`.
 pub fn resolve_home(flag: Option<PathBuf>) -> PathBuf {
@@ -78,6 +78,17 @@ pub fn resolve_home(flag: Option<PathBuf>) -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_default();
     home.join(".local/share/taur")
+}
+
+/// Resolve the SQLite path: explicit flag, then `TAUR_DB`, then `<home>/taur.db`.
+pub fn resolve_db(flag: Option<PathBuf>, home: &Path) -> PathBuf {
+    if let Some(p) = flag {
+        return p;
+    }
+    if let Some(p) = std::env::var_os("TAUR_DB") {
+        return PathBuf::from(p);
+    }
+    home.join("taur.db")
 }
 
 /// Default public base URL used in emails.

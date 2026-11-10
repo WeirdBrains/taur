@@ -110,6 +110,23 @@ fn env_flags_validation_and_admins() {
             .to_str(),
         Some("/x")
     );
+    let db = home.path().join("elsewhere").join("taur.db");
+    set("TAUR_DB", db.to_str().unwrap());
+    assert_eq!(
+        Cli::try_parse_from(["taur", "serve"])
+            .unwrap()
+            .db
+            .as_deref(),
+        Some(db.as_path())
+    );
+    assert_eq!(
+        Cli::try_parse_from(["taur", "--db", "/y/taur.db", "serve"])
+            .unwrap()
+            .db
+            .unwrap()
+            .to_str(),
+        Some("/y/taur.db")
+    );
 
     // validation errors name the variable and never echo the SMTP URL
     let bad = |k: &str, v: &str| {

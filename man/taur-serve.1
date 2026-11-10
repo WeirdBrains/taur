@@ -4,7 +4,7 @@
 .SH NAME
 taur\-serve \- Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .SH SYNOPSIS
-\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-tls\fR] [\fB\-\-domain\fR] [\fB\-\-acme\-directory\fR] [\fB\-\-acme\-staging\fR] [\fB\-\-acme\-contact\fR] [\fB\-\-acme\-accept\-terms\fR] [\fB\-\-acme\-http\-bind\fR] [\fB\-\-acme\-cache\fR] [\fB\-\-acme\-renew\-before\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-ssh\-public\-host\fR] [\fB\-\-ssh\-public\-port\fR] [\fB\-\-grpc\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-\-admins\fR] [\fB\-\-owners\fR] [\fB\-\-rpc\-rate\-limit\fR] [\fB\-\-rpc\-rate\-window\fR] [\fB\-\-auth\-rate\-limit\fR] [\fB\-\-auth\-rate\-window\fR] [\fB\-\-git\-rate\-limit\fR] [\fB\-\-git\-rate\-window\fR] [\fB\-\-api\-rate\-limit\fR] [\fB\-\-api\-rate\-window\fR] [\fB\-\-dump\-rate\-limit\fR] [\fB\-\-dump\-rate\-window\fR] [\fB\-\-mcp\-rate\-limit\fR] [\fB\-\-mcp\-rate\-window\fR] [\fB\-\-grpc\-rate\-limit\fR] [\fB\-\-grpc\-rate\-window\fR] [\fB\-\-ssh\-rate\-limit\fR] [\fB\-\-ssh\-rate\-window\fR] [\fB\-\-trusted\-proxies\fR] [\fB\-\-rate\-max\-keys\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtaur serve\fR [\fB\-\-bind\fR] [\fB\-\-home\fR] [\fB\-\-db\fR] [\fB\-\-tls\fR] [\fB\-\-domain\fR] [\fB\-\-acme\-directory\fR] [\fB\-\-acme\-staging\fR] [\fB\-\-acme\-contact\fR] [\fB\-\-acme\-accept\-terms\fR] [\fB\-\-acme\-http\-bind\fR] [\fB\-\-acme\-cache\fR] [\fB\-\-acme\-renew\-before\fR] [\fB\-\-ssh\-bind\fR] [\fB\-\-ssh\-public\-host\fR] [\fB\-\-ssh\-public\-port\fR] [\fB\-\-grpc\-bind\fR] [\fB\-\-base\-url\fR] [\fB\-\-smtp\-url\fR] [\fB\-\-mail\-from\fR] [\fB\-\-admins\fR] [\fB\-\-owners\fR] [\fB\-\-rpc\-rate\-limit\fR] [\fB\-\-rpc\-rate\-window\fR] [\fB\-\-auth\-rate\-limit\fR] [\fB\-\-auth\-rate\-window\fR] [\fB\-\-git\-rate\-limit\fR] [\fB\-\-git\-rate\-window\fR] [\fB\-\-api\-rate\-limit\fR] [\fB\-\-api\-rate\-window\fR] [\fB\-\-dump\-rate\-limit\fR] [\fB\-\-dump\-rate\-window\fR] [\fB\-\-mcp\-rate\-limit\fR] [\fB\-\-mcp\-rate\-window\fR] [\fB\-\-grpc\-rate\-limit\fR] [\fB\-\-grpc\-rate\-window\fR] [\fB\-\-ssh\-rate\-limit\fR] [\fB\-\-ssh\-rate\-window\fR] [\fB\-\-trusted\-proxies\fR] [\fB\-\-rate\-max\-keys\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Run the HTTP server (AUR RPC, git, snapshots, dumps, API) and optional SSH and gRPC servers. Every setting can come from an environment variable; a flag given on the command line overrides the variable, which overrides the default
 .SH OPTIONS
@@ -19,6 +19,12 @@ May also be specified with the \fBTAUR_BIND\fR environment variable.
 Data directory (default: ~/.local/share/taur)
 .RS
 May also be specified with the \fBTAUR_HOME\fR environment variable. 
+.RE
+.TP
+\fB\-\-db\fR \fI<DB>\fR
+SQLite database path (default: <home>/taur.db)
+.RS
+May also be specified with the \fBTAUR_DB\fR environment variable. 
 .RE
 .TP
 \fB\-\-tls\fR \fI<TLS>\fR [default: off]
@@ -243,7 +249,10 @@ Print help
 Command\-line flags take precedence over environment variables, which take precedence over defaults.
 .TP
 \fBTAUR_HOME\fR
-Data directory (database, git repos, outbox, SSH host key). Default: ~/.local/share/taur.
+Data directory (git repos, outbox, SSH host key; default database). Default: ~/.local/share/taur.
+.TP
+\fBTAUR_DB\fR
+SQLite database file. WAL and SHM sidecars are created beside it. The parent directory must already exist. Default: <home>/taur.db.
 .TP
 \fBTAUR_BIND\fR
 Listen address (IP:PORT). Plaintext HTTP when TAUR_TLS=off; HTTPS when TAUR_TLS=acme. Default: 127.0.0.1:8080.

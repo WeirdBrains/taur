@@ -7,6 +7,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ### Added
 
 - The web UI footer shows the running server's version.
+- `TAUR_DB` / `--db` sets the SQLite database path (default `$TAUR_HOME/taur.db`).
 
 ### Fixed
 

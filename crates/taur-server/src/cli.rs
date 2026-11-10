@@ -14,6 +14,9 @@ pub struct Cli {
     /// Data directory (default: ~/.local/share/taur).
     #[arg(long, global = true, env = "TAUR_HOME")]
     pub home: Option<PathBuf>,
+    /// SQLite database path (default: <home>/taur.db).
+    #[arg(long, global = true, env = "TAUR_DB")]
+    pub db: Option<PathBuf>,
     #[command(subcommand)]
     pub cmd: Cmd,
 }
@@ -830,7 +833,12 @@ pub const ENV_VARS: &[(&str, &str, &str)] = &[
     (
         "TAUR_HOME",
         "~/.local/share/taur",
-        "Data directory (database, git repos, outbox, SSH host key).",
+        "Data directory (git repos, outbox, SSH host key; default database).",
+    ),
+    (
+        "TAUR_DB",
+        "<home>/taur.db",
+        "SQLite database file. WAL and SHM sidecars are created beside it. The parent directory must already exist.",
     ),
     (
         "TAUR_BIND",
@@ -1061,7 +1069,7 @@ pub fn man_pages() -> Vec<(String, Vec<u8>)> {
         let vars: &[(&str, &str, &str)] = if name == "taur-serve" {
             ENV_VARS
         } else {
-            &ENV_VARS[..1]
+            &ENV_VARS[..2]
         };
         out.push((format!("{name}.1"), add_section(buf, &env_section(vars))));
     }

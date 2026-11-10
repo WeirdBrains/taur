@@ -1,7 +1,7 @@
 //! Push validation and metadata updates, modelled on aurweb's git-update hook.
 //!
-//! The server runs git (smart HTTP or SSH) with `TAUR_HOOK_BIN`, `TAUR_HOME` and
-//! `TAUR_PUSHER` set; the repo hooks call `taur hook pre-receive|post-receive`, which
+//! The server runs git (smart HTTP or SSH) with `TAUR_HOOK_BIN`, `TAUR_HOME`,
+//! `TAUR_DB` and `TAUR_PUSHER` set; the repo hooks call `taur hook pre-receive|post-receive`, which
 //! call into these functions.
 
 use crate::repo::{git, run};

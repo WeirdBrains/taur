@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Read;
 use std::sync::Arc;
-use taur_core::{Store, resolve_home};
+use taur_core::{Store, resolve_db, resolve_home};
 use taur_server::cli::{Cli, Cmd};
 
 #[tokio::main]
@@ -16,10 +16,12 @@ async fn main() {
         std::process::exit(hook(name));
     }
     if let Cmd::GitServe { user } = &cli.cmd {
-        let store = Store::open(&resolve_home(cli.home.clone())).unwrap_or_else(|e| {
-            eprintln!("taur: {e}");
-            std::process::exit(1);
-        });
+        let home = resolve_home(cli.home.clone());
+        let store =
+            Store::open_with_db(&home, &resolve_db(cli.db.clone(), &home)).unwrap_or_else(|e| {
+                eprintln!("taur: {e}");
+                std::process::exit(1);
+            });
         std::process::exit(taur_server::ssh::exec_for_sshd(&store, user));
     }
     if let Err(e) = run(cli).await {
@@ -29,7 +31,9 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
-    let store = Store::open(&resolve_home(cli.home))?;
+    let home = resolve_home(cli.home);
+    let store = Store::open_with_db(&home, &resolve_db(cli.db, &home))?;
+
     match cli.cmd {
         Cmd::Serve(args) => {
             let cfg = args.validate()?;
@@ -489,6 +493,7 @@ fn hook(name: &str) -> i32 {
     let result = (|| -> taur_core::Result<()> {
         let home = std::env::var_os("TAUR_HOME")
             .ok_or_else(|| taur_core::Error::Invalid("TAUR_HOME not set".into()))?;
+        let home = std::path::Path::new(&home);
         let pusher = std::env::var("TAUR_PUSHER")
             .map_err(|_| taur_core::Error::Invalid("pushes must be authenticated".into()))?;
         let repo = std::env::current_dir()?;
@@ -498,7 +503,7 @@ fn hook(name: &str) -> i32 {
             .and_then(|n| n.strip_suffix(".git"))
             .ok_or_else(|| taur_core::Error::Invalid("not a TAUR repository".into()))?
             .to_string();
-        let store = Store::open(std::path::Path::new(&home))?;
+        let store = Store::open_with_db(home, &resolve_db(None, home))?;
         if let (Ok(from), Ok(base)) = (
             std::env::var("TAUR_MAIL_FROM"),
             std::env::var("TAUR_BASE_URL"),

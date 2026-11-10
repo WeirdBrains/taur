@@ -27,7 +27,7 @@ Without `TAUR_SMTP_URL`, messages are files in the data directory `outbox`. With
 
 ## Backups
 
-Copy the data directory while you can afford a short consistent snapshot: `taur.db` plus `repos/`. WAL mode allows a reader during normal operation. A copy taken in the middle of a push can be finished with the repository's own git files. Keep the outbox if you still need undelivered mail. Do not publish `taur.db`; it holds password hashes and session hashes.
+Copy the data directory while you can afford a short consistent snapshot: the SQLite file (`$TAUR_HOME/taur.db`, or `TAUR_DB` if set) plus its `-wal`/`-shm` sidecars, and `repos/`. WAL mode allows a reader during normal operation. A copy taken in the middle of a push can be finished with the repository's own git files. Keep the outbox if you still need undelivered mail. Do not publish `taur.db`; it holds password hashes and session hashes.
 
 ## Registries and trust
 

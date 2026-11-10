@@ -66,6 +66,7 @@ pub fn exec_for_sshd(store: &Store, user: &str) -> i32 {
         .env("GIT_CONFIG_GLOBAL", taur_core::NULL_DEVICE)
         .env("TAUR_HOOK_BIN", &hook_bin)
         .env("TAUR_HOME", store.home())
+        .env("TAUR_DB", store.db_path())
         .env("TAUR_PUSHER", user)
         .envs(store.hook_env());
     let code = match cmd.status() {
@@ -288,6 +289,7 @@ impl Handler for GitSsh {
             .env("GIT_CONFIG_GLOBAL", taur_core::NULL_DEVICE)
             .env("TAUR_HOOK_BIN", &self.hook_bin)
             .env("TAUR_HOME", self.store.home())
+            .env("TAUR_DB", self.store.db_path())
             .env("TAUR_PUSHER", &user)
             .envs(self.store.hook_env())
             .stdin(Stdio::piped())
