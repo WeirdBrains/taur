@@ -296,6 +296,7 @@ pub enum ModCmd {
 }
 
 pub fn run(cli: Cli) -> i32 {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     match execute(cli) {
         Ok(()) => 0,
         Err(e) => {

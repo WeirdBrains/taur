@@ -29,6 +29,31 @@ ver=$(/usr/bin/taur --version | awk '{print $NF}')
 ctl=$(/usr/bin/taurctl --version | awk '{print $NF}')
 [ "$ver" = "$ctl" ] || fail "taurctl $ctl != taur $ver"
 echo "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || fail "version $ver"
+acme=$(mktemp -d)
+TAUR_HOME="$acme" TAUR_TLS=acme TAUR_BIND=127.0.0.1:18080 TAUR_DOMAIN=pkg.example.com \
+  TAUR_ACME_CONTACT=mailto:admin@example.com TAUR_ACME_ACCEPT_TERMS=yes \
+  TAUR_ACME_HTTP_BIND=127.0.0.1:18081 \
+  TAUR_ACME_DIRECTORY=https://127.0.0.1:9/directory \
+  /usr/bin/taur serve >"$acme/serve.log" 2>&1 &
+acme_pid=$!
+acme_ok=0
+i=0
+while [ "$i" -lt 20 ]; do
+  if grep -q CryptoProvider "$acme/serve.log" || grep -q 'panicked at' "$acme/serve.log"; then
+    cat "$acme/serve.log" >&2
+    kill "$acme_pid" 2>/dev/null || true
+    fail "ACME startup panicked"
+  fi
+  if grep -q 'certificate request failed' "$acme/serve.log"; then
+    acme_ok=1
+    break
+  fi
+  i=$((i + 1))
+  sleep 0.25
+done
+kill "$acme_pid" 2>/dev/null || true
+[ "$acme_ok" = 1 ] || { cat "$acme/serve.log" >&2; fail "ACME startup did not reach a directory error"; }
+echo "ACME no panic"
 command -v git >/dev/null || fail "git missing"
 getent passwd taur >/dev/null || fail "user missing"
 shell=$(getent passwd taur | awk -F: '{print $NF}')

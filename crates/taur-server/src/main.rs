@@ -6,6 +6,11 @@ use taur_server::cli::{Cli, Cmd};
 
 #[tokio::main]
 async fn main() {
+    // rustls is built with both the ring and aws-lc-rs providers (instant-acme
+    // and rcgen pull in aws-lc-rs; russh and lettre use ring). With both
+    // features enabled, rustls refuses to pick a process default and panics
+    // the first time an ACME or TLS client is built.
+    taur_server::acme::install_crypto();
     let cli = Cli::parse();
     if let Cmd::Hook { name } = &cli.cmd {
         std::process::exit(hook(name));

@@ -1,6 +1,8 @@
 # Install a TAUR server
 
-x86_64 packages for TAUR 1.3.1. The binaries are built for glibc 2.31. `objdump -T` on the packaged `taur` and `taurctl` shows no GLIBC symbol newer than **2.30**, and both binaries printed `1.3.1` on Ubuntu 20.04 (glibc 2.31). They do not link OpenSSL.
+x86_64 packages for TAUR 1.3.2. This release fixes a startup panic with `TAUR_TLS=acme`: rustls is linked with both the ring and aws-lc-rs providers, and the process now selects ring before any ACME or TLS client is built. The package tests point that client at `https://127.0.0.1:9/directory` and require a connection error, not a `CryptoProvider` panic. No request is sent to Let's Encrypt.
+
+The binaries are built for glibc 2.31. `objdump -T` on the packaged `taur` and `taurctl` shows no GLIBC symbol newer than **2.30**, and both binaries printed `1.3.2` on Ubuntu 20.04 (glibc 2.31). They do not link OpenSSL.
 
 `apt install` / `dnf install` / `pacman -U` of these packages was run in containers for:
 
@@ -41,45 +43,45 @@ Data checked under `/var/lib/taur`: `taur.db` and `outbox/`. With `TAUR_SMTP_URL
 
 ## Download and check
 
-The 1.3.1 assets are on the [v1.3.1 release](https://github.com/WeirdBrains/taur/releases/tag/v1.3.1). `sha256sum -c SHA256SUMS` was run in the directory that contains all four files, and each single-file check below was run the same way. Downloading them from GitHub is checked again when that release is published.
+The 1.3.2 assets are on the [v1.3.2 release](https://github.com/WeirdBrains/taur/releases/tag/v1.3.2). `sha256sum -c SHA256SUMS` was run in the directory that contains all four files, and each single-file check below was run the same way. Downloading them from GitHub is checked again when that release is published.
 
 ```sh
 cd /tmp
-curl -fLO https://github.com/WeirdBrains/taur/releases/download/v1.3.1/SHA256SUMS
+curl -fLO https://github.com/WeirdBrains/taur/releases/download/v1.3.2/SHA256SUMS
 ```
 
 Ubuntu or Debian, then Fedora, then Arch. Download only the package you will install:
 
 ```sh
-curl -fLO https://github.com/WeirdBrains/taur/releases/download/v1.3.1/taur_1.3.1-1_amd64.deb
-grep 'taur_1.3.1-1_amd64.deb' SHA256SUMS | sha256sum -c -
+curl -fLO https://github.com/WeirdBrains/taur/releases/download/v1.3.2/taur_1.3.2-1_amd64.deb
+grep 'taur_1.3.2-1_amd64.deb' SHA256SUMS | sha256sum -c -
 ```
 
 ```sh
-curl -fLO https://github.com/WeirdBrains/taur/releases/download/v1.3.1/taur-1.3.1-1.x86_64.rpm
-grep 'taur-1.3.1-1.x86_64.rpm' SHA256SUMS | sha256sum -c -
+curl -fLO https://github.com/WeirdBrains/taur/releases/download/v1.3.2/taur-1.3.2-1.x86_64.rpm
+grep 'taur-1.3.2-1.x86_64.rpm' SHA256SUMS | sha256sum -c -
 ```
 
 ```sh
-curl -fLO https://github.com/WeirdBrains/taur/releases/download/v1.3.1/taur-1.3.1-1-x86_64.pkg.tar.zst
-grep 'taur-1.3.1-1-x86_64.pkg.tar.zst' SHA256SUMS | sha256sum -c -
+curl -fLO https://github.com/WeirdBrains/taur/releases/download/v1.3.2/taur-1.3.2-1-x86_64.pkg.tar.zst
+grep 'taur-1.3.2-1-x86_64.pkg.tar.zst' SHA256SUMS | sha256sum -c -
 ```
 
-`SHA256SUMS` also lists `taur-1.3.1-x86_64-unknown-linux-gnu.tar.gz` (the same binaries plus docs, man pages, and `packaging/`). A line must print `OK`.
+`SHA256SUMS` also lists `taur-1.3.2-x86_64-unknown-linux-gnu.tar.gz` (the same binaries plus docs, man pages, and `packaging/`). A line must print `OK`.
 
 ## Ubuntu
 
-Tested with `apt-get install -y ./taur_1.3.1-1_amd64.deb` on Ubuntu 22.04, Ubuntu 24.04, and Debian 12. `apt` pulls `git` and `adduser`. The Ubuntu container images ship a dpkg rule that drops `/usr/share/man` and `/usr/share/doc`; Debian 12 installed `/usr/share/man/man1/taur.1.gz` from the same `.deb`. A normal Ubuntu system without that rule unpacks them too. That normal-system case was not booted.
+Tested with `apt-get install -y ./taur_1.3.2-1_amd64.deb` on Ubuntu 22.04, Ubuntu 24.04, and Debian 12. `apt` pulls `git` and `adduser`. The Ubuntu container images ship a dpkg rule that drops `/usr/share/man` and `/usr/share/doc`; Debian 12 installed `/usr/share/man/man1/taur.1.gz` from the same `.deb`. A normal Ubuntu system without that rule unpacks them too. That normal-system case was not booted.
 
 ```sh
 sudo apt update
-sudo apt install ./taur_1.3.1-1_amd64.deb
+sudo apt install ./taur_1.3.2-1_amd64.deb
 taur --version
 taurctl --version
 systemctl is-enabled taur
 ```
 
-`taur --version` and `taurctl --version` printed `1.3.1` on these installs. On Debian 12, `systemctl is-enabled taur` printed `disabled`. The Ubuntu runs asserted that the unit was not `enabled`; the exact word was not recorded there.
+`taur --version` and `taurctl --version` printed `1.3.2` on these installs. On Debian 12, `systemctl is-enabled taur` printed `disabled`. The Ubuntu runs asserted that the unit was not `enabled`; the exact word was not recorded there.
 
 ### Listen address
 
@@ -89,7 +91,7 @@ The shipped `/etc/taur/taur.env` has `TAUR_TLS=off` and `TAUR_BIND=127.0.0.1:808
 curl -fsS http://127.0.0.1:8080/api/v1/server
 ```
 
-The body was `{"version":"1.3.1",...}`.
+The body was `{"version":"1.3.2",...}`.
 
 **Reverse proxy.** Leave `TAUR_TLS=off` and `TAUR_BIND=127.0.0.1:8080`, and point the proxy at that address. No proxy was installed in these tests. Details of what `TAUR_TLS=off` advertises are in [tls.md](tls.md).
 
@@ -156,22 +158,22 @@ The response had `"is_admin":false`. After the process was started again with th
 
 ### Upgrade and removal
 
-`apt-get install --reinstall ./taur_1.3.1-1_amd64.deb` kept a line that had been appended to `/etc/taur/taur.env`. A newer version than 1.3.1 was not installed. For a later package the same install command is the one to use, then start the process again. `systemctl restart taur` was not run.
+`apt-get install --reinstall ./taur_1.3.2-1_amd64.deb` kept a line that had been appended to `/etc/taur/taur.env`. A newer version than 1.3.2 was not installed. For a later package the same install command is the one to use, then start the process again. `systemctl restart taur` was not run.
 
 `apt-get remove taur` kept `/etc/taur/taur.env` and `/var/lib/taur`. `apt-get purge taur` deleted `/etc/taur/taur.env` and left `/var/lib/taur` and the `taur` user. Checked on Debian 12 and on Ubuntu 22.04 and 24.04.
 
 ```sh
-sudo apt install ./taur_1.3.1-1_amd64.deb
+sudo apt install ./taur_1.3.2-1_amd64.deb
 sudo apt remove taur
 sudo apt purge taur
 ```
 
 ## Fedora
 
-Tested with `dnf install -y ./taur-1.3.1-1.x86_64.rpm` on Fedora 45, Rocky Linux 9, and AlmaLinux 9. The package requires `git`, `systemd`, `shadow-utils`, and `util-linux` (that last one provides `nologin`; without it the Fedora 45 install stopped in `%pre` with `nologin shell is missing`).
+Tested with `dnf install -y ./taur-1.3.2-1.x86_64.rpm` on Fedora 45, Rocky Linux 9, and AlmaLinux 9. The package requires `git`, `systemd`, `shadow-utils`, and `util-linux` (that last one provides `nologin`; without it the Fedora 45 install stopped in `%pre` with `nologin shell is missing`).
 
 ```sh
-sudo dnf install ./taur-1.3.1-1.x86_64.rpm
+sudo dnf install ./taur-1.3.2-1.x86_64.rpm
 taur --version
 taurctl --version
 systemctl is-enabled taur
@@ -200,22 +202,22 @@ A cloud security group was not configured. Rocky and Alma use firewalld as well;
 
 ### Upgrade and removal
 
-`rpm -Uvh --nosignature --replacepkgs ./taur-1.3.1-1.x86_64.rpm` on Fedora 45 kept an edited `/etc/taur/taur.env`. A newer version was not installed. `systemctl restart` was not run.
+`rpm -Uvh --nosignature --replacepkgs ./taur-1.3.2-1.x86_64.rpm` on Fedora 45 kept an edited `/etc/taur/taur.env`. A newer version was not installed. `systemctl restart` was not run.
 
 `rpm -e taur` on Fedora 45 printed ` /etc/taur/taur.env saved as /etc/taur/taur.env.rpmsave`, removed `/etc/taur/taur.env`, and left `/var/lib/taur`. The `.rpmsave` file was still mode `0640` and owner `root:taur`. Rocky and Alma `dnf remove` left `/var/lib/taur`; their config-file rename was not listed.
 
 ```sh
-sudo dnf install ./taur-1.3.1-1.x86_64.rpm
+sudo dnf install ./taur-1.3.2-1.x86_64.rpm
 sudo dnf remove taur
 ```
 
 ## Arch
 
-Tested with `pacman -Sy` and `pacman -U --noconfirm ./taur-1.3.1-1-x86_64.pkg.tar.zst`. The package depends on `git` and `systemd`. The Arch container image's `pacman.conf` has `NoExtract` for `/usr/share/man` and `/usr/share/doc`, so those files were not unpacked there. The package archive itself contains `usr/share/man/man1/taur.1.gz`. A normal Arch system without that `NoExtract` was not used.
+Tested with `pacman -Sy` and `pacman -U --noconfirm ./taur-1.3.2-1-x86_64.pkg.tar.zst`. The package depends on `git` and `systemd`. The Arch container image's `pacman.conf` has `NoExtract` for `/usr/share/man` and `/usr/share/doc`, so those files were not unpacked there. The package archive itself contains `usr/share/man/man1/taur.1.gz`. A normal Arch system without that `NoExtract` was not used.
 
 ```sh
 sudo pacman -Sy
-sudo pacman -U ./taur-1.3.1-1-x86_64.pkg.tar.zst
+sudo pacman -U ./taur-1.3.2-1-x86_64.pkg.tar.zst
 taur --version
 taurctl --version
 ```
@@ -233,7 +235,7 @@ The install script printed `taur: installed and not started. Enable it with: sys
 `pacman -R taur` printed `/etc/taur/taur.env saved as /etc/taur/taur.env.pacsave`, removed `/etc/taur/taur.env`, and left `/var/lib/taur`. The `.pacsave` file was mode `0640`, owner `root:taur`.
 
 ```sh
-sudo pacman -U ./taur-1.3.1-1-x86_64.pkg.tar.zst
+sudo pacman -U ./taur-1.3.2-1-x86_64.pkg.tar.zst
 sudo pacman -R taur
 ```
 
