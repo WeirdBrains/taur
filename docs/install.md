@@ -69,6 +69,23 @@ grep 'taur-1.3.2-1-x86_64.pkg.tar.zst' SHA256SUMS | sha256sum -c -
 
 `SHA256SUMS` also lists `taur-1.3.2-x86_64-unknown-linux-gnu.tar.gz` (the same binaries plus docs, man pages, and `packaging/`). A line must print `OK`.
 
+## Tarball or local binaries
+
+The `.deb`, `.rpm`, and Arch packages already install `taur` and `taurctl` to `/usr/bin`. A tarball or a local `cargo` build is installed the same way, without changing shell startup files.
+
+System-wide:
+
+```sh
+sudo install -m755 taur taurctl /usr/bin/
+```
+
+Per-user (`~/.local/bin` is on PATH in many desktop sessions; add it to PATH in your own shell configuration if `command -v taur` does not find the binaries):
+
+```sh
+mkdir -p "$HOME/.local/bin"
+install -m755 taur taurctl "$HOME/.local/bin/"
+```
+
 ## Ubuntu
 
 Tested with `apt-get install -y ./taur_1.3.2-1_amd64.deb` on Ubuntu 22.04, Ubuntu 24.04, and Debian 12. `apt` pulls `git` and `adduser`. The Ubuntu container images ship a dpkg rule that drops `/usr/share/man` and `/usr/share/doc`; Debian 12 installed `/usr/share/man/man1/taur.1.gz` from the same `.deb`. A normal Ubuntu system without that rule unpacks them too. That normal-system case was not booted.

@@ -53,6 +53,73 @@ fn write_repo(dir: &Path, version: &str) {
         "# Changelog\n\n## [Unreleased]\n### Added\n- Pending.\n\n## [0.1.0] - 2026-01-01\n### Added\n- Start.\n",
     )
     .unwrap();
+    write_packaging(dir, version);
+}
+
+fn write_packaging(dir: &Path, version: &str) {
+    fs::create_dir_all(dir.join("packaging/arch")).unwrap();
+    fs::create_dir_all(dir.join("packaging/debian")).unwrap();
+    fs::create_dir_all(dir.join("packaging/rpm")).unwrap();
+    fs::write(
+        dir.join("packaging/arch/PKGBUILD"),
+        format!(
+            "pkgname=taur\npkgver={version}\npkgrel=1\npkgdesc='test'\narch=('x86_64')\nurl='https://example.com'\nlicense=('MIT')\ndepends=('git')\nsource=(payload.tar.gz)\nsha256sums=('SKIP')\npackage() {{ :; }}\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("packaging/debian/control.in"),
+        "Package: taur\nVersion: @VERSION@-1\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("packaging/rpm/taur.spec"),
+        "Name: taur\nVersion:        @VERSION@\nRelease:        1\n%changelog\n* @RPM_DATE@ WeirdBrains <taur@weirdbrains.com> - @VERSION@-1\n- Package TAUR @VERSION@.\n",
+    )
+    .unwrap();
+    let out = Command::new("makepkg")
+        .arg("--printsrcinfo")
+        .current_dir(dir.join("packaging/arch"))
+        .output()
+        .expect("makepkg --printsrcinfo");
+    assert!(
+        out.status.success(),
+        "makepkg --printsrcinfo failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    fs::write(dir.join("packaging/arch/.SRCINFO"), out.stdout).unwrap();
+}
+
+fn pkgver_of(dir: &Path) -> String {
+    fs::read_to_string(dir.join("packaging/arch/PKGBUILD"))
+        .unwrap()
+        .lines()
+        .find(|l| l.starts_with("pkgver="))
+        .unwrap()
+        .split_once('=')
+        .unwrap()
+        .1
+        .to_string()
+}
+
+fn srcinfo_pkgver(dir: &Path) -> String {
+    fs::read_to_string(dir.join("packaging/arch/.SRCINFO"))
+        .unwrap()
+        .lines()
+        .find(|l| l.trim_start().starts_with("pkgver = "))
+        .unwrap()
+        .split_once(" = ")
+        .unwrap()
+        .1
+        .to_string()
+}
+
+fn commit_and_push(fix: &Fix, paths: &[&str], message: &str) {
+    let mut args = vec!["add"];
+    args.extend_from_slice(paths);
+    git(fix.work.path(), &args);
+    git(fix.work.path(), &["commit", "-m", message]);
+    git(fix.work.path(), &["push", "origin", "main"]);
 }
 
 fn fixture(version: &str) -> Fix {
@@ -68,7 +135,16 @@ fn fixture(version: &str) -> Fix {
     git(work.path(), &["config", "user.name", "Release Test"]);
     git(
         work.path(),
-        &["add", "Cargo.toml", "Cargo.lock", "CHANGELOG.md"],
+        &[
+            "add",
+            "Cargo.toml",
+            "Cargo.lock",
+            "CHANGELOG.md",
+            "packaging/arch/PKGBUILD",
+            "packaging/arch/.SRCINFO",
+            "packaging/debian/control.in",
+            "packaging/rpm/taur.spec",
+        ],
     );
     git(work.path(), &["commit", "-m", "start"]);
     git(work.path(), &["push", "-u", "origin", "main"]);
@@ -178,6 +254,14 @@ fn default_minor_bump_commits_tags_and_pushes_only_that_tag() {
     let text = ok(&fix, &[]);
     assert!(text.contains("pushed v1.3.0"), "{text}");
     assert_eq!(version_of(fix.work.path()), "1.3.0");
+    assert_eq!(pkgver_of(fix.work.path()), "1.3.0");
+    assert_eq!(srcinfo_pkgver(fix.work.path()), "1.3.0");
+    let pkgbuild = fs::read_to_string(fix.work.path().join("packaging/arch/PKGBUILD")).unwrap();
+    assert!(pkgbuild.contains("pkgrel=1"), "{pkgbuild}");
+    let debian = fs::read_to_string(fix.work.path().join("packaging/debian/control.in")).unwrap();
+    assert!(debian.contains("Version: @VERSION@-1"), "{debian}");
+    let rpm = fs::read_to_string(fix.work.path().join("packaging/rpm/taur.spec")).unwrap();
+    assert!(rpm.contains("Version:        @VERSION@"), "{rpm}");
     assert!(
         fs::read_to_string(fix.work.path().join("Cargo.lock"))
             .unwrap()
@@ -232,6 +316,8 @@ fn dry_run_prints_the_plan_and_changes_nothing() {
     assert!(text.contains("does not create a GitHub release"), "{text}");
     assert_eq!(git(fix.work.path(), &["rev-parse", "HEAD"]), before);
     assert_eq!(version_of(fix.work.path()), "1.2.0");
+    assert_eq!(pkgver_of(fix.work.path()), "1.2.0");
+    assert_eq!(srcinfo_pkgver(fix.work.path()), "1.2.0");
     assert!(git(fix.work.path(), &["status", "--porcelain"]).is_empty());
     assert!(!remote_has_tag(fix._bare.path(), "v1.2.1"));
     assert!(fs::read_to_string(fix.log.path()).unwrap().is_empty());
@@ -363,4 +449,103 @@ fn a_rejected_push_does_not_publish_the_branch_or_the_tag() {
         "origin/main moved despite a rejected tag"
     );
     assert!(!remote_has_tag(fix._bare.path(), "v1.2.1"));
+}
+
+#[test]
+fn bump_updates_pkgbuild_and_srcinfo() {
+    let fix = fixture("1.2.0");
+    ok(&fix, &["--patch"]);
+    assert_eq!(pkgver_of(fix.work.path()), "1.2.1");
+    assert_eq!(srcinfo_pkgver(fix.work.path()), "1.2.1");
+    let pkgbuild = fs::read_to_string(fix.work.path().join("packaging/arch/PKGBUILD")).unwrap();
+    assert!(pkgbuild.contains("pkgrel=1"));
+    assert!(!pkgbuild.contains("pkgver=1.2.0"));
+    let debian = fs::read_to_string(fix.work.path().join("packaging/debian/control.in")).unwrap();
+    assert_eq!(debian, "Package: taur\nVersion: @VERSION@-1\n");
+    let rpm = fs::read_to_string(fix.work.path().join("packaging/rpm/taur.spec")).unwrap();
+    assert!(rpm.contains("@VERSION@"));
+    assert!(rpm.contains("Release:        1"));
+}
+
+#[test]
+fn missing_or_mismatched_package_metadata_is_rejected() {
+    let missing_pkgbuild = fixture("1.2.0");
+    fs::remove_file(missing_pkgbuild.work.path().join("packaging/arch/PKGBUILD")).unwrap();
+    commit_and_push(
+        &missing_pkgbuild,
+        &["packaging/arch/PKGBUILD"],
+        "drop PKGBUILD",
+    );
+    let err = fail(&missing_pkgbuild, &["--dry-run"]);
+    assert!(err.contains("missing") && err.contains("PKGBUILD"), "{err}");
+    assert_eq!(version_of(missing_pkgbuild.work.path()), "1.2.0");
+
+    let missing_srcinfo = fixture("1.2.0");
+    fs::remove_file(missing_srcinfo.work.path().join("packaging/arch/.SRCINFO")).unwrap();
+    commit_and_push(
+        &missing_srcinfo,
+        &["packaging/arch/.SRCINFO"],
+        "drop SRCINFO",
+    );
+    let err = fail(&missing_srcinfo, &["--dry-run"]);
+    assert!(err.contains("missing") && err.contains(".SRCINFO"), "{err}");
+
+    let drift = fixture("1.2.0");
+    let mut pkgbuild =
+        fs::read_to_string(drift.work.path().join("packaging/arch/PKGBUILD")).unwrap();
+    pkgbuild = pkgbuild.replace("pkgver=1.2.0", "pkgver=1.1.0");
+    fs::write(drift.work.path().join("packaging/arch/PKGBUILD"), pkgbuild).unwrap();
+    commit_and_push(&drift, &["packaging/arch/PKGBUILD"], "drift pkgver");
+    let err = fail(&drift, &["--dry-run"]);
+    assert!(
+        err.contains("pkgver") && (err.contains("1.1.0") || err.contains("expected 1.2.0")),
+        "{err}"
+    );
+    assert_eq!(version_of(drift.work.path()), "1.2.0");
+
+    let srcinfo_drift = fixture("1.2.0");
+    let mut srcinfo =
+        fs::read_to_string(srcinfo_drift.work.path().join("packaging/arch/.SRCINFO")).unwrap();
+    srcinfo = srcinfo.replace("pkgver = 1.2.0", "pkgver = 1.1.0");
+    fs::write(
+        srcinfo_drift.work.path().join("packaging/arch/.SRCINFO"),
+        srcinfo,
+    )
+    .unwrap();
+    commit_and_push(
+        &srcinfo_drift,
+        &["packaging/arch/.SRCINFO"],
+        "drift SRCINFO",
+    );
+    let err = fail(&srcinfo_drift, &["--dry-run"]);
+    assert!(err.contains(".SRCINFO") || err.contains("pkgver"), "{err}");
+
+    let debian = fixture("1.2.0");
+    fs::write(
+        debian.work.path().join("packaging/debian/control.in"),
+        "Package: taur\nVersion: 1.2.0-1\n",
+    )
+    .unwrap();
+    commit_and_push(
+        &debian,
+        &["packaging/debian/control.in"],
+        "literal debian version",
+    );
+    let err = fail(&debian, &["--dry-run"]);
+    assert!(
+        err.contains("@VERSION@") || err.contains("control.in"),
+        "{err}"
+    );
+
+    let rpm = fixture("1.2.0");
+    let spec = fs::read_to_string(rpm.work.path().join("packaging/rpm/taur.spec"))
+        .unwrap()
+        .replace("Version:        @VERSION@", "Version:        1.2.0");
+    fs::write(rpm.work.path().join("packaging/rpm/taur.spec"), spec).unwrap();
+    commit_and_push(&rpm, &["packaging/rpm/taur.spec"], "literal rpm version");
+    let err = fail(&rpm, &["--dry-run"]);
+    assert!(
+        err.contains("@VERSION@") || err.contains("taur.spec"),
+        "{err}"
+    );
 }

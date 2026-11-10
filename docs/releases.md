@@ -34,7 +34,11 @@ scripts/release.sh --version 1.4.0  # explicit stable core, tag v1.4.0
 - `Cargo.toml` workspace version, which the `taur` and `taurctl` binaries report
 - `Cargo.lock` versions for `taur-cli`, `taur-core`, and `taur-server`
 - `CHANGELOG.md`, by dating `## [Unreleased]` as `## [X.Y.Z] - YYYY-MM-DD` when that heading is not already there
+- `packaging/arch/PKGBUILD` `pkgver`, set to the same workspace version (`pkgrel` stays 1)
+- `packaging/arch/.SRCINFO`, regenerated with `makepkg --printsrcinfo` (or an Arch container if `makepkg` is not on PATH)
 - man pages, regenerated from the CLI so they show the same version
+
+Debian `control.in` and the RPM spec keep `@VERSION@` placeholders, which `scripts/package.sh` fills in. The release script checks those markers and that the Arch `pkgver` already matches the current workspace version; a missing file or mismatch stops the release. `.SRCINFO` is source-recipe metadata: it is included under `packaging/arch/` in the tree and in the release tarball, and it is not installed as a runtime file.
 
 Before the commit it runs `cargo fmt --all -- --check`, `cargo clippy --all-targets --offline -- -D warnings`, `cargo test --offline`, and `cargo build --release --offline`. A failed check restores the checkout to the commit you started from. A failed push leaves that release commit and its tag only on this machine; `origin` is unchanged and the tag is not overwritten.
 

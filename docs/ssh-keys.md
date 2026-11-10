@@ -24,7 +24,7 @@ otherwise. The forced command is `taur git-serve --user NAME`, which reads
 
 ```
 Match User aur
-    AuthorizedKeysCommand /usr/local/bin/taur ssh-auth %t %k
+    AuthorizedKeysCommand /usr/bin/taur ssh-auth %t %k
     AuthorizedKeysCommandUser taur
 ```
 

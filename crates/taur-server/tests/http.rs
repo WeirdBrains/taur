@@ -1740,6 +1740,10 @@ async fn web_ui_is_served() {
         let html = String::from_utf8_lossy(&body);
         assert!(html.contains(r#"<script src="/static/app.js">"#));
         assert!(
+            html.contains(r#"<link rel="icon" href="/favicon.ico" type="image/x-icon">"#),
+            "{page} should link the favicon: {html}"
+        );
+        assert!(
             html.contains(&format!("TAUR {}", env!("CARGO_PKG_VERSION"))),
             "{page} footer should show the binary version: {html}"
         );
@@ -1751,20 +1755,27 @@ async fn web_ui_is_served() {
     for (path, ctype) in [
         ("/static/app.js", "text/javascript"),
         ("/static/style.css", "text/css"),
+        ("/favicon.ico", "image/x-icon"),
     ] {
         let r = app
             .clone()
             .oneshot(Request::get(path).body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(r.status(), StatusCode::OK);
+        assert_eq!(r.status(), StatusCode::OK, "{path}");
         assert!(
             r.headers()[header::CONTENT_TYPE]
                 .to_str()
                 .unwrap()
-                .starts_with(ctype)
+                .starts_with(ctype),
+            "{path}"
         );
     }
+    let (status, ico) = get(&app, "/favicon.ico").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(&ico[..4], &[0, 0, 1, 0], "body must be an ICO");
+    let embedded = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/web/favicon.ico"));
+    assert_eq!(ico, embedded, "/favicon.ico must be the embedded icon");
     let (_, js) = get(&app, "/static/app.js").await;
     let js = String::from_utf8(js).unwrap();
     // every API path the UI calls exists

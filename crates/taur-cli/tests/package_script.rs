@@ -74,6 +74,23 @@ fn stage_only_uses_the_tag_tree_and_checkout_packaging() {
     let stage = out.path().join("stage");
     assert!(stage.join("usr/bin/taur").is_file());
     assert!(stage.join("usr/bin/taurctl").is_file());
+    fn no_srcinfo(dir: &std::path::Path) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                no_srcinfo(&path);
+            } else {
+                assert_ne!(
+                    path.file_name().and_then(|n| n.to_str()),
+                    Some(".SRCINFO"),
+                    ".SRCINFO must not be installed as a runtime file: {}",
+                    path.display()
+                );
+            }
+        }
+    }
+    no_srcinfo(&stage);
     assert!(stage.join("usr/lib/systemd/system/taur.service").is_file());
     assert!(stage.join("usr/lib/sysusers.d/taur.conf").is_file());
     assert!(stage.join("usr/lib/tmpfiles.d/taur.conf").is_file());

@@ -15,6 +15,32 @@ set -euo pipefail
 
 die() { echo "release: $*" >&2; exit 1; }
 
+# Real path of this script, even when cwd is a fixture worktree.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECK_PACKAGE_METADATA="$SCRIPT_DIR/check-package-metadata.py"
+
+# Write packaging/arch/.SRCINFO from the PKGBUILD with makepkg --printsrcinfo.
+# Falls back to an Arch container when makepkg is not on PATH. Does not install
+# packages on the host. .SRCINFO is source-recipe metadata, not a runtime file.
+write_srcinfo() {
+  local dir="$1" out
+  [[ -f "$dir/PKGBUILD" ]] || die "missing $dir/PKGBUILD"
+  if command -v makepkg >/dev/null 2>&1; then
+    out="$(cd "$dir" && makepkg --printsrcinfo)" || die "makepkg --printsrcinfo failed in $dir"
+  elif command -v podman >/dev/null 2>&1; then
+    out="$(podman run --rm -v "$dir:/pkg:ro" -w /pkg docker.io/library/archlinux:latest makepkg --printsrcinfo)" \
+      || die "podman makepkg --printsrcinfo failed in $dir"
+  else
+    die "cannot write $dir/.SRCINFO: makepkg is not on PATH and podman is not available"
+  fi
+  [[ -n "$out" ]] || die "makepkg --printsrcinfo produced no output in $dir"
+  printf '%s\n' "$out" > "$dir/.SRCINFO"
+}
+
+check_package_metadata() {
+  python3 "$CHECK_PACKAGE_METADATA" check "$1" --root "$root"
+}
+
 usage() {
   cat <<'EOF'
 Usage: scripts/release.sh [--dry-run] [--major | --patch | --version MAJOR.MINOR.PATCH]
@@ -25,12 +51,14 @@ must be greater than the current version. Those three modes are mutually
 exclusive. Tags are vMAJOR.MINOR.PATCH with no leading zeros, prerelease, or
 build metadata.
 
-The script updates the workspace version, lockfile, changelog heading, and man
-pages, runs fmt, clippy, tests, and a release build, then commits, creates an
-annotated tag, and pushes main and that tag together. It does not push other
-tags and it does not create a GitHub release. It does not build the .deb, .rpm,
-Arch package, or release tarball. After the tag is on origin, run
-scripts/package.sh VERSION. See docs/releases.md.
+The script updates the workspace version, lockfile, changelog heading, the
+Arch PKGBUILD pkgver and .SRCINFO, and man pages, runs fmt, clippy, tests, and
+a release build, then commits, creates an annotated tag, and pushes main and
+that tag together. It checks Debian and RPM @VERSION@ templates (package.sh
+fills those in) and fails if package metadata is missing or does not match the
+workspace version. It does not push other tags and it does not create a GitHub
+release. It does not build the .deb, .rpm, Arch package, or release tarball.
+After the tag is on origin, run scripts/package.sh VERSION. See docs/releases.md.
 EOF
 }
 
@@ -158,6 +186,8 @@ if [[ -n "$(git ls-remote origin "refs/tags/$tag")" ]]; then
   die "origin already has $tag; refusing to overwrite it"
 fi
 
+check_package_metadata "$current"
+
 plan() {
   cat <<EOF
 release plan
@@ -166,7 +196,7 @@ release plan
   tag:      $tag
   commit:   release: $tag
   push:     git push --atomic origin HEAD:main refs/tags/$tag
-  files:    Cargo.toml, Cargo.lock, CHANGELOG.md, man pages when present
+  files:    Cargo.toml, Cargo.lock, CHANGELOG.md, packaging/arch/PKGBUILD, packaging/arch/.SRCINFO, man pages when present
   checks:   cargo fmt, clippy -D warnings, cargo test, cargo build --release
   github:   this script does not create a GitHub release or upload binaries
 EOF
@@ -255,7 +285,10 @@ if heading not in text:
     text = text.replace(old, f"## [{new}] - {today}", 1)
     changelog.write_text(text)
 PY
+python3 "$CHECK_PACKAGE_METADATA" set-pkgver "$new" --root "$root"
 edited=1
+write_srcinfo "$root/packaging/arch"
+check_package_metadata "$new"
 
 if [[ -d man && -f crates/taur-cli/tests/cli.rs ]]; then
   TAUR_UPDATE_MAN=1 cargo test --offline -p taur-cli --test cli man_pages_up_to_date -- --exact
@@ -268,6 +301,7 @@ cargo test --offline
 cargo build --release --offline
 
 git add -- Cargo.toml Cargo.lock CHANGELOG.md
+git add -- packaging/arch/PKGBUILD packaging/arch/.SRCINFO
 if [[ -d man ]]; then
   git add -- man
 fi

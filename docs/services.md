@@ -4,8 +4,9 @@ All service configs live in `packaging/`. They run `taur serve` and take every s
 from the environment variables in [configuration.md](configuration.md), read from an
 env file (start from `packaging/taur.env.example` or `.env.example`). The env file may
 contain `TAUR_SMTP_URL` with a password, so keep it readable only by root and the
-service account. Prerequisites everywhere: the `taur` binary and `git` on `PATH`
-(git's `http-backend` serves clones and pushes). TLS is either `TAUR_TLS=acme` on this
+service account. Prerequisites everywhere: `taur`, `taurctl`, and `git` on `PATH`
+(git's `http-backend` serves clones and pushes). A system install puts both
+binaries in `/usr/bin`; a user install puts them in `$HOME/.local/bin`. TLS is either `TAUR_TLS=acme` on this
 process or a reverse proxy in front of plaintext `TAUR_TLS=off`. See [tls.md](tls.md).
 of `TAUR_BIND` (and `TAUR_GRPC_BIND` if public).
 
@@ -53,6 +54,7 @@ Files: `packaging/systemd/taur.service`, `packaging/systemd/taur.sysusers`,
 
 ```sh
 sudo install -Dm755 target/release/taur /usr/bin/taur
+sudo install -Dm755 target/release/taurctl /usr/bin/taurctl
 sudo install -Dm644 packaging/systemd/taur.sysusers /usr/lib/sysusers.d/taur.conf
 sudo install -Dm644 packaging/systemd/taur.tmpfiles /usr/lib/tmpfiles.d/taur.conf
 sudo systemd-sysusers && sudo systemd-tmpfiles --create
@@ -114,7 +116,8 @@ sudo dscl . -create /Users/_taur UniqueID 450
 sudo dscl . -create /Users/_taur PrimaryGroupID 450
 sudo dscl . -create /Users/_taur UserShell /usr/bin/false
 sudo dscl . -create /Users/_taur NFSHomeDirectory /usr/local/var/taur
-sudo install -m755 target/release/taur /usr/local/bin/taur
+sudo install -m755 target/release/taur /usr/bin/taur
+sudo install -m755 target/release/taurctl /usr/bin/taurctl
 sudo install -m755 packaging/launchd/taur-launchd /usr/local/libexec/taur-launchd
 sudo install -d -o _taur -g _taur /usr/local/var/taur /usr/local/var/log/taur
 sudo install -d /usr/local/etc/taur

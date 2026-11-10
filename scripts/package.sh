@@ -367,6 +367,8 @@ sed -e "s/^pkgver=.*/pkgver=${version}/" \
   -e "s/^sha256sums=.*/sha256sums=('${payload_sum}')/" \
   "$repo/packaging/arch/PKGBUILD" > "$arch_dir/PKGBUILD"
 cp "$repo/packaging/arch/taur.install" "$arch_dir/taur.install"
+# Source-recipe metadata next to the staged PKGBUILD. Not installed into the package root.
+(cd "$arch_dir" && makepkg --printsrcinfo > .SRCINFO) || die "makepkg --printsrcinfo failed for the staged Arch recipe"
 (
   cd "$arch_dir"
   SOURCE_DATE_EPOCH="$epoch" PACKAGER="WeirdBrains <taur@weirdbrains.com>" \
