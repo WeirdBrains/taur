@@ -4,10 +4,18 @@
 
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
+use std::sync::OnceLock;
 
-const INDEX: &str = include_str!("../web/index.html");
+const INDEX_TEMPLATE: &str = include_str!("../web/index.html");
 const APP_JS: &str = include_str!("../web/app.js");
 const STYLE: &str = include_str!("../web/style.css");
+const VERSION_PLACEHOLDER: &str = "__TAUR_VERSION__";
+
+fn index_html() -> &'static str {
+    static HTML: OnceLock<String> = OnceLock::new();
+    HTML.get_or_init(|| INDEX_TEMPLATE.replace(VERSION_PLACEHOLDER, env!("CARGO_PKG_VERSION")))
+        .as_str()
+}
 
 /// Paths rendered by the web UI (`{x}` = one segment).
 pub const PAGES: [&str; 21] = [
@@ -51,7 +59,7 @@ fn asset(body: &'static str, ctype: &'static str) -> Response {
 }
 
 pub async fn index() -> Response {
-    asset(INDEX, "text/html; charset=utf-8")
+    asset(index_html(), "text/html; charset=utf-8")
 }
 
 pub async fn app_js() -> Response {
@@ -60,4 +68,23 @@ pub async fn app_js() -> Response {
 
 pub async fn style() -> Response {
     asset(STYLE, "text/css; charset=utf-8")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn index_template_has_a_single_version_placeholder() {
+        let n = super::INDEX_TEMPLATE
+            .matches(super::VERSION_PLACEHOLDER)
+            .count();
+        assert_eq!(
+            n,
+            1,
+            "footer template must include {ph} once",
+            ph = super::VERSION_PLACEHOLDER
+        );
+        let html = super::index_html();
+        assert!(html.contains(env!("CARGO_PKG_VERSION")));
+        assert!(!html.contains(super::VERSION_PLACEHOLDER));
+    }
 }

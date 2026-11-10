@@ -2,7 +2,8 @@
 
 `taur serve` serves a static web interface (plain HTML/CSS/JavaScript in
 `crates/taur-server/web/`, embedded in the binary; no Node toolchain). It is a thin
-client of the JSON API, like `taurctl`.
+client of the JSON API, like `taurctl`. The footer shows the running server's version
+(`CARGO_PKG_VERSION` of the `taur` binary).
 
 ## Pages
 | Path | What |

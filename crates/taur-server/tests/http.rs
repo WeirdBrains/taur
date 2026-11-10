@@ -1737,7 +1737,16 @@ async fn web_ui_is_served() {
         );
         assert!(r.headers().contains_key(header::CONTENT_SECURITY_POLICY));
         let body = r.into_body().collect().await.unwrap().to_bytes();
-        assert!(String::from_utf8_lossy(&body).contains(r#"<script src="/static/app.js">"#));
+        let html = String::from_utf8_lossy(&body);
+        assert!(html.contains(r#"<script src="/static/app.js">"#));
+        assert!(
+            html.contains(&format!("TAUR {}", env!("CARGO_PKG_VERSION"))),
+            "{page} footer should show the binary version: {html}"
+        );
+        assert!(
+            !html.contains("__TAUR_VERSION__"),
+            "{page} left the version placeholder in place"
+        );
     }
     for (path, ctype) in [
         ("/static/app.js", "text/javascript"),
