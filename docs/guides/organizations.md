@@ -19,4 +19,6 @@ Open **Organizations** and create a name. You become its Owner.
 
 ## Move a package
 
+On Upload, the owner list includes every organization where you can manage packages. A new package is created under the one you pick. An update does not move it.
+
 On a package you maintain, transfer it to the organization or to another user. Members can then push and edit co-maintainers according to their role. Disowning leaves the package orphaned so someone else can adopt it.

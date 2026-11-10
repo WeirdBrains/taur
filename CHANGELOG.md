@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- The upload form can publish a new package to your account or to an organization you can manage.
+
 ## [1.4.0] - 2026-11-10
 
 ### Fixed

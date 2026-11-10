@@ -377,7 +377,7 @@ impl Store {
                 &dir,
                 &format!("mirror {mirror} {}", tree.revision),
             )?;
-            self.import_srcinfo_in(&tree.info, None, mirror)?;
+            self.import_srcinfo_in(&tree.info, None, mirror, None)?;
             Ok(())
         })();
         let _ = std::fs::remove_dir_all(&dir);

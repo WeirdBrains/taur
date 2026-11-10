@@ -206,6 +206,23 @@ impl Store {
             .ok_or_else(|| Error::NotFound(format!("user {name}")))
     }
 
+    /// Organization id when `user` is a member who can manage its packages.
+    pub fn manageable_org(&self, user: i64, name: &str) -> Result<i64> {
+        let id = self.org_id(name).map_err(|e| match e {
+            Error::NotFound(_) => Error::Invalid(format!("organization {name} was not found")),
+            other => other,
+        })?;
+        match self.role_in(id, user)? {
+            Some(role) if role.allows(Action::ManagePackages) => Ok(id),
+            Some(_) => Err(Error::Invalid(format!(
+                "you cannot manage packages in organization {name}"
+            ))),
+            None => Err(Error::Invalid(format!(
+                "you are not a member of organization {name}"
+            ))),
+        }
+    }
+
     /// Organizations `user` belongs to, with their role.
     pub fn orgs_for(&self, user: i64) -> Result<Vec<OrgMembership>> {
         let conn = self.lock();

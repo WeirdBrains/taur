@@ -11,7 +11,9 @@ This is how a package you maintain shows up in search.
 
 Open [Upload](/upload) after your email is verified. Choose a `.tar.gz`, `.tar`, or `.zip` of the package directory. `PKGBUILD` and `.SRCINFO` sit at the top of that directory, or inside one folder. The archive is at most 8 MiB, with at most 64 files, and each file is at most 256 KiB. Nested directories, symlinks, and paths that leave the directory are refused.
 
-The server checks `.SRCINFO`, the literal `PKGBUILD` assignments, architectures, maintainership, and any registry rule. It does not run the PKGBUILD or `makepkg`. A new package base is adopted to you. An update is accepted only when you could also `git push` that base: you maintain it, you co-maintain it, or your organization can manage it. A rejected package stays rejected.
+The owner list is your account and every organization where you can manage packages. The default is your account. A new package is created under that owner immediately. An update keeps the current owner. If you name an organization that is not the package's organization, the upload is refused and nothing is moved.
+
+The server checks `.SRCINFO`, the literal `PKGBUILD` assignments, architectures, maintainership, and any registry rule. It does not run the PKGBUILD or `makepkg`. A new package base is adopted by the owner selected above. An update is accepted only when you could also `git push` that base: you maintain it, you co-maintain it, or your organization can manage it. A rejected package stays rejected.
 
 Git and SSH pushes are unchanged.
 
@@ -53,7 +55,7 @@ Use the SSH clone line on the server's package page if the port is not 2222. The
 
 An orphan can be adopted from its package page. If you are not a site admin, that files an adoption request. A site admin accepts it.
 
-To publish under an organization, create the organization, then transfer the package base to it from the package page. Members with a role in that organization can push updates.
+To publish a new package under an organization from the site, pick that organization on Upload. With git, create the organization, push the package, then transfer the package base from the package page. Members who can manage packages in that organization can push updates.
 
 ## What the server checks
 

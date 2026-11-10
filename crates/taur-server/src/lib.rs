@@ -1315,27 +1315,43 @@ async fn upload_package(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let user = auth_verified(&s, &h)?;
     let mut archive = None;
+    let mut organization = None;
     while let Some(field) = body
         .next_field()
         .await
         .map_err(|e| Error::Invalid(format!("could not read the upload: {e}")))?
     {
-        if field.name() == Some("archive") || archive.is_none() {
-            let data = field
-                .bytes()
-                .await
-                .map_err(|e| Error::Invalid(format!("could not read the upload: {e}")))?;
-            if data.len() as u64 > taur_core::upload::MAX_ARCHIVE_BYTES {
-                return Err(Error::Invalid("the archive is larger than 8 MiB".into()).into());
+        match field.name() {
+            Some("organization") => {
+                organization = Some(
+                    field
+                        .text()
+                        .await
+                        .map_err(|e| Error::Invalid(format!("could not read the upload: {e}")))?,
+                );
             }
-            archive = Some(data);
+            Some("archive") => {
+                let data = field
+                    .bytes()
+                    .await
+                    .map_err(|e| Error::Invalid(format!("could not read the upload: {e}")))?;
+                if data.len() as u64 > taur_core::upload::MAX_ARCHIVE_BYTES {
+                    return Err(Error::Invalid("the archive is larger than 8 MiB".into()).into());
+                }
+                archive = Some(data);
+            }
+            _ => {}
         }
     }
     let Some(archive) = archive else {
         return Err(Error::Invalid("choose a .tar.gz, .tar, or .zip".into()).into());
     };
     let dir = taur_core::upload::extract_recipe(&archive)?;
-    let published = s.publish_recipe(&user, dir.path())?;
+    let org = organization
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let published = s.publish_recipe(&user, dir.path(), org)?;
     let status = if published.created {
         StatusCode::CREATED
     } else {
