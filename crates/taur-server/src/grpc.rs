@@ -20,6 +20,10 @@ fn status(e: Error) -> Status {
         Error::NotFound(m) => Status::not_found(m),
         Error::Conflict(m) => Status::already_exists(m),
         Error::Invalid(m) | Error::Parse(m) => Status::invalid_argument(m),
+        Error::Mail(m) => {
+            eprintln!("taur: mail delivery failed: {m}");
+            Status::unavailable("mail server unreachable")
+        }
         Error::RateLimited { retry_after } => {
             let mut st = Status::resource_exhausted("rate limit reached");
             if let Ok(value) = retry_after.to_string().parse() {
