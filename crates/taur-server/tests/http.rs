@@ -2157,9 +2157,13 @@ async fn http_and_mcp_acceptance_is_what_the_gate_reads() {
 }
 
 fn recipe_gzip(rel: &str) -> Vec<u8> {
-    let pkg = format!("pkgbase=webup\npkgname=(webup)\npkgver=1.0.0\npkgrel={rel}\narch=(any)\n");
+    recipe_gzip_base("webup", rel)
+}
+
+fn recipe_gzip_base(base: &str, rel: &str) -> Vec<u8> {
+    let pkg = format!("pkgbase={base}\npkgname=({base})\npkgver=1.0.0\npkgrel={rel}\narch=(any)\n");
     let src = format!(
-        "pkgbase = webup\n\tpkgdesc = Uploaded\n\tpkgver = 1.0.0\n\tpkgrel = {rel}\n\tarch = any\n\npkgname = webup\n"
+        "pkgbase = {base}\n\tpkgdesc = Uploaded\n\tpkgver = 1.0.0\n\tpkgrel = {rel}\n\tarch = any\n\npkgname = {base}\n"
     );
     fn ustar(name: &str, body: &[u8]) -> Vec<u8> {
         let mut h = vec![0u8; 512];
@@ -2196,9 +2200,22 @@ fn recipe_gzip(rel: &str) -> Vec<u8> {
     enc.finish().unwrap()
 }
 
-fn upload_request(token: Option<&str>, bytes: &[u8], csrf: bool) -> Request<Body> {
+fn upload_request(
+    token: Option<&str>,
+    bytes: &[u8],
+    csrf: bool,
+    organization: Option<&str>,
+) -> Request<Body> {
     let boundary = "taurboundary";
     let mut body = Vec::new();
+    if let Some(org) = organization {
+        body.extend(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"organization\"\r\n\r\n{org}\r\n"
+            )
+            .into_bytes(),
+        );
+    }
     body.extend(
         format!(
             "--{boundary}\r\nContent-Disposition: form-data; name=\"archive\"; filename=\"webup.tar.gz\"\r\nContent-Type: application/gzip\r\n\r\n"
@@ -2228,13 +2245,13 @@ async fn package_upload_creates_updates_and_checks_permission() {
     let (d, app) = setup();
     let gzip = recipe_gzip("1");
     assert_eq!(
-        call(&app, upload_request(None, &gzip, false)).await.0,
+        call(&app, upload_request(None, &gzip, false, None)).await.0,
         StatusCode::UNAUTHORIZED
     );
     let ada = token(&app, d.path(), "ada").await;
-    let (st, _) = call(&app, upload_request(Some(&ada), &gzip, false)).await;
+    let (st, _) = call(&app, upload_request(Some(&ada), &gzip, false, None)).await;
     assert_eq!(st, StatusCode::FORBIDDEN);
-    let (st, body) = call(&app, upload_request(Some(&ada), &gzip, true)).await;
+    let (st, body) = call(&app, upload_request(Some(&ada), &gzip, true, None)).await;
     assert_eq!(
         st,
         StatusCode::CREATED,
@@ -2245,7 +2262,7 @@ async fn package_upload_creates_updates_and_checks_permission() {
     assert_eq!(created["pkgbase"], "webup");
     assert_eq!(created["created"], true);
     let again = recipe_gzip("2");
-    let (st, body) = call(&app, upload_request(Some(&ada), &again, true)).await;
+    let (st, body) = call(&app, upload_request(Some(&ada), &again, true, None)).await;
     assert_eq!(st, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     assert_eq!(
         serde_json::from_slice::<Value>(&body).unwrap()["created"],
@@ -2259,7 +2276,9 @@ async fn package_upload_creates_updates_and_checks_permission() {
     );
     let bob = token(&app, d.path(), "bob").await;
     assert_eq!(
-        call(&app, upload_request(Some(&bob), &again, true)).await.0,
+        call(&app, upload_request(Some(&bob), &again, true, None))
+            .await
+            .0,
         StatusCode::FORBIDDEN
     );
     call(
@@ -2286,11 +2305,15 @@ async fn package_upload_creates_updates_and_checks_permission() {
         .as_str()
         .unwrap()
         .to_string();
-    let (st, body) = call(&app, upload_request(Some(&cara), &again, true)).await;
+    let (st, body) = call(&app, upload_request(Some(&cara), &again, true, None)).await;
     assert_eq!(st, StatusCode::FORBIDDEN);
     assert!(String::from_utf8(body).unwrap().contains("not verified"));
     let bad = recipe_gzip("1");
-    let (st, body) = call(&app, upload_request(Some(&ada), b"not-an-archive", true)).await;
+    let (st, body) = call(
+        &app,
+        upload_request(Some(&ada), b"not-an-archive", true, None),
+    )
+    .await;
     assert_eq!(
         st,
         StatusCode::BAD_REQUEST,
@@ -2398,4 +2421,219 @@ async fn archive_hides_a_package_and_the_maintainer_can_flag_it() {
             >= 1
     );
     let _ = d;
+}
+
+#[tokio::test]
+async fn upload_owner_picker_adopts_an_organization_without_moving_an_update() {
+    let (d, app) = setup();
+    let ada = token(&app, d.path(), "ada").await;
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/orgs",
+                Some(&ada),
+                json!({"name": "brains"})
+            ),
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    let bob = token(&app, d.path(), "bob").await;
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/orgs/brains/members/bob",
+                Some(&ada),
+                json!({"role": "contributor"}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (st, body) = call(
+        &app,
+        upload_request(Some(&ada), &recipe_gzip("1"), true, Some("brains")),
+    )
+    .await;
+    assert_eq!(
+        st,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let page = get_json(&app, "/api/v1/packages/by-name/webup").await;
+    assert_eq!(page["Organization"], "brains");
+    assert_eq!(page["Maintainer"], "ada");
+    let (st, body) = call(
+        &app,
+        upload_request(Some(&bob), &recipe_gzip("2"), true, Some("Brains")),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(
+        get_json(&app, "/api/v1/packages/by-name/webup").await["Organization"],
+        "brains"
+    );
+    let (st, _) = call(
+        &app,
+        upload_request(Some(&bob), &recipe_gzip("3"), true, Some("")),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = call(
+        &app,
+        upload_request(Some(&bob), &recipe_gzip("4"), true, None),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(
+        get_json(&app, "/api/v1/packages/by-name/webup").await["Organization"],
+        "brains"
+    );
+    let (st, body) = call(
+        &app,
+        upload_request(Some(&bob), &recipe_gzip("5"), true, Some("elsewhere")),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    let text = String::from_utf8(body).unwrap();
+    assert!(text.contains("does not change its owner"), "{text}");
+    let page = get_json(&app, "/api/v1/packages/by-name/webup").await;
+    assert!(
+        page["Version"].as_str().unwrap().ends_with("-4"),
+        "a rejected owner change must not publish the new recipe: {page}"
+    );
+    assert_eq!(page["Organization"], "brains");
+    call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/register",
+            None,
+            json!({"name": "cara", "email": "cara@x", "password": "longenough"}),
+        ),
+    )
+    .await;
+    let vt = taur_core::mail::FileMailer::find_token(&d.path().join("outbox"), "cara@x", "verify")
+        .unwrap();
+    assert_eq!(
+        call(
+            &app,
+            send("POST", "/api/v1/verify", None, json!({"token": vt})),
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, login) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/login",
+            None,
+            json!({"name": "cara", "password": "longenough"}),
+        ),
+    )
+    .await;
+    let cara = serde_json::from_slice::<Value>(&login).unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (st, body) = call(
+        &app,
+        upload_request(
+            Some(&cara),
+            &recipe_gzip_base("solo", "1"),
+            true,
+            Some("brains"),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    assert!(
+        String::from_utf8(body).unwrap().contains("not a member"),
+        "cara"
+    );
+    assert_eq!(get_json(&app, "/rpc/v5/info/solo").await["resultcount"], 0);
+    let dana = token(&app, d.path(), "dana").await;
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "PUT",
+                "/api/v1/admin/users/dana/admin",
+                Some(&ada),
+                json!({"on": true}),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (st, body) = call(
+        &app,
+        upload_request(
+            Some(&dana),
+            &recipe_gzip_base("adminpkg", "1"),
+            true,
+            Some("brains"),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    assert!(
+        String::from_utf8(body).unwrap().contains("not a member"),
+        "site admin without membership"
+    );
+    assert_eq!(
+        get_json(&app, "/rpc/v5/info/adminpkg").await["resultcount"],
+        0
+    );
+    let (st, body) = call(
+        &app,
+        upload_request(
+            Some(&ada),
+            &recipe_gzip_base("ghost", "1"),
+            true,
+            Some("no-such"),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8(body).unwrap().contains("was not found"));
+    let (st, _) = call(
+        &app,
+        upload_request(Some(&ada), &recipe_gzip_base("mine", "1"), true, None),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (st, body) = call(
+        &app,
+        upload_request(
+            Some(&ada),
+            &recipe_gzip_base("mine", "2"),
+            true,
+            Some("brains"),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    assert!(
+        String::from_utf8(body)
+            .unwrap()
+            .contains("personal account")
+    );
+    assert!(
+        get_json(&app, "/api/v1/packages/by-name/mine").await["Version"]
+            .as_str()
+            .unwrap()
+            .ends_with("-1")
+    );
+    assert!(get_json(&app, "/api/v1/packages/by-name/mine").await["Organization"].is_null());
 }

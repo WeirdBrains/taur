@@ -1,10 +1,14 @@
 # Importing packages
 
 A verified user can also upload that directory as a `.tar.gz`, `.tar`, or `.zip` at `/upload`
-(`POST /api/v1/packages/upload`, form field `archive`). The same `.SRCINFO` and
-`PKGBUILD` checks run. The PKGBUILD is not executed. A new package base is adopted
-by the uploader. An existing one is updated only when that user could push it.
-The archive is at most 8 MiB. See [Publish a package](guides/publish.md).
+(`POST /api/v1/packages/upload`, multipart field `archive`, optional field
+`organization`). The same `.SRCINFO` and `PKGBUILD` checks run. The PKGBUILD is not
+executed. With `organization` empty or absent, a new package base is adopted by the
+uploader. A name adopts it to that organization in the same insert; the uploader must
+be a member who can manage its packages. An existing package base is updated only when
+that user could push it, and its owner is left unchanged. A non-empty `organization`
+that is not the current owner is rejected. The archive is at most 8 MiB. See
+[Publish a package](guides/publish.md).
 
 `taur import DIR [--maintainer USER]`
 

@@ -147,6 +147,9 @@ fn pages_render_in_chromium() {
     );
     assert!(verify.contains("Email verified"), "{verify}");
     assert!(store.user_by_name("alice").unwrap().unwrap().verified);
+    store
+        .create_org(store.user_by_name("alice").unwrap().unwrap().id, "weborg")
+        .unwrap();
     let reset = dump(&format!("{url}/reset"), profile.path(), "Reset password");
     assert!(reset.contains("Reset password"), "{reset}");
 
@@ -155,7 +158,7 @@ fn pages_render_in_chromium() {
         .unwrap();
     let session = store.login("alice", "longenough").unwrap().token;
     let upload_hook = format!(
-        "(() => {{ localStorage.setItem('taur.token', {session:?}); if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} const input = document.querySelector('input[name=archive]'); if (input && !window.__taurSent) {{ window.__taurSent = 1; const bin = Uint8Array.from(atob({b64:?}), c => c.charCodeAt(0)); const file = new File([bin], 'webup.tar.gz', {{type:'application/gzip'}}); const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files; input.form.requestSubmit(); }} }})()",
+        "(() => {{ localStorage.setItem('taur.token', {session:?}); if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} const input = document.querySelector('input[name=archive]'); const owner = document.querySelector('select[name=owner]'); if (input && owner && [...owner.options].some((o) => o.value === 'weborg') && !window.__taurSent) {{ window.__taurSent = 1; owner.value = 'weborg'; const bin = Uint8Array.from(atob({b64:?}), c => c.charCodeAt(0)); const file = new File([bin], 'webup.tar.gz', {{type:'application/gzip'}}); const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files; input.form.requestSubmit(); }} }})()",
         b64 = b64(&webup_gzip())
     );
     let uploaded = dump_hook(
@@ -166,6 +169,7 @@ fn pages_render_in_chromium() {
     );
     assert!(uploaded.contains("webup 1.0.0-1"), "{uploaded}");
     assert!(uploaded.contains("Published webup"), "{uploaded}");
+    assert!(uploaded.contains("weborg"), "{uploaded}");
     let cycle = format!(
         "(() => {{ localStorage.setItem('taur.token', {session:?}); window.prompt = () => 'upstream 2.0'; window.confirm = () => true; if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} const click = (label) => [...document.querySelectorAll('button')].find((b) => b.textContent === label); if (!window.__step) {{ const b = click('Mark out of date'); if (b) {{ window.__step = 1; b.click(); }} return; }} if (window.__step === 1) {{ const b = click('Clear out-of-date flag'); if (b) {{ window.__step = 2; b.click(); }} return; }} if (window.__step === 2) {{ const b = click('Archive'); if (b) {{ window.__step = 3; b.click(); }} return; }} if (window.__step === 3 && document.body.innerText.includes('Archived')) {{ const b = click('Unarchive'); if (b) {{ window.__step = 4; b.click(); }} }} }})()"
     );

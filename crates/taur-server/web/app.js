@@ -687,12 +687,17 @@ async function pageUpload() {
     return render(h("h1", {}, "Upload a package"), h("div", { class: "card" },
       h("p", {}, "Verify your email before uploading. "), link("/account", "Account")));
   }
+  const orgs = await api("GET", "/api/v1/orgs").catch(() => []);
+  const choices = [{ value: "", label: `Your account (${me.name})` }].concat(
+    orgs.filter((o) => o.role === "owner" || o.role === "admin" || o.role === "contributor")
+      .map((o) => ({ value: o.name, label: o.name })));
   const f = h("form", { class: "stack", onsubmit: async (e) => {
     e.preventDefault();
     const file = f.elements.archive.files[0];
     if (!file) return flash("Choose a .tar.gz, .tar, or .zip.", "error");
     const body = new FormData();
     body.append("archive", file);
+    if (val(f, "owner")) body.append("organization", val(f, "owner"));
     try {
       const res = await fetch("/api/v1/packages/upload", {
         method: "POST",
@@ -708,10 +713,11 @@ async function pageUpload() {
       flash(`Published ${data.pkgbase} ${data.version}.`);
     } catch (err) { flash(err.message, "error"); }
   } },
+    h("label", {}, "Owner", h("select", { name: "owner", "aria-label": "Owner" }, choices.map((c) => h("option", { value: c.value, selected: c.value === "" }, c.label)))),
     h("input", { name: "archive", type: "file", accept: ".tar,.tar.gz,.tgz,.zip,application/gzip,application/zip", required: true, "aria-label": "Package archive" }),
     h("button", {}, "Upload"));
   render(h("h1", {}, "Upload a package"), h("div", { class: "card" },
-    h("p", {}, "Upload a .tar.gz, .tar, or .zip of one package directory. It needs PKGBUILD and .SRCINFO at the top, or inside a single folder. The server checks the recipe and does not run the PKGBUILD. A new name becomes yours. An existing package base is updated only when you can maintain it."),
+    h("p", {}, "Upload a .tar.gz, .tar, or .zip of one package directory. It needs PKGBUILD and .SRCINFO at the top, or inside a single folder. The server checks the recipe and does not run the PKGBUILD. A new package is adopted by the owner you pick: your account, or an organization where you can manage packages. Updating a package does not move it to a different owner."),
     h("p", {}, link("/docs/publish", "Publish guide")),
     f));
 }

@@ -259,8 +259,18 @@ fn read_line_file(dir: &Path, name: &str) -> Option<String> {
 
 impl Store {
     /// Create or update a package base from an unpacked recipe directory.
-    /// A new name is adopted by `user`. An existing base must be one they can manage.
-    pub fn publish_recipe(&self, user: &crate::accounts::User, dir: &Path) -> Result<Published> {
+    ///
+    /// `organization` empty means the uploader's account. A new package is
+    /// created under that owner in the same insert. An existing package is
+    /// updated only when `user` can manage it, and its owner is left unchanged.
+    /// A non-empty organization on an update must already be that package's
+    /// organization.
+    pub fn publish_recipe(
+        &self,
+        user: &crate::accounts::User,
+        dir: &Path,
+        organization: Option<&str>,
+    ) -> Result<Published> {
         self.require_verified(user)?;
         self.ensure_not_suspended(user.id)?;
         let srcinfo_bytes = std::fs::read(dir.join(".SRCINFO")).map_err(|_| {
@@ -315,12 +325,41 @@ impl Store {
                 )));
             }
         }
-        let created = self.pkgbase_id(&info.pkgbase)?.is_none();
-        if let Some(id) = self.pkgbase_id(&info.pkgbase)?
-            && !self.can_manage_pkgbase(user.id, id)?
-        {
-            return Err(Error::Forbidden);
-        }
+        let asked = organization.map(str::trim).filter(|s| !s.is_empty());
+        let existing = self.pkgbase_id(&info.pkgbase)?;
+        let org_id = if let Some(id) = existing {
+            if !self.can_manage_pkgbase(user.id, id)? {
+                return Err(Error::Forbidden);
+            }
+            if let Some(asked) = asked {
+                let current: Option<String> = self
+                    .lock()
+                    .query_row(
+                        "SELECT o.name FROM pkgbases b LEFT JOIN orgs o ON o.id = b.org_id WHERE b.id = ?1",
+                        [id],
+                        |r| r.get(0),
+                    )?;
+                if !current
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case(asked))
+                {
+                    let owner = current
+                        .as_deref()
+                        .map(|n| format!("organization {n}"))
+                        .unwrap_or_else(|| "a personal account".into());
+                    return Err(Error::Conflict(format!(
+                        "{} belongs to {owner}; this upload does not change its owner",
+                        info.pkgbase
+                    )));
+                }
+            }
+            None
+        } else if let Some(asked) = asked {
+            Some(self.manageable_org(user.id, asked)?)
+        } else {
+            None
+        };
+        let created = existing.is_none();
         let version = info.version();
         let registry =
             self.resolve_registry(&info.pkgbase, None, &read_line_file(dir, "TAUR-REGISTRY"))?;
@@ -351,6 +390,7 @@ impl Store {
                 None
             },
             &registry,
+            org_id,
         )?;
         if decision == crate::registry::UploadDecision::NewVersion
             && let (Some(repository), Some(signature)) =
@@ -472,7 +512,7 @@ mod tests {
         let ada = store.user_by_name("ada").unwrap().unwrap();
         let (pkg, src) = recipe("1");
         let unpacked = extract_recipe(&gzip(&[("PKGBUILD", &pkg), (".SRCINFO", &src)])).unwrap();
-        let created = store.publish_recipe(&ada, unpacked.path()).unwrap();
+        let created = store.publish_recipe(&ada, unpacked.path(), None).unwrap();
         assert!(created.created);
         assert_eq!(created.pkgbase, "webup");
         assert_eq!(
@@ -483,7 +523,7 @@ mod tests {
         );
         let (pkg, src) = recipe("2");
         let next = extract_recipe(&gzip(&[("PKGBUILD", &pkg), (".SRCINFO", &src)])).unwrap();
-        let updated = store.publish_recipe(&ada, next.path()).unwrap();
+        let updated = store.publish_recipe(&ada, next.path(), None).unwrap();
         assert!(!updated.created);
         assert!(updated.version.ends_with("-2"));
         store.register("bob", "bob@x", "longenough").unwrap();
@@ -492,12 +532,12 @@ mod tests {
             .unwrap();
         let bob = store.user_by_name("bob").unwrap().unwrap();
         assert!(matches!(
-            store.publish_recipe(&bob, next.path()),
+            store.publish_recipe(&bob, next.path(), None),
             Err(Error::Forbidden)
         ));
         let carol = store.register("carol", "carol@x", "longenough").unwrap();
         assert!(matches!(
-            store.publish_recipe(&carol, next.path()),
+            store.publish_recipe(&carol, next.path(), None),
             Err(Error::Unverified)
         ));
         let bad = extract_recipe(&gzip(&[
@@ -508,6 +548,6 @@ mod tests {
             (".SRCINFO", &src),
         ]))
         .unwrap();
-        assert!(store.publish_recipe(&ada, bad.path()).is_err());
+        assert!(store.publish_recipe(&ada, bad.path(), None).is_err());
     }
 }

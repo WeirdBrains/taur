@@ -13,7 +13,7 @@ Authenticated JSON endpoints (`Authorization: Bearer <token>`, see
 | PUT | `/api/v1/orgs/{org}/members/{user}` | `{"role":"owner\|admin\|contributor"}` | Owner, Admin (not for Owner role/Owners) | 204 (add or change role) |
 | DELETE | `/api/v1/orgs/{org}/members/{user}` | | Owner, Admin (not Owners) | 204 |
 | GET | `/api/v1/packages` | | any user | `[{"pkgbase","maintainer","org"}]` you can manage |
-| POST | `/api/v1/packages/upload` | multipart field `archive` (`.tar.gz`, `.tar`, or `.zip`) | verified user who could push that base | 201 create or 200 update: `{"pkgbase","name","version","created"}` |
+| POST | `/api/v1/packages/upload` | multipart fields `archive` (`.tar.gz`, `.tar`, or `.zip`) and optional `organization` | verified user. A new package in an organization requires membership and ManagePackages. An update uses the same permission as a push and does not change owner. | 201 create or 200 update: `{"pkgbase","name","version","created"}` |
 | GET | `/api/v1/packages/by-name/{name}` | | anyone | package page JSON, including archived packages; `CanManage` when the caller could push |
 | POST | `/api/v1/packages/{pkgbase}/archive` | | verified maintainer, co-maintainer, or org member who can manage it | 204; hidden from search, RPC info, and dumps; git history kept |
 | DELETE | `/api/v1/packages/{pkgbase}/archive` | | same | 204; restored to search and dumps |
@@ -25,8 +25,17 @@ Transferring to a user clears the org link and makes that user maintainer. Delet
 org keeps its packages' maintainers and clears the org link. The last Owner can't be
 removed or demoted.
 
+`POST /api/v1/packages/upload` is multipart, not JSON, and still requires
+`X-CSRF-Token` equal to the bearer. An absent or empty `organization` field publishes
+a new package under the uploader. A name publishes it under that organization in the
+same insert; the caller must belong to the organization and be allowed to manage its
+packages. Site admin is not a substitute for membership. On an update the field must
+be empty or name the package's current organization. A different name is 409 and the
+owner is not changed. Selecting your account while updating an organization package
+is allowed and also leaves the owner unchanged.
+
 Errors: 400 bad body, 401 no/invalid session, 403 not allowed, 404 unknown org/user/package,
-409 conflict (name taken, not orphaned, last Owner).
+409 conflict (name taken, not orphaned, last Owner, upload owner does not match).
 
 Site-admin and moderator endpoints use the same bearer token and `X-CSRF-Token`.
 Moderators may `GET /api/v1/admin/users` (no email) and reject an ordinary account or

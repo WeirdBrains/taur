@@ -599,7 +599,7 @@ impl Store {
             dir,
             &format!("Update to {}", info.version()),
         )?;
-        self.import_srcinfo_in(&info, maintainer, &registry)?;
+        self.import_srcinfo_in(&info, maintainer, &registry, None)?;
         if decision == crate::registry::UploadDecision::NewVersion {
             self.record_new_version(
                 &registry,
@@ -649,7 +649,7 @@ impl Store {
     /// Insert or update a pkgbase and its packages from parsed `.SRCINFO`.
     /// The package stays on the legacy `local` registry.
     pub fn import_srcinfo(&self, info: &SrcInfo, maintainer: Option<&str>) -> Result<i64> {
-        self.import_srcinfo_in(info, maintainer, crate::registry::LEGACY_REGISTRY)
+        self.import_srcinfo_in(info, maintainer, crate::registry::LEGACY_REGISTRY, None)
     }
 
     /// Like [`Store::import_srcinfo`], placing a new package base in `registry`.
@@ -659,6 +659,7 @@ impl Store {
         info: &SrcInfo,
         maintainer: Option<&str>,
         registry: &str,
+        org: Option<i64>,
     ) -> Result<i64> {
         let mut conn = self.lock();
         let tx = conn.transaction()?;
@@ -723,8 +724,8 @@ impl Store {
             }
             None => {
                 tx.execute(
-                    "INSERT INTO pkgbases (name, maintainer_id, submitter_id, first_submitted, last_modified, registry_id) VALUES (?1, ?2, ?2, ?3, ?3, ?4)",
-                    params![info.pkgbase, mid, now, registry_id],
+                    "INSERT INTO pkgbases (name, maintainer_id, submitter_id, first_submitted, last_modified, registry_id, org_id) VALUES (?1, ?2, ?2, ?3, ?3, ?4, ?5)",
+                    params![info.pkgbase, mid, now, registry_id, org],
                 )?;
                 tx.last_insert_rowid()
             }

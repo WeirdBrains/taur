@@ -340,6 +340,7 @@ impl Store {
             &info,
             if new { Some(pusher) } else { None },
             &reviewed.registry,
+            None,
         )?;
         if reviewed.decision == crate::registry::UploadDecision::NewVersion
             && let (Some(repository), Some(signature)) = (reviewed.repository, reviewed.signature)
