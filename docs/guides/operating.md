@@ -15,7 +15,7 @@ sudo -u taur taur owner YOUR-NAME --home /var/lib/taur
 
 ## Install and upgrades
 
-Native packages and the upgrade steps are in the install guide shipped with the repository (`docs/install.md`). After a package upgrade, start the process again. Do not delete `/var/lib/taur`; that directory is the database and the git repositories.
+Native packages and the upgrade steps are in the install guide shipped with the repository (`docs/install.md`). On the server host you can also run `taurctl upgrade` (and `taurctl upgrade --restart` if you want the service restarted after the package is installed). That command verifies `SHA256SUMS` and uses `apt-get`, `dnf`, or `pacman`. It leaves `/etc/taur` and `/var/lib/taur` in place. A package rollback cannot undo a database schema migration, so keep a backup of the database if you may need to go back. After a package upgrade without `--restart`, start the process again. Do not delete `/var/lib/taur`; that directory is the database and the git repositories.
 
 ## TLS
 

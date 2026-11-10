@@ -8,6 +8,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 - The web UI footer shows the running server's version.
 - `TAUR_DB` / `--db` sets the SQLite database path (default `$TAUR_HOME/taur.db`).
+- `taurctl upgrade` installs a published Linux x86_64 package with apt, dnf, or pacman after verifying SHA256SUMS.
 
 ### Fixed
 
