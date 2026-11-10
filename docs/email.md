@@ -10,7 +10,11 @@
   `%2F`, `?` is `%3F`, `#` is `%23`, `%` is `%25`, `:` is `%3A`). An unencoded `/`,
   `?`, or `#` ends the userinfo, so the host that gets dialed is not the SMTP
   server. Startup rejects a parsed host that is not a hostname or an IP address
-  and names that host, not the password. A later delivery error names `host:port`.
+  and names that host, not the password. Delivery resolves every address and
+  tries the next one when the first is unreachable (IPv6 with no route, then
+  IPv4), with a 10 second timeout each. The TLS name stays the hostname. A
+  delivery error names `host:port`. `POST /api/v1/verify/resend` answers
+  `503` with `mail server unreachable` instead of a generic `500`.
 - **File outbox** otherwise: each message is written to `<home>/outbox/*.eml` (0600).
   Meant for development and tests.
 

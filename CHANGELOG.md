@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- SMTP delivery tries every resolved address, and a failed verification resend says the mail server is unreachable.
+
 ## [1.3.2] - 2026-11-09
 ### Fixed
 - `taur serve` with automatic HTTPS no longer panics while choosing a rustls crypto provider.

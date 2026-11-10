@@ -848,6 +848,59 @@ fn taur_man_pages_up_to_date() {
 }
 
 #[tokio::test]
+async fn resend_reports_an_unreachable_mail_server() {
+    struct Down;
+    impl taur_core::mail::Mailer for Down {
+        fn send(&self, _: &str, _: &str, _: &str) -> taur_core::Result<()> {
+            Err(taur_core::Error::Mail(
+                "smtp.gmail.com:465: Network is unreachable (os error 101)".into(),
+            ))
+        }
+    }
+    let d = tempfile::tempdir().unwrap();
+    let s = Arc::new(Store::open(d.path()).unwrap());
+    s.set_mailer(Arc::new(Down));
+    let app = taur_server::app(s);
+    let (st, _) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/register",
+            None,
+            json!({"name": "erin", "email": "erin@x", "password": "longenough"}),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (_, body) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/login",
+            None,
+            json!({"name": "erin", "password": "longenough"}),
+        ),
+    )
+    .await;
+    let token = serde_json::from_slice::<Value>(&body).unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (st, body) = call(
+        &app,
+        send("POST", "/api/v1/verify/resend", Some(&token), json!(null)),
+    )
+    .await;
+    assert_eq!(st, StatusCode::SERVICE_UNAVAILABLE);
+    let text = String::from_utf8(body).unwrap();
+    assert!(text.contains("mail server unreachable"), "{text}");
+    assert!(
+        !text.contains("secret") && !text.contains("os error"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
 async fn verification_and_reset_api() {
     let (d, app) = setup();
     let outbox = d.path().join("outbox");

@@ -561,6 +561,13 @@ impl IntoResponse for ApiError {
             Error::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
             Error::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
             Error::Invalid(m) | Error::Parse(m) => (StatusCode::BAD_REQUEST, m.clone()),
+            Error::Mail(m) => {
+                eprintln!("taur: mail delivery failed: {m}");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "mail server unreachable".into(),
+                )
+            }
             Error::RateLimited { retry_after } => {
                 let mut res = (
                     StatusCode::TOO_MANY_REQUESTS,
