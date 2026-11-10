@@ -19,10 +19,11 @@ fn index_html() -> &'static str {
 }
 
 /// Paths rendered by the web UI (`{x}` = one segment).
-pub const PAGES: [&str; 21] = [
+pub const PAGES: [&str; 22] = [
     "/",
     "/packages",
     "/packages/{name}",
+    "/packages/{name}/revisions/{rev}",
     "/users/{name}",
     "/login",
     "/register",

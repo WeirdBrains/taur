@@ -62,9 +62,9 @@ async function loadMe() {
 
 function nav() {
   const n = document.getElementById("nav");
-  const items = [link("/", "Packages"), link("/docs", "Docs"), link("/requests", "Requests")];
+  const items = [link("/", "Packages"), link("/orgs", "Organizations"), link("/docs", "Docs"), link("/requests", "Requests")];
   if (me) {
-    items.push(link("/upload", "Upload"), link("/orgs", "Organizations"), link("/account", me.name));
+    items.push(link("/upload", "Upload"), link("/account", me.name));
     if (me.is_admin || me.is_moderator) items.push(link("/admin", "Admin"));
     if (me.is_admin) items.push(link("/audit", "Audit"), link("/mirrors", "Mirrors"));
     if (me.is_owner) items.push(link("/registries", "Registries"));
@@ -95,6 +95,21 @@ function needLogin() {
   render(h("div", { class: "card" }, h("p", {}, "Please ", link("/login", "log in"), " first.")));
 }
 
+function indexHref(sort, page) {
+  const p = new URLSearchParams();
+  if (sort) p.set("sort", sort);
+  if (page && Number(page) > 1) p.set("page", String(page));
+  const s = p.toString();
+  return s ? `/?${s}` : "/";
+}
+
+function pager(page, total, per, hrefFor) {
+  const pages = Math.max(1, Math.ceil((total || 0) / (per || 20)));
+  const prev = page > 1 ? link(hrefFor(page - 1), "Previous") : h("span", { class: "muted" }, "Previous");
+  const next = page < pages ? link(hrefFor(page + 1), "Next") : h("span", { class: "muted" }, "Next");
+  return h("nav", { class: "pager", "aria-label": "Pagination" }, prev, h("span", {}, `Page ${page} of ${pages}`), next);
+}
+
 // ---- pages ----
 async function pageSearch(params) {
   const q = params.get("q") || "";
@@ -119,6 +134,33 @@ async function pageSearch(params) {
     } catch (e) { out.push(msg(e.message)); }
   } else if (q) {
     out.push(msg("Enter at least two characters."));
+  } else {
+    const requested = params.get("sort") || "updated";
+    const page = Number(params.get("page") || "1");
+    try {
+      const r = await api("GET", `/api/v1/packages/index?sort=${enc(requested)}&page=${enc(String(page))}`, undefined, false);
+      const sortForm = h("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); go(indexHref(val(sortForm, "sort"), 1)); } },
+        h("label", {}, "Sort by ",
+          h("select", { name: "sort", "aria-label": "Sort packages", onchange: () => sortForm.requestSubmit() },
+            [["updated", "Updated at"], ["downloaded", "Downloaded"], ["popularity", "Popularity"]].map(([v, lab]) =>
+              h("option", { value: v, selected: v === requested }, lab)))));
+      const note = requested === "downloaded"
+        ? h("p", { class: "muted" }, "Download counts are not recorded. Packages are shown by last update.")
+        : null;
+      const rows = r.packages || [];
+      const table = rows.length
+        ? h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Version", "Votes", "Popularity", "Description", "Updated"].map((x) => h("th", {}, x)))),
+            h("tbody", {}, rows.map((pkg) => h("tr", {},
+              h("td", {}, link(`/packages/${enc(pkg.Name)}`, pkg.Name)),
+              h("td", { class: pkg.OutOfDate ? "flagged" : "" }, pkg.Version),
+              h("td", {}, pkg.NumVotes),
+              h("td", {}, Number(pkg.Popularity || 0).toFixed(2)),
+              h("td", {}, pkg.Description || ""),
+              h("td", {}, fmtTime(pkg.LastModified))))))
+        : h("p", { class: "muted" }, "No packages yet.");
+      out.push(h("div", { class: "card" }, sortForm, note, table,
+        rows.length ? pager(r.page, r.total, r.per_page, (n) => indexHref(requested, n)) : null));
+    } catch (e) { out.push(msg(e.message)); }
   }
   render(...out);
 }
@@ -147,7 +189,7 @@ async function pagePackage(name) {
     ["Make depends", list("MakeDepends")], ["Check depends", list("CheckDepends")], ["Optional depends", list("OptDepends")],
     ["Provides", list("Provides")], ["Conflicts", list("Conflicts")], ["Replaces", list("Replaces")], ["Groups", list("Groups")],
     ["Maintainer", maintainerLink(info.Maintainer)], ["Co-maintainers", peopleLinks(info.CoMaintainers)],
-    ["Organization", info.Organization || "—"], ["Submitter", info.Submitter || "—"],
+    ["Organization", info.Organization ? link(`/orgs/${enc(info.Organization)}`, info.Organization) : "—"], ["Submitter", info.Submitter || "—"],
     ["Votes", info.NumVotes], ["Popularity", info.Popularity.toFixed(2)],
     ["First submitted", fmtTime(info.FirstSubmitted)], ["Last updated", fmtTime(info.LastModified)],
     ["Out of date", info.OutOfDate ? h("span", { class: "flagged" }, `since ${fmtTime(info.OutOfDate)} by ${flag.flagger || "?"}: ${flag.comment || ""}`) : "no"],
@@ -226,9 +268,19 @@ async function pagePackage(name) {
         manager ? h("button", { class: "secondary", onclick: guard(() => api(c.pinned ? "DELETE" : "POST", PIN), c.pinned ? "Comment unpinned." : "Comment pinned.") }, c.pinned ? "Unpin" : "Pin") : null,
         canDelete ? h("button", { class: "secondary", onclick: guard(() => api("DELETE", `/api/v1/comments/${c.id}`), "Comment deleted.") }, "Delete") : null)));
   }
+  let revisions = [];
+  try { revisions = await api("GET", `/api/v1/packages/${enc(base)}/revisions`, undefined, false); } catch { revisions = []; }
+  const previous = Array.isArray(revisions) ? revisions.filter((rev) => !rev.current) : [];
+  const hist = previous.length
+    ? h("ul", { class: "versions" }, previous.map((rev) => h("li", {},
+        link(`/packages/${enc(info.Name)}/revisions/${enc(rev.id)}`, `${rev.version || "recipe"} (${rev.id.slice(0, 7)})`),
+        ` · ${fmtTime(rev.committed_at)}`)))
+    : h("p", { class: "muted" }, "No previous versions.");
+  out.push(h("div", { class: "card" }, h("h2", {}, "Previous versions"), hist));
   out.push(cbox);
   render(...out);
 }
+
 
 function maintainerLink(name) {
   return name ? link(`/users/${enc(name)}`, name) : "orphan";
@@ -435,20 +487,53 @@ async function pageAccount() {
   render(...out);
 }
 
-async function pageOrgs() {
-  if (!me) return needLogin();
-  const orgs = await api("GET", "/api/v1/orgs").catch(() => []);
-  const f = h("form", { class: "inline", onsubmit: guard(async () => { const n = val(f, "name"); await api("POST", "/api/v1/orgs", { name: n }); }, "Organization created.") },
-    h("input", { name: "name", placeholder: "new organization", required: true, "aria-label": "Organization name" }), h("button", {}, "Create"));
-  render(h("h1", {}, "Organizations"), h("div", { class: "card" },
-    orgs.length ? h("table", {}, orgs.map((o) => h("tr", {}, h("td", {}, link(`/orgs/${enc(o.name)}`, o.name)), h("td", {}, o.role)))) : h("p", { class: "muted" }, "You aren't in any organization."),
-    h("p", {}), f));
+async function pageOrgs(params) {
+  const q = (params && params.get("q")) || "";
+  let dir = { organizations: [] };
+  try { dir = await api("GET", `/api/v1/organizations?q=${enc(q)}`, undefined, false); } catch (e) { return render(msg(e.message)); }
+  const orgs = dir.organizations || [];
+  const filter = h("form", { class: "inline", onsubmit: (e) => { e.preventDefault(); go(`/orgs?q=${enc(val(filter, "q"))}`); } },
+    h("input", { name: "q", value: q, placeholder: "Search organizations", "aria-label": "Search organizations" }),
+    h("button", {}, "Search"));
+  const list = orgs.length
+    ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Organization"), h("th", {}, "Packages"))),
+        h("tbody", {}, orgs.map((o) => h("tr", {},
+          h("td", {}, link(`/orgs/${enc(o.name)}`, o.name)),
+          h("td", {}, String(o.package_count))))))
+    : h("p", { class: "muted" }, q ? "No organizations match that name." : "No organizations yet.");
+  const out = [h("h1", {}, "Organizations"), h("div", { class: "card" }, filter, list)];
+  if (me) {
+    const mine = await api("GET", "/api/v1/orgs").catch(() => []);
+    const f = h("form", { class: "inline", onsubmit: guard(async () => { const n = val(f, "name"); await api("POST", "/api/v1/orgs", { name: n }); }, "Organization created.") },
+      h("input", { name: "name", placeholder: "new organization", required: true, "aria-label": "Organization name" }), h("button", {}, "Create"));
+    out.push(h("div", { class: "card" }, h("h2", {}, "Your organizations"),
+      mine.length ? h("table", {}, mine.map((o) => h("tr", {}, h("td", {}, link(`/orgs/${enc(o.name)}`, o.name)), h("td", {}, o.role)))) : h("p", { class: "muted" }, "You aren't in any organization."),
+      h("p", {}), f));
+  }
+  render(...out);
 }
 
 async function pageOrg(name) {
-  if (!me) return needLogin();
+  let profile;
+  try { profile = await api("GET", `/api/v1/organizations/${enc(name)}`, undefined, false); }
+  catch (e) { return render(h("h1", {}, "Organization not found"), msg(e.message)); }
+  const pkgs = profile.packages || [];
+  const pkgList = pkgs.length
+    ? h("table", {}, h("thead", {}, h("tr", {}, ["Name", "Version", "Description"].map((x) => h("th", {}, x)))),
+        h("tbody", {}, pkgs.map((pkg) => h("tr", {},
+          h("td", {}, link(`/packages/${enc(pkg.Name)}`, pkg.Name)),
+          h("td", {}, pkg.Version),
+          h("td", {}, pkg.Description || "")))))
+    : h("p", { class: "muted" }, "This organization has no public packages.");
+  const out = [
+    h("p", {}, link("/orgs", "Organizations")),
+    h("h1", {}, profile.name),
+    h("p", { class: "muted" }, `Created ${fmtTime(profile.created_at)}`),
+    h("div", { class: "card" }, h("h2", {}, "Packages"), pkgList),
+  ];
+  if (!me) return render(...out);
   let org;
-  try { org = await api("GET", `/api/v1/orgs/${enc(name)}`); } catch (e) { return render(msg(e.message)); }
+  try { org = await api("GET", `/api/v1/orgs/${enc(name)}`); } catch (e) { return render(...out); }
   const M = (u) => `/api/v1/orgs/${enc(name)}/members/${enc(u)}`;
   const roles = ["owner", "admin", "contributor"];
   const myRole = (org.members.find((m) => m.name === me.name) || {}).role;
@@ -460,7 +545,7 @@ async function pageOrg(name) {
   const add = h("form", { class: "inline", onsubmit: guard(() => api("PUT", M(val(add, "user")), { role: val(add, "role") }), "Member added.") },
     h("input", { name: "user", placeholder: "user name", required: true, "aria-label": "User name" }),
     h("select", { name: "role", "aria-label": "Role" }, ["contributor", "admin", "owner"].map((r) => h("option", { value: r }, r))), h("button", {}, "Add member"));
-  const out = [h("h1", {}, org.name), h("div", { class: "card" }, h("h2", {}, "Members"), h("table", {}, rows), canManage ? [h("p", {}), add] : null)];
+  out.push(h("div", { class: "card" }, h("h2", {}, "Members"), h("table", {}, rows), canManage ? [h("p", {}), add] : null));
   if (myRole === "owner") {
     out.push(h("div", { class: "card" }, h("h2", {}, "Danger zone"), h("button", { class: "danger", onclick: async () => {
       if (!confirm(`Delete organization ${name}?`)) return;
@@ -837,6 +922,30 @@ async function pageUpload() {
     f));
 }
 
+async function pageRevision(name, rev) {
+  let info;
+  try { info = await api("GET", `/api/v1/packages/by-name/${enc(name)}`, undefined, false); }
+  catch (e) { return render(msg(e.message)); }
+  if (!info || !info.Name) return render(msg(`No package named ${name}.`));
+  let revision;
+  try { revision = await api("GET", `/api/v1/packages/${enc(info.PackageBase)}/revisions/${enc(rev)}`, undefined, false); }
+  catch (e) { return render(h("h1", {}, "Revision not found"), msg(e.message)); }
+  const rows = [
+    ["Version", revision.version || "—"],
+    ["pkgver", revision.pkgver || "—"],
+    ["pkgrel", revision.pkgrel || "—"],
+    ["Description", revision.description || "—"],
+    ["Revision", h("code", {}, revision.id)],
+    ["Committed", fmtTime(revision.committed_at)],
+    ["Snapshot", h("a", { href: revision.snapshot }, "tarball")],
+  ];
+  render(
+    h("p", {}, link(`/packages/${enc(info.Name)}`, `${info.Name} ${info.Version}`)),
+    h("h1", {}, `${info.Name} ${revision.version || revision.id.slice(0, 12)}`),
+    h("div", { class: "card" }, h("dl", {}, rows.map(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])))
+  );
+}
+
 // ---- router ----
 async function route() {
   const path = decodeURIComponent(location.pathname);
@@ -844,6 +953,7 @@ async function route() {
   nav();
   let m;
   if (path === "/" || path === "/packages" || path === "/packages/") return pageSearch(params);
+  if ((m = path.match(/^\/packages\/([^/]+)\/revisions\/([^/]+)\/?$/))) return pageRevision(m[1], m[2]);
   if ((m = path.match(/^\/packages\/([^/]+)\/?$/))) return pagePackage(m[1]);
   if ((m = path.match(/^\/users\/([^/]+)\/?$/))) return pageUser(m[1]);
   if (path === "/login") return pageLogin();
@@ -852,7 +962,7 @@ async function route() {
   if (path === "/reset") return pageReset(params);
   if (path === "/account") return pageAccount();
   if (path === "/upload") return pageUpload();
-  if (path === "/orgs") return pageOrgs();
+  if (path === "/orgs") return pageOrgs(params);
   if ((m = path.match(/^\/orgs\/([^/]+)\/?$/))) return pageOrg(m[1]);
   if (path === "/requests") return pageRequests(params);
   if (path === "/audit") return pageAudit();

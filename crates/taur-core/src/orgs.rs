@@ -191,6 +191,24 @@ pub struct OwnedPackage {
     pub org: Option<String>,
 }
 
+/// Public directory entry. Does not include membership.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PublicOrg {
+    pub name: String,
+    pub created_at: i64,
+    pub package_count: i64,
+}
+
+/// Public organization profile: existing fields only (name, created_at, packages).
+/// There is no description, URL, or avatar in the schema.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PublicOrgProfile {
+    pub name: String,
+    pub created_at: i64,
+    #[serde(skip)]
+    pub packages: Vec<crate::PkgInfo>,
+}
+
 impl Store {
     pub fn org_id(&self, name: &str) -> Result<i64> {
         self.lock()
@@ -241,6 +259,50 @@ impl Store {
             }
         }
         Ok(out)
+    }
+
+    /// Public organization directory. `query` filters by name, case-insensitively.
+    /// An empty query lists every organization. Package counts follow search
+    /// visibility (not archived or suspended).
+    pub fn public_orgs(&self, query: Option<&str>) -> Result<Vec<PublicOrg>> {
+        let conn = self.lock();
+        let like = query
+            .map(str::trim)
+            .filter(|q| !q.is_empty())
+            .map(|q| format!("%{}%", crate::store::escape_like(q)));
+        let sql = "SELECT o.name, o.created_at,              (SELECT COUNT(*) FROM packages p JOIN pkgbases b ON b.id = p.pkgbase_id               WHERE b.org_id = o.id AND b.suspended_at IS NULL AND b.archived_at IS NULL)              FROM orgs o              WHERE (?1 IS NULL OR o.name LIKE ?1 ESCAPE '\\')              ORDER BY o.name COLLATE NOCASE";
+        let mut st = conn.prepare(sql)?;
+        let rows = st.query_map(rusqlite::params![like], |r| {
+            Ok(PublicOrg {
+                name: r.get(0)?,
+                created_at: r.get(1)?,
+                package_count: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Public profile and accessible org-owned packages. 404 if the org does not exist.
+    /// Member lists stay on the membership-gated `org_detail`.
+    pub fn public_org(&self, name: &str) -> Result<PublicOrgProfile> {
+        let conn = self.lock();
+        let row: Option<(String, i64, i64)> = conn
+            .query_row(
+                "SELECT name, created_at, id FROM orgs WHERE name = ?1",
+                [name],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((org_name, created_at, id)) = row else {
+            return Err(Error::NotFound(format!("organization {name}")));
+        };
+        drop(conn);
+        let packages = self.packages_in_org(id)?;
+        Ok(PublicOrgProfile {
+            name: org_name,
+            created_at,
+            packages,
+        })
     }
 
     /// Organization details; only members may view them.

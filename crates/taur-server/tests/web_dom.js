@@ -47,16 +47,16 @@ const document = {
 
 function extractHelpers(src) {
   const start = src.indexOf("function h(tag, attrs, ...kids) {");
-  const end = src.indexOf("\nfunction msg(");
-  if (start < 0 || end < 0) throw new Error("could not find h()/render() in app.js");
+  const end = src.indexOf("\n// ---- pages ----");
+  if (start < 0 || end < 0) throw new Error("could not find helpers in app.js");
   return src.slice(start, end);
 }
 
 const src = fs.readFileSync(path.join(__dirname, "../web/app.js"), "utf8");
-const ctx = { document, Node };
+const ctx = { document, Node, URLSearchParams };
 vm.createContext(ctx);
-vm.runInContext(extractHelpers(src) + "\nthis.h = h; this.render = render;", ctx);
-const { h, render } = ctx;
+vm.runInContext(extractHelpers(src) + "\nthis.h = h; this.render = render; this.indexHref = indexHref; this.pager = pager;", ctx);
+const { h, render, indexHref, pager } = ctx;
 
 function assert(cond, msg) {
   if (!cond) {
@@ -80,5 +80,19 @@ render(h("p", { class: "flagged" }, "Archived since 2026-01-02"), h("h1", {}, "t
 assert(appEl.textContent.includes("Archived since 2026-01-02"), "real archived banner must stay visible");
 assert(appEl.textContent.includes("taur 1.6.0-1"), "title must remain beside a real banner");
 assert(appEl.children.length === 2, "banner and title");
+
+assert(indexHref("popularity", 2) === "/?sort=popularity&page=2", "pager retains sort and page");
+assert(indexHref("downloaded", 3) === "/?sort=downloaded&page=3", "downloaded sort is retained in navigation");
+assert(indexHref("popularity", 1) === "/?sort=popularity", "changing sort resets to page 1 (no page query)");
+assert(indexHref("updated", 1) === "/?sort=updated", "updated at page 1 keeps the sort");
+
+const nav = pager(2, 25, 20, (n) => indexHref("popularity", n));
+assert(nav.textContent.includes("Page 2 of 2"), "pager labels the current page");
+assert(nav.children[0].attributes.href === "/?sort=popularity", "previous keeps sort and goes to page 1");
+assert(nav.children[2].tagName === "SPAN", "next is inert on the last page");
+
+assert(src.includes('link("/orgs", "Organizations")'), "Organizations is in the public nav");
+assert(src.includes("/api/v1/organizations"), "directory uses the public organizations API");
+assert(src.includes("/packages/${enc(info.Organization)}".replace("info.Organization", "info.Organization")) || src.includes('`/orgs/${enc(info.Organization)}`'), "package org name links to the profile");
 
 console.log("ok");

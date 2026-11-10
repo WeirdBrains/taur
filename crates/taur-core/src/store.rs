@@ -270,7 +270,7 @@ pub fn dep_name(kind: &str, value: &str) -> String {
         .to_string()
 }
 
-fn escape_like(s: &str) -> String {
+pub(crate) fn escape_like(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
@@ -950,6 +950,183 @@ impl Store {
         let rows = st.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
     }
+
+    /// Accessible packages owned by an organization (not archived or suspended).
+    pub fn packages_in_org(&self, org_id: i64) -> Result<Vec<PkgInfo>> {
+        query_infos(&self.lock(), "b.org_id = ?1", &[&org_id])
+    }
+
+    /// Set `last_modified` for tests (stable pagination and ties).
+    #[doc(hidden)]
+    pub fn set_last_modified(&self, pkgbase: &str, ts: i64) -> Result<()> {
+        let n = self.lock().execute(
+            "UPDATE pkgbases SET last_modified = ?1 WHERE name = ?2",
+            params![ts, pkgbase],
+        )?;
+        if n == 0 {
+            Err(Error::NotFound(format!("package base {pkgbase}")))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Paginated public package index. `page` is 1-based; values below 1 become 1.
+    /// An unrecognized sort (including `downloaded`) falls back to `updated`.
+    pub fn package_index(&self, sort: PackageSort, page: u32) -> Result<PackageIndex> {
+        let page = page.max(1);
+        let per_page = PACKAGE_INDEX_PER_PAGE;
+        let offset = i64::from(page.saturating_sub(1)) * i64::from(per_page);
+        let order = match sort {
+            PackageSort::Updated => "b.last_modified DESC, p.name ASC",
+            PackageSort::Popularity => "b.popularity DESC, p.name ASC",
+        };
+        let conn = self.lock();
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM packages p JOIN pkgbases b ON b.id = p.pkgbase_id              WHERE b.suspended_at IS NULL AND b.archived_at IS NULL",
+            [],
+            |r| r.get(0),
+        )?;
+        let sql = format!(
+            "{SELECT} WHERE b.suspended_at IS NULL AND b.archived_at IS NULL              ORDER BY {order} LIMIT ?1 OFFSET ?2"
+        );
+        let mut st = conn.prepare(&sql)?;
+        let rows = st.query_map(params![i64::from(per_page), offset], row_to_info)?;
+        let packages = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(PackageIndex {
+            packages,
+            total,
+            page,
+            per_page,
+            sort,
+        })
+    }
+
+    /// Recorded git revisions of a package base, newest first, with metadata from
+    /// that revision's `.SRCINFO`. The first entry is the current HEAD when any
+    /// commits exist.
+    pub fn package_revisions(&self, pkgbase: &str) -> Result<Vec<PackageRevision>> {
+        self.require_visible_pkgbase(pkgbase)?;
+        let commits = self.log_commits(pkgbase)?;
+        let mut out = Vec::with_capacity(commits.len());
+        for (i, commit) in commits.iter().enumerate() {
+            out.push(self.revision_from_commit(pkgbase, commit, i == 0)?);
+        }
+        Ok(out)
+    }
+
+    /// One recorded revision. `rev` must be a stored commit or `HEAD`.
+    pub fn package_revision(&self, pkgbase: &str, rev: &str) -> Result<PackageRevision> {
+        self.require_visible_pkgbase(pkgbase)?;
+        let rev = crate::repo::validate_rev(rev)?;
+        let commits = self.log_commits(pkgbase)?;
+        if commits.is_empty() {
+            return Err(Error::NotFound(format!("revision {rev} in {pkgbase}")));
+        }
+        let resolved = if rev == "HEAD" {
+            commits[0].id.clone()
+        } else {
+            rev.to_string()
+        };
+        let Some((idx, commit)) = commits
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.id == resolved || c.id.starts_with(&resolved))
+        else {
+            return Err(Error::NotFound(format!("revision {rev} in {pkgbase}")));
+        };
+        self.revision_from_commit(pkgbase, commit, idx == 0)
+    }
+
+    fn require_visible_pkgbase(&self, pkgbase: &str) -> Result<()> {
+        let conn = self.lock();
+        let row: Option<Option<i64>> = conn
+            .query_row(
+                "SELECT suspended_at FROM pkgbases WHERE name = ?1",
+                [pkgbase],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match row {
+            None => Err(Error::NotFound(format!("package base {pkgbase}"))),
+            Some(Some(_)) => Err(Error::NotFound(format!("package base {pkgbase}"))),
+            Some(None) => Ok(()),
+        }
+    }
+
+    fn revision_from_commit(
+        &self,
+        pkgbase: &str,
+        commit: &crate::repo::GitCommit,
+        current: bool,
+    ) -> Result<PackageRevision> {
+        let mut revision = PackageRevision {
+            id: commit.id.clone(),
+            committed_at: commit.committed_at,
+            version: None,
+            pkgver: None,
+            pkgrel: None,
+            description: None,
+            current,
+            snapshot: format!("/cgit/aur.git/snapshot/{}.tar.gz?id={}", pkgbase, commit.id),
+        };
+        if let Ok(bytes) = self.plain(pkgbase, &commit.id, ".SRCINFO")
+            && let Ok(info) = crate::srcinfo::parse(&String::from_utf8_lossy(&bytes))
+        {
+            revision.version = Some(info.version());
+            revision.pkgver = info.first(0, "pkgver");
+            revision.pkgrel = info.first(0, "pkgrel");
+            revision.description = info.first(0, "pkgdesc");
+        }
+        Ok(revision)
+    }
+}
+
+pub const PACKAGE_INDEX_PER_PAGE: u32 = 20;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageSort {
+    Updated,
+    Popularity,
+}
+
+impl PackageSort {
+    /// Unknown values, including `downloaded` (no download count is stored),
+    /// fall back to last-updated.
+    pub fn parse(raw: Option<&str>) -> Self {
+        match raw.unwrap_or("updated") {
+            "popularity" => Self::Popularity,
+            _ => Self::Updated,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Updated => "updated",
+            Self::Popularity => "popularity",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PackageIndex {
+    pub packages: Vec<PkgInfo>,
+    pub total: i64,
+    pub page: u32,
+    pub per_page: u32,
+    pub sort: PackageSort,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PackageRevision {
+    pub id: String,
+    pub committed_at: i64,
+    pub version: Option<String>,
+    pub pkgver: Option<String>,
+    pub pkgrel: Option<String>,
+    pub description: Option<String>,
+    pub current: bool,
+    pub snapshot: String,
 }
 
 fn absolutize_db_path(db: &Path) -> Result<PathBuf> {

@@ -62,7 +62,9 @@ pub fn base_child_env() -> Vec<(String, std::ffi::OsString)> {
 }
 pub use ratelimit::{LimitClass, RatePolicy};
 pub use roles::{Action, Role};
-pub use store::{PkgInfo, SearchBy, Store};
+pub use store::{
+    PACKAGE_INDEX_PER_PAGE, PackageIndex, PackageRevision, PackageSort, PkgInfo, SearchBy, Store,
+};
 
 use std::path::{Path, PathBuf};
 

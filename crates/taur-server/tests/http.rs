@@ -1786,6 +1786,8 @@ async fn web_ui_is_served() {
         "/api/v1/password-reset/confirm",
         "/api/v1/ssh-keys",
         "/api/v1/orgs",
+        "/api/v1/organizations",
+        "/api/v1/packages/index",
         "/api/v1/requests",
         "/api/v1/docs",
         "/api/v1/packages/upload",
