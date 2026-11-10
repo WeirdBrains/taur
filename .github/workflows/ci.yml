@@ -29,6 +29,11 @@ jobs:
       TAUR_REQUIRE_ISOLATION: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: tags
+        run: git fetch origin --tags
       - name: fmt
         run: cargo fmt --all -- --check
       - name: clippy
