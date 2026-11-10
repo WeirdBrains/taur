@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+# Purge removes /etc/taur/taur.env only. /var/lib/taur and the taur user stay,
+# so package data is kept after purge.
+if [ "$1" = purge ]; then
+  rm -f /etc/taur/taur.env
+  rmdir /etc/taur 2>/dev/null || true
+fi
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+fi
+exit 0

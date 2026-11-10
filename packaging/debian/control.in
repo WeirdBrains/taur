@@ -1,0 +1,13 @@
+Package: taur
+Version: @VERSION@-1
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: WeirdBrains <taur@weirdbrains.com>
+Homepage: https://github.com/WeirdBrains/taur
+Depends: git, adduser, libc6 (>= 2.31)@EXTRA_DEPENDS@
+Recommends: systemd
+Description: AUR-compatible package server
+ TAUR serves an AUR-compatible package index over HTTP. The package installs
+ the server and taurctl, man pages, docs, and a systemd unit. It does not
+ enable or start the service. Enable it with: systemctl enable --now taur

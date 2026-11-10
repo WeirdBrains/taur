@@ -12,6 +12,38 @@ of `TAUR_BIND` (and `TAUR_GRPC_BIND` if public).
 Values containing spaces or `<`/`>` (e.g. `TAUR_MAIL_FROM`) must be double-quoted so
 that both systemd and `sh` can read the file.
 
+## Packages
+
+Copy-paste install steps for a server are in [install.md](install.md).
+
+`scripts/package.sh` builds an x86_64 `.deb`, `.rpm`, and Arch package. Each one
+installs both binaries, the man pages, the docs, the systemd unit, a `taur`
+system user, `/var/lib/taur` (mode `0750`, owner `taur`), `/etc/taur`, and
+`/etc/taur/taur.env` from `packaging/taur.env.example`. The env file is mode
+`0640` and owned by `root:taur`, and the package manager keeps local edits on
+upgrade. Nothing in the package enables or starts the service. After install:
+
+```sh
+systemctl enable --now taur
+```
+
+The packaged binaries need at most glibc 2.31 and do not link OpenSSL. They
+depend on `git`. Removing a package leaves `/var/lib/taur` in place. Debian
+purge deletes `/etc/taur/taur.env` and does not delete `/var/lib/taur` or the
+`taur` user.
+
+```sh
+# Debian and Ubuntu
+sudo apt install ./taur_1.3.1-1_amd64.deb
+# Fedora, Rocky, Alma
+sudo dnf install ./taur-1.3.1-1.x86_64.rpm
+# Arch
+sudo pacman -U ./taur-1.3.1-1-x86_64.pkg.tar.zst
+```
+
+The Arch package is named `taur`. Its `PKGBUILD` installs the binary the script
+already built. `namcap` is run when it is on `PATH`.
+
 ## systemd (Linux)
 Files: `packaging/systemd/taur.service`, `packaging/systemd/taur.sysusers`,
 `packaging/systemd/taur.tmpfiles`. The unit runs as the `taur` user with

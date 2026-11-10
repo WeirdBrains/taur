@@ -1,0 +1,41 @@
+#!/bin/sh
+# Create the taur system account and the directories the service uses.
+# Usage: ensure-account debian|posix
+# Does not start or enable the service and does not remove /var/lib/taur.
+set -eu
+
+kind="${1:-posix}"
+nologin=""
+for candidate in /usr/sbin/nologin /usr/bin/nologin; do
+  if [ -x "$candidate" ]; then
+    nologin=$candidate
+    break
+  fi
+done
+if [ -z "$nologin" ]; then
+  echo "taur: neither /usr/sbin/nologin nor /usr/bin/nologin exists" >&2
+  exit 1
+fi
+
+if [ "$kind" = debian ]; then
+  if ! getent passwd taur >/dev/null; then
+    adduser --system --group --no-create-home --home /var/lib/taur \
+      --shell "$nologin" --disabled-password \
+      --gecos "TAUR package server" taur
+  fi
+else
+  if ! getent group taur >/dev/null; then
+    groupadd --system taur
+  fi
+  if ! getent passwd taur >/dev/null; then
+    useradd --system --gid taur --home-dir /var/lib/taur --no-create-home \
+      --shell "$nologin" --comment "TAUR package server" taur
+  fi
+fi
+
+install -d -o taur -g taur -m 0750 /var/lib/taur
+install -d -o root -g taur -m 0750 /etc/taur
+if [ -f /etc/taur/taur.env ]; then
+  chown root:taur /etc/taur/taur.env
+  chmod 0640 /etc/taur/taur.env
+fi
