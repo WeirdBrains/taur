@@ -143,6 +143,9 @@ async fn package_index_paginates_and_keeps_sort() {
     }
     set_modified(&s, "pkg01", 1_800_000_000);
     set_modified(&s, "pkg02", 1_800_000_000);
+    s.set_download_count("pkg25", 5).unwrap();
+    s.set_download_count("pkg24", 5).unwrap();
+    s.set_download_count("pkg23", 3).unwrap();
     let app = taur_server::app(Arc::new(s));
 
     let p1 = get_ok(&app, "/api/v1/packages/index?sort=updated&page=1").await;
@@ -184,10 +187,38 @@ async fn package_index_paginates_and_keeps_sort() {
     assert_eq!(invalid["page"], 1);
     assert_eq!(invalid["packages"][0]["Name"], "pkg01");
 
-    // No download metric is stored; the API falls back to updated and says so via sort.
-    let fallback = get_ok(&app, "/api/v1/packages/index?sort=downloaded&page=2").await;
-    assert_eq!(fallback["sort"], "updated");
-    assert_eq!(fallback["packages"][0]["Name"], names2[0]);
+    let downloaded = get_ok(&app, "/api/v1/packages/index?sort=downloaded&page=1").await;
+    assert_eq!(downloaded["sort"], "downloaded");
+    assert_eq!(downloaded["per_page"], 20);
+    assert_eq!(downloaded["packages"].as_array().unwrap().len(), 20);
+    assert_eq!(downloaded["packages"][0]["Name"], "pkg24");
+    assert_eq!(downloaded["packages"][1]["Name"], "pkg25");
+    assert_eq!(downloaded["packages"][2]["Name"], "pkg23");
+    assert_eq!(downloaded["packages"][0]["DownloadCount"], 5);
+    let downloaded2 = get_ok(&app, "/api/v1/packages/index?sort=downloaded&page=2").await;
+    assert_eq!(downloaded2["sort"], "downloaded");
+    assert_eq!(downloaded2["packages"].as_array().unwrap().len(), 5);
+    let mut all_dl: Vec<&str> = downloaded["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["Name"].as_str().unwrap())
+        .collect();
+    all_dl.extend(
+        downloaded2["packages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["Name"].as_str().unwrap()),
+    );
+    let mut uniq_dl = all_dl.clone();
+    uniq_dl.sort();
+    uniq_dl.dedup();
+    assert_eq!(
+        uniq_dl.len(),
+        25,
+        "downloaded pages skip or duplicate: {all_dl:?}"
+    );
 
     let pop = get_ok(&app, "/api/v1/packages/index?sort=popularity&page=1").await;
     assert_eq!(pop["sort"], "popularity");
@@ -258,4 +289,98 @@ async fn historic_revision_snapshot_is_immutable() {
     let (st, body) = get(&app, "/packages/hello-taur/revisions/deadbeef").await;
     assert_eq!(st, StatusCode::OK, "SPA shell for a revision path");
     assert!(!body.is_empty());
+}
+
+async fn head(app: &axum::Router, uri: &str) -> (StatusCode, Vec<u8>) {
+    call(
+        app,
+        Request::builder()
+            .method("HEAD")
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+}
+
+fn download_count(v: &Value, name: &str) -> i64 {
+    v["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["Name"] == name)
+        .unwrap()["DownloadCount"]
+        .as_i64()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn snapshot_get_increments_download_count_but_head_and_failures_do_not() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Store::open(d.path()).unwrap();
+    let fx = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/hello-taur");
+    s.import_dir(&fx, None).unwrap();
+    let next = d.path().join("v2");
+    dircopy(&fx, &next);
+    for name in [".SRCINFO", "PKGBUILD"] {
+        let path = next.join(name);
+        let text = fs::read_to_string(&path).unwrap().replace("1.2.3", "2.0.0");
+        fs::write(path, text).unwrap();
+    }
+    s.import_dir(&next, None).unwrap();
+    let app = taur_server::app(Arc::new(s));
+
+    let info = get_ok(&app, "/rpc/v5/info?arg[]=hello-taur&arg[]=hello-taur-docs").await;
+    assert_eq!(download_count(&info, "hello-taur"), 0);
+    assert_eq!(download_count(&info, "hello-taur-docs"), 0);
+
+    let (st, _) = get(&app, "/cgit/aur.git/snapshot/hello-taur.tar.gz").await;
+    assert_eq!(st, StatusCode::OK);
+    let info = get_ok(&app, "/rpc/v5/info?arg[]=hello-taur&arg[]=hello-taur-docs").await;
+    assert_eq!(download_count(&info, "hello-taur"), 1);
+    // Accrues to the package base, so split packages share the counter.
+    assert_eq!(download_count(&info, "hello-taur-docs"), 1);
+
+    let revs = get_ok(&app, "/api/v1/packages/hello-taur/revisions").await;
+    let old_id = revs.as_array().unwrap()[1]["id"].as_str().unwrap();
+    let (st, _) = get(
+        &app,
+        &format!("/cgit/aur.git/snapshot/hello-taur.tar.gz?id={old_id}"),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let info = get_ok(&app, "/rpc/v5/info?arg[]=hello-taur&arg[]=hello-taur-docs").await;
+    assert_eq!(download_count(&info, "hello-taur"), 2);
+
+    let before = download_count(&info, "hello-taur");
+    let (st, _) = head(&app, "/cgit/aur.git/snapshot/hello-taur.tar.gz").await;
+    assert!(
+        st == StatusCode::OK || st == StatusCode::METHOD_NOT_ALLOWED,
+        "HEAD status {st}"
+    );
+    let (st, _) = get(&app, "/cgit/aur.git/snapshot/nope.tar.gz").await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    let (st, _) = get(&app, "/cgit/aur.git/plain/PKGBUILD?h=hello-taur").await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = get(&app, "/rpc/v5/info/hello-taur").await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = get(&app, "/rpc/v5/search/hello?by=name").await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = get(&app, "/packages.gz").await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = get(&app, "/hello-taur.git/info/refs?service=git-upload-pack").await;
+    assert_eq!(st, StatusCode::OK);
+    let info = get_ok(&app, "/rpc/v5/info?arg[]=hello-taur&arg[]=hello-taur-docs").await;
+    assert_eq!(
+        download_count(&info, "hello-taur"),
+        before,
+        "HEAD, failures, plain, RPC, dumps, and git clone ads must not count"
+    );
+
+    // Persist across a store reopen using the same database.
+    drop(app);
+    let s = Store::open(d.path()).unwrap();
+    let info = s.info(&["hello-taur".into()]).unwrap();
+    assert_eq!(info[0].download_count, 2);
 }

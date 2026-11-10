@@ -93,6 +93,9 @@ assert(nav.children[2].tagName === "SPAN", "next is inert on the last page");
 
 assert(src.includes('link("/orgs", "Organizations")'), "Organizations is in the public nav");
 assert(src.includes("/api/v1/organizations"), "directory uses the public organizations API");
+assert(!src.includes("Download counts are not recorded"), "downloaded sort must not fall back or disclose a missing counter");
+assert(src.includes("DownloadCount"), "UI displays the download count");
+
 assert(src.includes("/packages/${enc(info.Organization)}".replace("info.Organization", "info.Organization")) || src.includes('`/orgs/${enc(info.Organization)}`'), "package org name links to the profile");
 
 console.log("ok");
