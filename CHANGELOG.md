@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+
+- The home page of the package-server UI is a paginated index (20 packages per page) sortable by last update or popularity. A Downloaded option is shown but falls back to last update, because no download count is stored.
+- Organizations has a public, searchable directory and a public profile that lists that organization's accessible packages. A package's organization name links to that profile. Membership management stays on the same profile URL for members.
+- A package page lists recorded previous git revisions. Each revision opens its own details and snapshot of that commit, not the current tree.
+
 ### Fixed
 
 - The package page no longer renders a literal `null` above the title when the package is not archived. That slot is the optional archived banner.

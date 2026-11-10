@@ -40,3 +40,6 @@ code { background:var(--line); padding:.1rem .3rem; border-radius:4px; }
 .combo-option { padding: .35rem .5rem; border-radius: 4px; cursor: pointer; }
 .combo-option.active, .combo-option:hover { background: var(--line); }
 .combo-empty { padding: .35rem .5rem; }
+
+.pager { display:flex; gap:1rem; align-items:center; margin:1rem 0; }
+.versions { margin:.5rem 0; padding-left:1.2rem; }

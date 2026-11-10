@@ -11,14 +11,15 @@ client of the JSON API, like `taurctl`. The footer shows the running server's ve
 | `/docs`, `/docs/<slug>` | Task guides compiled from `docs/guides/`. The server hides a guide the role cannot read (404). |
 | `/upload` | Verified users upload a `.tar.gz`, `.tar`, or `.zip` containing `PKGBUILD` and `.SRCINFO`. The owner list defaults to their account and includes organizations where they can manage packages (Owner, Admin, or Contributor). Open the list and type in the filter at the top to narrow it. |
 | `/packages/<name>` | Also: maintainers archive or unarchive, and mark a package out of date or clear that flag. Anyone signed in can flag it. |
-| `/`, `/packages?q=&by=` | Search packages (all RPC `by` fields), sorted by popularity |
-| `/packages/<name>` | Package details (deps, maintainers, org, votes, popularity, flag, clone URL, snapshot), comments; when signed in: vote, flag/unflag, adopt/disown, comment/edit/delete, file requests; maintainers also edit co-maintainers and transfer to an org or user. Same URL yay shows as "AUR URL". Maintainer and co-maintainer names link to `/users/<name>`. |
+| `/`, `/packages?q=&by=` | With a query: search packages (all RPC `by` fields), sorted by popularity. With no query: a paginated index of 20 packages per page, sorted by last update (`updated`, default) or `popularity`. `downloaded` is offered in the sort list but there is no download count in the database, so the index falls back to last update and the page says so. Changing sort returns to page 1; page links keep the chosen sort. |
+| `/packages/<name>` | Package details (deps, maintainers, org, votes, popularity, flag, clone URL, snapshot), comments; when signed in: vote, flag/unflag, adopt/disown, comment/edit/delete, file requests; maintainers also edit co-maintainers and transfer to an org or user. Same URL yay shows as "AUR URL". Maintainer and co-maintainer names link to `/users/<name>`. The organization name, when present, links to `/orgs/<name>`. Previous recorded git revisions are listed and open `/packages/<name>/revisions/<rev>` for that revision's metadata and snapshot. |
+| `/packages/<name>/revisions/<rev>` | Immutable details for a recorded git revision of that package (version from `.SRCINFO` at that commit, and a snapshot of that tree). Unknown revisions are not found. |
 | `/users/<name>` | Packages that account maintains and co-maintains. |
 | `/register`, `/login` | Account creation and sign-in |
 | `/verify?token=` | Target of the verification email |
 | `/reset`, `/reset?token=` | Request a reset link; target of the reset email |
 | `/account` | Verification status/resend, your packages, SSH keys, sessions, delete account |
-| `/orgs`, `/orgs/<name>` | Your organizations; create; members, role changes, add/remove, delete (per role) |
+| `/orgs`, `/orgs/<name>` | Public, searchable directory of every organization (case-insensitive name filter) and a public profile with that organization's accessible packages. Signed-in members still see membership management (roles, add/remove, delete) on the same profile URL. Create remains signed-in. The public profile fields are the organization name, created time, and packages; there is no stored description, homepage, or avatar. |
 | `/requests` | Pending (or all) requests; accept/reject for site admins, withdraw your own |
 | `/admin` | User search. Moderators and site admins. Email addresses only for site admins. |
 | `/users/<name>` | Plus, for a moderator or site admin: reject. For a site admin: verify, resend, password reset, role grants, revoke sessions. |
@@ -44,5 +45,9 @@ audit links only for a site admin.
 
 ## Tests
 HTTP tests check every page route and asset is served with the right headers and that
-the API calls the UI makes work. A headless Chromium check renders package, search,
+the API calls the UI makes work. `web_dom.js` (Node, minimal DOM) checks that a missing
+archived banner does not render the text `null`, and that index pager links keep the
+chosen sort and reset the page when the sort changes. Core and HTTP tests cover
+anonymous organization directory access, package-list scoping, historic revision
+snapshots, and index pagination ties. A headless Chromium check renders package, search,
 verify and reset pages: `cargo test -p taur-server -- --ignored` (needs local `chromium`).

@@ -81,9 +81,20 @@ pub fn app_with(state: AppState) -> Router {
             "/api/v1/orgs/{org}/members/{user}",
             axum::routing::put(set_member).delete(remove_member),
         )
+        .route("/api/v1/organizations", get(list_public_orgs))
+        .route("/api/v1/organizations/{org}", get(show_public_org))
         .route("/api/v1/packages", get(my_packages))
+        .route("/api/v1/packages/index", get(package_index))
         .route("/api/v1/packages/upload", post(upload_package))
         .route("/api/v1/packages/by-name/{name}", get(package_by_name))
+        .route(
+            "/api/v1/packages/{pkgbase}/revisions",
+            get(list_package_revisions),
+        )
+        .route(
+            "/api/v1/packages/{pkgbase}/revisions/{rev}",
+            get(show_package_revision),
+        )
         .route(
             "/api/v1/packages/{pkgbase}/archive",
             post(archive_package).delete(unarchive_package),
@@ -555,9 +566,16 @@ fn gz(r: taur_core::Result<Vec<u8>>) -> Response {
     }
 }
 
-async fn snapshot(State(s): St, Path(file): Path<String>) -> Response {
+async fn snapshot(
+    State(s): St,
+    Path(file): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<PlainQuery>,
+) -> Response {
     match file.strip_suffix(".tar.gz") {
-        Some(name) => gz(s.snapshot(name)),
+        Some(name) => {
+            let rev = q.id.as_deref().filter(|s| !s.is_empty()).unwrap_or("HEAD");
+            gz(s.snapshot_at(name, rev))
+        }
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -1233,6 +1251,78 @@ async fn show_org(
 ) -> Result<Response, ApiError> {
     let u = auth(&s, &h)?;
     Ok(Json(s.org_detail(u.id, &org)?).into_response())
+}
+
+#[derive(Deserialize)]
+struct OrgDirQuery {
+    q: Option<String>,
+}
+
+async fn list_public_orgs(
+    State(s): St,
+    axum::extract::Query(q): axum::extract::Query<OrgDirQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let orgs = s.public_orgs(q.q.as_deref())?;
+    Ok(Json(json!({ "organizations": orgs })))
+}
+
+async fn show_public_org(State(s): St, Path(org): Path<String>) -> Result<Json<Value>, ApiError> {
+    let profile = s.public_org(&org)?;
+    let packages: Vec<Value> = profile
+        .packages
+        .iter()
+        .map(|p| taur_core::rpc::info_value(p, false))
+        .collect();
+    Ok(Json(json!({
+        "name": profile.name,
+        "created_at": profile.created_at,
+        "packages": packages,
+    })))
+}
+
+#[derive(Deserialize)]
+struct IndexQuery {
+    sort: Option<String>,
+    page: Option<String>,
+}
+
+async fn package_index(
+    State(s): St,
+    axum::extract::Query(q): axum::extract::Query<IndexQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let sort = taur_core::PackageSort::parse(q.sort.as_deref());
+    let page = q
+        .page
+        .as_deref()
+        .and_then(|p| p.parse::<u32>().ok())
+        .unwrap_or(1);
+    let idx = s.package_index(sort, page)?;
+    let packages: Vec<Value> = idx
+        .packages
+        .iter()
+        .map(|p| taur_core::rpc::info_value(p, false))
+        .collect();
+    Ok(Json(json!({
+        "packages": packages,
+        "total": idx.total,
+        "page": idx.page,
+        "per_page": idx.per_page,
+        "sort": idx.sort.as_str(),
+    })))
+}
+
+async fn list_package_revisions(
+    State(s): St,
+    Path(pkgbase): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(json!(s.package_revisions(&pkgbase)?)))
+}
+
+async fn show_package_revision(
+    State(s): St,
+    Path((pkgbase, rev)): Path<(String, String)>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(json!(s.package_revision(&pkgbase, &rev)?)))
 }
 
 async fn delete_org(

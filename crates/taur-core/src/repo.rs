@@ -219,10 +219,8 @@ pub fn maintain_repos(repos: &Path, grace: std::time::Duration) -> Result<Mainta
     Ok(report)
 }
 
-/// Blob bytes at `rev:path` inside the package base repo (cgit `plain` URLs).
-/// `rev` defaults to `HEAD` when empty. `path` is a file inside the tree, not a URL.
-pub fn plain(repos: &Path, pkgbase: &str, rev: &str, path: &str) -> Result<Vec<u8>> {
-    validate_name(pkgbase)?;
+/// Git revision for `plain` / `git archive`. Empty becomes `HEAD`.
+pub fn validate_rev(rev: &str) -> Result<&str> {
     let rev = if rev.is_empty() { "HEAD" } else { rev };
     if !rev
         .chars()
@@ -231,6 +229,14 @@ pub fn plain(repos: &Path, pkgbase: &str, rev: &str, path: &str) -> Result<Vec<u
     {
         return Err(Error::Invalid("invalid revision".into()));
     }
+    Ok(rev)
+}
+
+/// Blob bytes at `rev:path` inside the package base repo (cgit `plain` URLs).
+/// `rev` defaults to `HEAD` when empty. `path` is a file inside the tree, not a URL.
+pub fn plain(repos: &Path, pkgbase: &str, rev: &str, path: &str) -> Result<Vec<u8>> {
+    validate_name(pkgbase)?;
+    let rev = validate_rev(rev)?;
     if path.is_empty()
         || path.starts_with('/')
         || path
@@ -251,9 +257,14 @@ pub fn plain(repos: &Path, pkgbase: &str, rev: &str, path: &str) -> Result<Vec<u
     run(c).map_err(|_| Error::NotFound(format!("{path} in {pkgbase}")))
 }
 
-/// `git archive` of HEAD as `<pkgbase>/...` in a gzipped tarball.
+/// `git archive` of `rev` (default HEAD) as `<pkgbase>/...` in a gzipped tarball.
 pub fn snapshot(repos: &Path, pkgbase: &str) -> Result<Vec<u8>> {
+    snapshot_at(repos, pkgbase, "HEAD")
+}
+
+pub fn snapshot_at(repos: &Path, pkgbase: &str, rev: &str) -> Result<Vec<u8>> {
     validate_name(pkgbase)?;
+    let rev = validate_rev(rev)?;
     let repo = repos.join(format!("{pkgbase}.git"));
     if !repo.is_dir() {
         return Err(Error::NotFound(format!("package base {pkgbase}")));
@@ -263,8 +274,48 @@ pub fn snapshot(repos: &Path, pkgbase: &str) -> Result<Vec<u8>> {
         .arg(&repo)
         .args(["archive", "--format=tar.gz"])
         .arg(format!("--prefix={pkgbase}/"))
-        .arg("HEAD");
-    run(c)
+        .arg(rev);
+    run(c).map_err(|_| Error::NotFound(format!("revision {rev} in {pkgbase}")))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitCommit {
+    pub id: String,
+    pub committed_at: i64,
+}
+
+/// Newest-first commit list from the package-base repo. Empty if the repo has no commits.
+pub fn log_commits(repos: &Path, pkgbase: &str) -> Result<Vec<GitCommit>> {
+    validate_name(pkgbase)?;
+    let repo = repos.join(format!("{pkgbase}.git"));
+    if !repo.is_dir() {
+        return Err(Error::NotFound(format!("package base {pkgbase}")));
+    }
+    let mut c = git();
+    c.arg("--git-dir")
+        .arg(&repo)
+        .args(["log", "--format=%H%x09%ct"]);
+    let out = match run(c) {
+        Ok(b) => b,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let mut commits = Vec::new();
+    for line in String::from_utf8_lossy(&out).lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let Some((id, ts)) = line.split_once('\t') else {
+            continue;
+        };
+        let Ok(committed_at) = ts.parse::<i64>() else {
+            continue;
+        };
+        commits.push(GitCommit {
+            id: id.to_string(),
+            committed_at,
+        });
+    }
+    Ok(commits)
 }
 
 /// Resolve a dumb-HTTP request path like `/foo.git/info/refs` to file bytes and a
@@ -304,6 +355,14 @@ pub fn git_file(repos: &Path, path: &str) -> Option<(Vec<u8>, &'static str)> {
 impl Store {
     pub fn snapshot(&self, pkgbase: &str) -> Result<Vec<u8>> {
         snapshot(&self.repos_dir(), pkgbase)
+    }
+
+    pub fn snapshot_at(&self, pkgbase: &str, rev: &str) -> Result<Vec<u8>> {
+        snapshot_at(&self.repos_dir(), pkgbase, rev)
+    }
+
+    pub fn log_commits(&self, pkgbase: &str) -> Result<Vec<GitCommit>> {
+        log_commits(&self.repos_dir(), pkgbase)
     }
 
     /// File from a package base tree. `h` is the package base (aurweb cgit `?h=`).
