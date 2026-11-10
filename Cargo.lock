@@ -3593,7 +3593,7 @@ dependencies = [
 
 [[package]]
 name = "taur-cli"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "axum",
  "clap",
@@ -3611,7 +3611,7 @@ dependencies = [
 
 [[package]]
 name = "taur-core"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "argon2 0.5.3",
  "ed25519-dalek 2.2.0",
@@ -3630,7 +3630,7 @@ dependencies = [
 
 [[package]]
 name = "taur-server"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "axum",
  "clap",
