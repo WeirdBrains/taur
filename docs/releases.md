@@ -41,3 +41,27 @@ Before the commit it runs `cargo fmt --all -- --check`, `cargo clippy --all-targ
 ## GitHub release assets
 
 The script stops at the git tag. Publishing binaries is separate and is not done for every tag. The v1.1.0 archive is the pattern: one `taur-<version>-x86_64-unknown-linux-gnu.tar.gz` built on that host, plus `SHA256SUMS` of the archive. The tarball contains `taur`, `taurctl`, `README.md`, `CHANGELOG.md`, `docs/`, `man/`, `packaging/`, and an internal `SHA256SUMS` of those files. It does not contain a `LICENSE` file; the crate license is MIT OR Apache-2.0. No other architecture is added unless that build was actually produced and tested.
+
+## Distribution packages
+
+`scripts/package.sh VERSION` builds the public tarball and three x86_64 packages from a tag or commit that already exists. It does not bump the version, move a tag, or create a GitHub release.
+
+```sh
+scripts/package.sh 1.3.1
+```
+
+`1.3.1` and `v1.3.1` both mean that tag. A commit id is also accepted, and the package version is the workspace version in that commit. The binaries are compiled from that commit in a temporary worktree. Debian, RPM, and Arch recipes come from the checkout you run the script in, so packaging can be newer than the tag.
+
+The compile uses `cargo-zigbuild` 0.24.1 and Zig 0.14.1 with target `x86_64-unknown-linux-gnu.2.31`. The `.deb` is packed with Debian 12's `dpkg-deb` and the `.rpm` with Fedora 45's `rpmbuild`, through podman when those tools are not on the host. The script refuses a binary that needs a glibc newer than 2.31 or that links OpenSSL. `SOURCE_DATE_EPOCH` is the commit time. Zig is downloaded into the cache directory and checked against a fixed SHA-256. Set `TAUR_ZIG` to use a copy you already have.
+
+Artifacts land in `dist/` (or `--output`):
+
+- `taur-VERSION-x86_64-unknown-linux-gnu.tar.gz`
+- `taur_VERSION-1_amd64.deb`
+- `taur-VERSION-1.x86_64.rpm`
+- `taur-VERSION-1-x86_64.pkg.tar.zst`
+- `SHA256SUMS` of those four files
+
+The packages install `/usr/bin/taur`, `/usr/bin/taurctl`, man pages, docs, the systemd unit, and `/etc/taur/taur.env`. They depend on git. They do not enable or start the service. Install steps are in [services.md](services.md).
+
+`scripts/package-smoke.sh dist` installs the three packages in Debian 12, Ubuntu 22.04, Ubuntu 24.04, Fedora, Rocky Linux 9, AlmaLinux 9, and Arch containers. It checks the account, the config file, a running server, upgrade, and removal.

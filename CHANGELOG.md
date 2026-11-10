@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+### Added
+- Debian, RPM, and Arch packages for x86_64. The packaged binaries need at most glibc 2.31.
+
 ## [1.3.1] - 2026-11-09
 ### Added
 - `taur gc` prunes unreachable Git objects older than a grace period and skips a repository that has a push in progress. A refused push does not keep the incoming pack or an empty new repository.

@@ -16,6 +16,7 @@
 - [Web UI](web-ui.md)
 - [MCP server](mcp.md)
 - [gRPC API](grpc.md)
+- [Install a server package (Ubuntu, Fedora, Arch)](install.md)
 - [Running as a service (systemd, SysV init, OpenRC, runit, launchd, Windows)](services.md)
 - [TLS and automatic certificates](tls.md)
 - [Moderators and the audit](moderation.md)

@@ -1,0 +1,23 @@
+post_install() {
+  /usr/lib/taur/ensure-account posix
+  echo "taur: installed and not started. Enable it with: systemctl enable --now taur"
+}
+
+post_upgrade() {
+  /usr/lib/taur/ensure-account posix
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl try-restart taur.service >/dev/null 2>&1 || true
+  fi
+}
+
+pre_remove() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable --now taur.service >/dev/null 2>&1 || true
+  fi
+}
+
+post_remove() {
+  # /var/lib/taur is not packaged and is not deleted. A modified
+  # /etc/taur/taur.env is left as taur.env.pacsave by pacman.
+  :
+}

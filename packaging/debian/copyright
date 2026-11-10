@@ -1,0 +1,9 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: taur
+Source: https://github.com/WeirdBrains/taur
+
+Files: *
+Copyright: WeirdBrains
+License: MIT or Apache-2.0
+ The upstream crate license is MIT OR Apache-2.0. The license texts are the
+ standard MIT license and the Apache License, Version 2.0.

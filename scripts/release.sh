@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Bump the TAUR workspace version, commit it, tag vMAJOR.MINOR.PATCH, and push
 # that commit and that tag. Does not upload GitHub release assets.
+# Distribution packages are a later step: scripts/package.sh VERSION.
 #
 #   scripts/release.sh                  # minor: 1.2.0 -> 1.3.0, tag v1.3.0
 #   scripts/release.sh --patch          # 1.2.0 -> 1.2.1
@@ -27,7 +28,9 @@ build metadata.
 The script updates the workspace version, lockfile, changelog heading, and man
 pages, runs fmt, clippy, tests, and a release build, then commits, creates an
 annotated tag, and pushes main and that tag together. It does not push other
-tags and it does not create a GitHub release.
+tags and it does not create a GitHub release. It does not build the .deb, .rpm,
+Arch package, or release tarball. After the tag is on origin, run
+scripts/package.sh VERSION. See docs/releases.md.
 EOF
 }
 
@@ -279,3 +282,4 @@ git push --atomic origin HEAD:main "refs/tags/$tag"
 trap - EXIT
 plan
 echo "pushed $tag"
+echo "packages: scripts/package.sh ${tag#v}"

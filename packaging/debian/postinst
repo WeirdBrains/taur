@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+case "$1" in
+configure)
+  /usr/lib/taur/ensure-account debian
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  if [ -z "${2:-}" ]; then
+    echo "taur: installed and not started. Enable it with: systemctl enable --now taur" >&2
+  fi
+  ;;
+esac
+exit 0
