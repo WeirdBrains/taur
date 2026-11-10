@@ -1,0 +1,26 @@
+# Maintainer: WeirdBrains <taur@weirdbrains.com>
+# Internal recipe used only by scripts/package.sh to wrap a local
+# payload.tar.gz into the official GitHub .pkg.tar.zst. It is not the
+# public AUR-compatible recipe and must not be uploaded to a TAUR server.
+# The public recipe is packaging/arch/PKGBUILD.
+pkgname=taur
+pkgver=1.6.0
+pkgrel=1
+pkgdesc='AUR-compatible package server'
+arch=('x86_64')
+url='https://github.com/WeirdBrains/taur'
+license=('MIT' 'Apache-2.0')
+depends=('git' 'systemd')
+backup=('etc/taur/taur.env')
+options=('!strip' '!debug' '!lto')
+install=taur.install
+source=(payload.tar.gz)
+sha256sums=('SKIP')
+
+package() {
+  cp -a "${srcdir}/." "${pkgdir}/"
+  rm -f "${pkgdir}/payload.tar.gz"
+  chown -R root:root "${pkgdir}"
+  chmod 0750 "${pkgdir}/etc/taur"
+  chmod 0640 "${pkgdir}/etc/taur/taur.env"
+}

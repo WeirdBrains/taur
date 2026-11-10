@@ -34,11 +34,13 @@ scripts/release.sh --version 1.4.0  # explicit stable core, tag v1.4.0
 - `Cargo.toml` workspace version, which the `taur` and `taurctl` binaries report
 - `Cargo.lock` versions for `taur-cli`, `taur-core`, and `taur-server`
 - `CHANGELOG.md`, by dating `## [Unreleased]` as `## [X.Y.Z] - YYYY-MM-DD` when that heading is not already there
-- `packaging/arch/PKGBUILD` `pkgver`, set to the same workspace version (`pkgrel` stays 1)
+- `packaging/arch/PKGBUILD` `pkgver`, set to the same workspace version (`pkgrel` stays 1), and `sha256sums` reset to the placeholder `UPSTREAM_TARBALL_SHA256` so a previous release tarball hash is not reused
 - `packaging/arch/.SRCINFO`, regenerated with `makepkg --printsrcinfo` (or an Arch container if `makepkg` is not on PATH)
 - man pages, regenerated from the CLI so they show the same version
 
-Debian `control.in` and the RPM spec keep `@VERSION@` placeholders, which `scripts/package.sh` fills in. The release script checks those markers and that the Arch `pkgver` already matches the current workspace version; a missing file or mismatch stops the release. `.SRCINFO` is source-recipe metadata: it is included under `packaging/arch/` in the tree and in the release tarball, and it is not installed as a runtime file.
+Debian `control.in` and the RPM spec keep `@VERSION@` placeholders, which `scripts/package.sh` fills in. The release script checks those markers and that the public Arch `pkgver` already matches the current workspace version; a missing file or mismatch stops the release. The public `packaging/arch/PKGBUILD` source must be the GitHub release tarball URL. Its `sha256sums` is either `UPSTREAM_TARBALL_SHA256` (after a bump, before the asset exists) or the verified 64-character digest of that tarball. A `payload.tar.gz` source is rejected there. `.SRCINFO` is source-recipe metadata: it is included under `packaging/arch/` in the tree and in the release tarball, and it is not installed as a runtime file.
+
+`packaging/arch-internal/PKGBUILD` is only for `scripts/package.sh` to wrap a local `payload.tar.gz` into the official GitHub `.pkg.tar.zst`. After the tarball hash is known, `package.sh` also writes `taur-VERSION-arch-aur.tar.gz` beside the four official assets (not listed in `SHA256SUMS`) for upload to a TAUR server with `taurctl pkg upload`. Fill a committed public hash after publication with `python3 scripts/check-package-metadata.py set-tarball-sha256 HASH --recipe-dir packaging/arch` and regenerate `.SRCINFO`.
 
 Before the commit it runs `cargo fmt --all -- --check`, `cargo clippy --all-targets --offline -- -D warnings`, `cargo test --offline`, and `cargo build --release --offline`. A failed check restores the checkout to the commit you started from. A failed push leaves that release commit and its tag only on this machine; `origin` is unchanged and the tag is not overwritten.
 
@@ -65,6 +67,9 @@ Artifacts land in `dist/` (or `--output`):
 - `taur-VERSION-1.x86_64.rpm`
 - `taur-VERSION-1-x86_64.pkg.tar.zst`
 - `SHA256SUMS` of those four files
+- `taur-VERSION-arch-aur.tar.gz` and `arch-aur/`, the public AUR recipe (PKGBUILD, `.SRCINFO`, `taur.install`) with the verified tarball hash, for `taurctl pkg upload`. Not included in `SHA256SUMS`.
+
+`scripts/arch-aur-smoke.sh [RECIPE_DIR]` builds that public recipe in a disposable Arch container from only the files yay clones. It downloads the GitHub tarball named in the recipe and checks `/usr/bin/taur` and `/usr/bin/taurctl` from `/tmp`.
 
 The packages install `/usr/bin/taur`, `/usr/bin/taurctl`, man pages, docs, the systemd unit, and `/etc/taur/taur.env`. They depend on git. They do not enable or start the service. Install steps are in [services.md](services.md).
 

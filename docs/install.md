@@ -232,6 +232,14 @@ sudo dnf remove taur
 
 ## Arch
 
+To install `taur` from a TAUR server (for example the public instance), use the public recipe, which downloads the published GitHub tarball:
+
+```sh
+yay --aururl https://pkg.taur.weirdbrains.com --aurrpcurl 'https://pkg.taur.weirdbrains.com/rpc?' -S taur
+```
+
+That recipe is `packaging/arch/PKGBUILD`. It is not the internal `payload.tar.gz` wrapper used only to build the official `.pkg.tar.zst`.
+
 Tested with `pacman -Sy` and `pacman -U --noconfirm ./taur-1.3.2-1-x86_64.pkg.tar.zst`. The package depends on `git` and `systemd`. The Arch container image's `pacman.conf` has `NoExtract` for `/usr/share/man` and `/usr/share/doc`, so those files were not unpacked there. The package archive itself contains `usr/share/man/man1/taur.1.gz`. A normal Arch system without that `NoExtract` was not used.
 
 ```sh
