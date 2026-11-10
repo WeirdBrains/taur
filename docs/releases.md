@@ -65,3 +65,37 @@ Artifacts land in `dist/` (or `--output`):
 The packages install `/usr/bin/taur`, `/usr/bin/taurctl`, man pages, docs, the systemd unit, and `/etc/taur/taur.env`. They depend on git. They do not enable or start the service. Install steps are in [services.md](services.md).
 
 `scripts/package-smoke.sh dist` installs the three packages in Debian 12, Ubuntu 22.04, Ubuntu 24.04, Fedora, Rocky Linux 9, AlmaLinux 9, and Arch containers. It checks the account, the config file, a running server, upgrade, and removal.
+
+## GitHub Actions on alien-blue
+
+CI and release builds run only on a self-hosted runner on this machine. The workflows do not use a GitHub-hosted runner.
+
+The runner is `alien-blue`, installed for `m3talsmith` (not root) at `~/actions-runner-taur`, version 2.338.2. Its labels are `self-hosted`, `Linux`, `X64`, `alien-blue`, and `taur`. Both workflow files require all of those labels. A user systemd service keeps it running while this user is logged in:
+
+```sh
+systemctl --user status actions-runner-taur.service
+systemctl --user restart actions-runner-taur.service
+```
+
+The unit is `~/.config/systemd/user/actions-runner-taur.service` and it is enabled. It does not start at boot until lingering is turned on, which needs a password on this machine:
+
+```sh
+sudo loginctl enable-linger m3talsmith
+```
+
+That command has not been run. `Linger=no` until it is.
+
+`scripts/svc.sh` from the runner install wants root to write `/etc/systemd/system`. The user unit above is the service that is actually running. It executes `~/actions-runner-taur/bin/runsvc.sh`.
+
+### What is allowed to start a job
+
+`.github/workflows/ci.yml` runs on a push to `main` and on `workflow_dispatch`. `.github/workflows/release.yml` runs on a push of a `v*` tag and on `workflow_dispatch`. There is no `pull_request` or `pull_request_target` trigger, so a fork pull request cannot run code here.
+
+Each job sets `permissions:`. CI is `contents: read`. The release packaging job is `contents: read`. Only the upload job is `contents: write`, and that job is skipped when the manual `upload` input is false. A tag push uploads only when the release has no assets yet. Replacing assets that are already there requires the manual `overwrite` input. The v1.3.2 assets are left in place by a dry run.
+
+The repository Actions settings, set through the API:
+
+- Fork pull requests from outside collaborators require approval (`approval_policy` `all_external_contributors`). It was previously `first_time_contributors`.
+- The default workflow token is read-only and cannot approve pull requests. A job that needs more asks for it.
+
+The organization Actions policy was not changed. The token used here is not an organization admin (`admin:org` is required).

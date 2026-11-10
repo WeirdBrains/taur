@@ -1,0 +1,129 @@
+# Tag pushes and manual runs only, and only on the alien-blue runner.
+# A fork pull request cannot start this workflow.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to package, for example v1.3.2
+        required: true
+        type: string
+      upload:
+        description: Create or update the GitHub release. Leave false for a dry run.
+        required: true
+        type: boolean
+        default: false
+      overwrite:
+        description: Replace assets already attached to that release.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: gates, packages, smoke
+    runs-on: [self-hosted, linux, x64, alien-blue, taur]
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
+      TAUR_PARU: /tmp/taur-paru-v2.2.0/paru
+      TAUR_REQUIRE_HELPERS: yay,paru
+      TAUR_REQUIRE_ISOLATION: "1"
+      TAUR_ZIG: /home/m3talsmith/.local/opt/zig-x86_64-linux-0.14.1/zig
+    outputs:
+      outdir: ${{ steps.pack.outputs.outdir }}
+      tag: ${{ steps.ref.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+      - id: ref
+        name: resolve tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          case "$tag" in
+            v*) ;;
+            *) echo "tag must look like v1.2.3, got $tag" >&2; exit 1 ;;
+          esac
+          git rev-parse --verify "refs/tags/${tag}^{}" >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Packaging $tag at $(git rev-parse "refs/tags/${tag}^{}")"
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --all-targets --offline -- -D warnings
+      - name: test
+        run: cargo test --offline
+      - name: chromium
+        run: cargo test -p taur-server --offline --test web_headless -- --ignored
+      - name: release build
+        run: cargo build --release --offline
+      - id: pack
+        name: package and smoke
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ref.outputs.tag }}"
+          out="/home/m3talsmith/actions-runner-taur/outgoing/${GITHUB_RUN_ID}"
+          rm -rf "$out"
+          mkdir -p "$out"
+          scripts/package.sh --output "$out" "$tag"
+          scripts/package-smoke.sh "$out"
+          echo "outdir=$out" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: upload release assets
+    needs: package
+    if: ${{ github.event_name == 'push' || inputs.upload }}
+    runs-on: [self-hosted, linux, x64, alien-blue, taur]
+    permissions:
+      contents: write
+    steps:
+      - name: upload unless assets already exist
+        env:
+          TAG: ${{ needs.package.outputs.tag }}
+          OUTDIR: ${{ needs.package.outputs.outdir }}
+          OVERWRITE: ${{ inputs.overwrite }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.assets | length' 2>/dev/null || echo missing)"
+          echo "release ${TAG} asset count: ${assets}"
+          if [ "$assets" = "missing" ]; then
+            gh release create "$TAG" --verify-tag --title "$TAG" \
+              --notes "Built on alien-blue by the release workflow." \
+              "$OUTDIR"/SHA256SUMS \
+              "$OUTDIR"/taur-*.tar.gz \
+              "$OUTDIR"/taur_*.deb \
+              "$OUTDIR"/taur-*.rpm \
+              "$OUTDIR"/taur-*.pkg.tar.zst
+            exit 0
+          fi
+          if [ "$assets" != "0" ] && [ "$OVERWRITE" != "true" ]; then
+            echo "release ${TAG} already has assets; not replacing them"
+            exit 0
+          fi
+          gh release upload "$TAG" --clobber \
+            "$OUTDIR"/SHA256SUMS \
+            "$OUTDIR"/taur-*.tar.gz \
+            "$OUTDIR"/taur_*.deb \
+            "$OUTDIR"/taur-*.rpm \
+            "$OUTDIR"/taur-*.pkg.tar.zst

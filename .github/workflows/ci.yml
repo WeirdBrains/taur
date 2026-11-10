@@ -1,0 +1,41 @@
+# Runs only on the alien-blue self-hosted runner. Do not add ubuntu-latest or
+# any other GitHub-hosted runner. Do not add pull_request triggers: a fork PR
+# must never execute on this machine.
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: fmt, clippy, test, release
+    runs-on: [self-hosted, linux, x64, alien-blue, taur]
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
+      TAUR_PARU: /tmp/taur-paru-v2.2.0/paru
+      TAUR_REQUIRE_HELPERS: yay,paru
+      TAUR_REQUIRE_ISOLATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --all-targets --offline -- -D warnings
+      - name: test
+        run: cargo test --offline
+      - name: chromium
+        run: cargo test -p taur-server --offline --test web_headless -- --ignored
+      - name: release build
+        run: cargo build --release --offline
