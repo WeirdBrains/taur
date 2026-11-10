@@ -33,8 +33,15 @@ check_bins_on_path() {
     || fail "taur and taurctl are not both on PATH $when"
   taur_path=$(printf "%s\n" "$out" | sed -n "1p")
   ctl_path=$(printf "%s\n" "$out" | sed -n "2p")
-  [ "$taur_path" = /usr/bin/taur ] || fail "taur resolved to $taur_path, expected /usr/bin/taur $when"
-  [ "$ctl_path" = /usr/bin/taurctl ] || fail "taurctl resolved to $ctl_path, expected /usr/bin/taurctl $when"
+  # Packages install both binaries in /usr/bin. On usr-merged systems (Fedora,
+  # Arch), /usr/sbin is a symlink to /usr/bin, so a login PATH may report
+  # /usr/sbin/taur for the same file.
+  [ -x /usr/bin/taur ] || fail "missing /usr/bin/taur $when"
+  [ -x /usr/bin/taurctl ] || fail "missing /usr/bin/taurctl $when"
+  [ "$(readlink -f "$taur_path")" = "$(readlink -f /usr/bin/taur)" ] \
+    || fail "taur resolved to $taur_path, which is not /usr/bin/taur $when"
+  [ "$(readlink -f "$ctl_path")" = "$(readlink -f /usr/bin/taurctl)" ] \
+    || fail "taurctl resolved to $ctl_path, which is not /usr/bin/taurctl $when"
   ver=$(printf "%s\n" "$out" | sed -n "3p" | awk "{print \$NF}")
   ctl=$(printf "%s\n" "$out" | sed -n "4p" | awk "{print \$NF}")
   [ -n "$ver" ] && [ "$ver" = "$ctl" ] || fail "taurctl $ctl != taur $ver $when"
