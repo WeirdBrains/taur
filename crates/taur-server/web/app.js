@@ -23,7 +23,11 @@ function h(tag, attrs, ...kids) {
 }
 const link = (href, text) => h("a", { href, "data-link": true }, text);
 const app = () => document.getElementById("app");
-function render(...nodes) { app().replaceChildren(...nodes); }
+function render(...nodes) {
+  // replaceChildren stringifies null/undefined/false to "null"/"undefined"/"false".
+  // Skip those placeholders (same rule as h()); keep 0 and "".
+  app().replaceChildren(...nodes.flat(Infinity).filter((n) => n !== null && n !== undefined && n !== false));
+}
 function msg(text, kind = "error") { return h("div", { class: `msg ${kind}`, role: "status" }, text); }
 function flash(text, kind = "ok") { app().prepend(msg(text, kind)); window.scrollTo(0, 0); }
 const fmtTime = (t) => (t ? new Date(t * 1000).toLocaleString() : "—");
