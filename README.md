@@ -26,5 +26,5 @@ service hostname is not this site.
 
 `assets/logo.svg` is an original angular tau. It is not the Arch Linux logo and it is
 not an Arch Linux endorsement. `assets/logo-dark.svg` is the same geometry for a dark
-background. `assets/icon.svg` is the favicon tile. `assets/wordmark.svg` sets the word
+background. `assets/icon.svg` is the favicon tile. `assets/favicon.ico` and the root `/favicon.ico` are the same mark in ICO form (16, 32, and 48 px), so browsers that request `/favicon.ico` get it. `assets/wordmark.svg` sets the word
 "taur" beside the mark. No Arch artwork was traced.
