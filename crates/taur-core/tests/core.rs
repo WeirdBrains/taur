@@ -46,6 +46,23 @@ fn import_and_query() {
 }
 
 #[test]
+fn import_rejects_arch_any_with_specific_depends() {
+    let (_d, s) = store();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join(".SRCINFO"),
+        "pkgbase = demo\n\tpkgver = 1\n\tpkgrel = 1\n\tarch = any\n\tdepends_x86_64 = lib32-glibc\n\npkgname = demo\n",
+    )
+    .unwrap();
+    let err = s.import_dir(dir.path(), None).unwrap_err();
+    assert!(
+        matches!(err, Error::Parse(ref m) if m.contains("depends_x86_64")),
+        "{err}"
+    );
+    assert!(s.pkgbase_id("demo").unwrap().is_none());
+}
+
+#[test]
 fn rpc_shapes() {
     let (_d, s) = store();
     s.import_dir(&fixture(), None).unwrap();

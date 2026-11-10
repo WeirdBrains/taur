@@ -5,6 +5,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 ### Added
 - `taur gc` prunes unreachable Git objects older than a grace period and skips a repository that has a push in progress. A refused push does not keep the incoming pack or an empty new repository.
+### Fixed
+- An uploaded recipe is rejected when an architecture-specific field does not match `arch`, which yay and paru refuse to install.
 
 ## [1.3.0] - 2026-11-09
 ### Added

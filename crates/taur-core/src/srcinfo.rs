@@ -32,6 +32,11 @@ pub fn parse(text: &str) -> Result<SrcInfo> {
     let mut info = SrcInfo::default();
     let mut seen_base = false;
     let mut current: Option<usize> = None;
+    // Architectures named by `arch` in the pkgbase section, in file order.
+    // yay and paru (go-srcinfo) check an architecture-specific field against
+    // this list as it stands when the field is read. A later `arch` line does
+    // not apply backwards, and a pkgname section's own `arch` does not apply.
+    let mut base_arches: Vec<String> = Vec::new();
     for (n, raw) in text.lines().enumerate() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -57,6 +62,12 @@ pub fn parse(text: &str) -> Result<SrcInfo> {
                 current = Some(info.packages.len() - 1);
             }
             _ => {
+                if current.is_none() && k == "arch" && !v.is_empty() {
+                    base_arches.push(v.to_string());
+                }
+                if let Some(msg) = arch_field_error(k, &base_arches) {
+                    return Err(Error::Parse(format!("line {}: {msg}", n + 1)));
+                }
                 let target = match current {
                     Some(i) => &mut info.packages[i].1,
                     None => &mut info.base,
@@ -178,6 +189,23 @@ pub fn literal_mismatches(info: &SrcInfo, pkgbuild: &str) -> Vec<String> {
     out
 }
 
+/// yay and paru refuse a field such as `depends_x86_64` unless that architecture
+/// was already named by a pkgbase `arch` line. `depends_any` is never a real
+/// architecture. The suffix is the text after the first `_`.
+fn arch_field_error(key: &str, base_arches: &[String]) -> Option<String> {
+    let (_, arch) = key.split_once('_')?;
+    if arch.is_empty() {
+        return None;
+    }
+    if arch == "any" {
+        return Some(format!("invalid key \"{key}\" arch \"any\" is not allowed"));
+    }
+    if !base_arches.iter().any(|a| a == arch) {
+        return Some(format!("invalid key \"{key}\" unsupported arch \"{arch}\""));
+    }
+    None
+}
+
 fn simple_assignments(pkgbuild: &str) -> std::collections::BTreeMap<String, Vec<String>> {
     let mut out = std::collections::BTreeMap::<String, Vec<String>>::new();
     for raw in pkgbuild.lines() {
@@ -243,6 +271,46 @@ mod tests {
         assert!(parse("pkgbase = x\nnonsense\n").is_err());
         assert!(validate_name("-x").is_err());
         assert!(validate_name("a@b.c_d+e-f").is_ok());
+    }
+
+    fn recipe(body: &str) -> String {
+        format!("pkgbase = demo\n\tpkgver = 1\n\tpkgrel = 1\n{body}\npkgname = demo\n")
+    }
+
+    #[test]
+    fn rejects_arch_fields_helpers_cannot_parse() {
+        let any = parse(&recipe("\tarch = any\n\tdepends_x86_64 = lib32-glibc\n")).unwrap_err();
+        assert!(
+            any.to_string().contains("depends_x86_64")
+                && any.to_string().contains("unsupported arch \"x86_64\""),
+            "{any}"
+        );
+
+        let denied = parse(&recipe("\tarch = x86_64\n\tdepends_any = glibc\n")).unwrap_err();
+        assert!(
+            denied.to_string().contains("depends_any")
+                && denied.to_string().contains("not allowed"),
+            "{denied}"
+        );
+
+        let early = parse(&recipe("\tdepends_x86_64 = glibc\n\tarch = x86_64\n")).unwrap_err();
+        assert!(early.to_string().contains("unsupported arch"), "{early}");
+
+        let other = parse(&recipe("\tarch = x86_64\n\tdepends_aarch64 = glibc\n")).unwrap_err();
+        assert!(other.to_string().contains("aarch64"), "{other}");
+
+        // A pkgname `arch` does not make an architecture-specific field legal.
+        let split = "pkgbase = demo\n\tpkgver = 1\n\tpkgrel = 1\n\tarch = any\n\npkgname = demo\n\tarch = x86_64\n\tdepends_x86_64 = glibc\n";
+        assert!(parse(split).is_err());
+
+        let ok = parse(&recipe(
+            "\tarch = x86_64\n\tarch = aarch64\n\tdepends_x86_64 = glibc\n\tdepends_aarch64 = glibc\n",
+        ))
+        .unwrap();
+        assert_eq!(ok.values(0, "depends"), vec!["glibc"]);
+
+        let inherited = "pkgbase = demo\n\tpkgver = 1\n\tpkgrel = 1\n\tarch = x86_64\n\npkgname = demo\n\tdepends_x86_64 = glibc\n";
+        assert!(parse(inherited).is_ok());
     }
 
     #[test]

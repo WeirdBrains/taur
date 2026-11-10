@@ -20,6 +20,10 @@ Quote `--aurrpcurl` in zsh (`?` is a glob). yay GETs that URL and clones
 `/{pkgbase}.git`. paru POSTs the RPC form and clones `/{pkgbase}` (no `.git` suffix).
 `-G` only retrieves the PKGBUILD; it does not build or install.
 
+yay and paru both refuse a recipe whose `.SRCINFO` pairs `arch = any` with an
+architecture-specific field such as `depends_x86_64`. TAUR rejects that recipe on
+import and on push. See [import](import.md).
+
 ## Automated tests
 
 `cargo test -p taur-server --test helpers` boots TAUR on `127.0.0.1` with a temporary
