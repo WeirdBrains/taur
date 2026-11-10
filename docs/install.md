@@ -154,7 +154,7 @@ curl -fsS -H 'content-type: application/json' \
 
 The response had `"is_admin":false`. After the process was started again with the same env file, `users.is_admin` for `alice` was `1` and the warning was gone.
 
-`TAUR_SMTP_URL` is commented out in the shipped file. Leave it that way and mail stays in `/var/lib/taur/outbox`. A real SMTP server was not used. `TAUR_MAIL_FROM` is already set; values with spaces must stay double-quoted.
+`TAUR_SMTP_URL` is commented out in the shipped file. Leave it that way and mail stays in `/var/lib/taur/outbox`. A real SMTP server was not used. `TAUR_MAIL_FROM` is already set; values with spaces must stay double-quoted. If you set `TAUR_SMTP_URL`, percent-encode `/ ? # % : @` in the username and password. An unencoded `/`, `?`, or `#` cuts the userinfo short and the process dials the wrong host. Startup names that parsed host and refuses it when it is not a hostname or an IP address. The password is not included in the message.
 
 ### Upgrade and removal
 

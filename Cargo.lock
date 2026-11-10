@@ -3627,6 +3627,7 @@ dependencies = [
  "ssh-key 0.6.7",
  "tempfile",
  "thiserror",
+ "url",
 ]
 
 [[package]]
