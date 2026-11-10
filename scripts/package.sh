@@ -14,6 +14,52 @@ set -euo pipefail
 
 die() { echo "package: $*" >&2; exit 1; }
 
+# The zigbuild binary must reach an ACME directory error without the rustls
+# CryptoProvider panic. The directory is a closed local port, not Let's Encrypt.
+assert_acme_no_panic() {
+  local bin="$1"
+  local home http https log pid ok
+  home="$(mktemp -d)"
+  http=$((20000 + RANDOM % 20000))
+  https=$((http + 1))
+  log="$home/serve.log"
+  TAUR_HOME="$home" \
+    TAUR_TLS=acme \
+    TAUR_BIND="127.0.0.1:${https}" \
+    TAUR_DOMAIN=pkg.example.com \
+    TAUR_ACME_CONTACT=mailto:admin@example.com \
+    TAUR_ACME_ACCEPT_TERMS=yes \
+    TAUR_ACME_HTTP_BIND="127.0.0.1:${http}" \
+    TAUR_ACME_DIRECTORY=https://127.0.0.1:9/directory \
+    "$bin" serve >"$log" 2>&1 &
+  pid=$!
+  ok=0
+  local _i
+  for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if grep -q 'CryptoProvider' "$log" || grep -q 'panicked at' "$log"; then
+      cat "$log" >&2
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      rm -rf "$home"
+      die "$bin panicked while building the ACME client"
+    fi
+    if grep -q 'certificate request failed' "$log"; then
+      ok=1
+      break
+    fi
+    sleep 0.25
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  if [[ "$ok" -ne 1 ]]; then
+    cat "$log" >&2
+    rm -rf "$home"
+    die "$bin did not report an ACME directory failure"
+  fi
+  rm -rf "$home"
+  echo "package: $(basename "$bin") ACME startup did not panic"
+}
+
 usage() {
   cat <<'EOF'
 Usage: scripts/package.sh [--output DIR] [--bin-dir DIR] [--stage-only] VERSION
@@ -205,6 +251,9 @@ done
 mkdir -p "$output/bins"
 install -m 0755 "$root/usr/bin/taur" "$output/bins/taur"
 install -m 0755 "$root/usr/bin/taurctl" "$output/bins/taurctl"
+if [[ "$stage_only" -ne 1 ]]; then
+  assert_acme_no_panic "$output/bins/taur"
+fi
 
 shopt -s nullglob
 for man in "$worktree"/man/*.1; do

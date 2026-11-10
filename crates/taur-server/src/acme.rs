@@ -115,6 +115,7 @@ impl CertificateIssuer for InstantAcme {
         settings: &AcmeSettings,
         board: &ChallengeBoard,
     ) -> Result<Issued, String> {
+        install_crypto();
         if !settings.accept_terms {
             return Err(terms_refusal(&settings.directory));
         }
@@ -232,6 +233,7 @@ pub async fn bootstrap<I>(
 where
     I: CertificateIssuer + 'static,
 {
+    install_crypto();
     if !settings.accept_terms {
         return Err(terms_refusal(&settings.directory));
     }
