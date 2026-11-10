@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS pkgbases (
   num_votes INTEGER NOT NULL DEFAULT 0,
   popularity REAL NOT NULL DEFAULT 0,
   out_of_date INTEGER,
+  archived_at INTEGER,
   first_submitted INTEGER NOT NULL,
   last_modified INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS packages (
@@ -184,6 +185,8 @@ pub struct PkgInfo {
     pub num_votes: i64,
     pub popularity: f64,
     pub out_of_date: Option<i64>,
+    /// Set when a maintainer archived the package. Hidden from search and dumps.
+    pub archived_at: Option<i64>,
     pub maintainer: Option<String>,
     pub submitter: Option<String>,
     pub first_submitted: i64,
@@ -274,7 +277,7 @@ fn escape_like(s: &str) -> String {
 }
 
 const SELECT: &str = "SELECT p.id, p.name, b.id, b.name, p.version, p.description, p.url, \
-    b.num_votes, b.popularity, b.out_of_date, m.name, s.name, b.first_submitted, b.last_modified, o.name \
+    b.num_votes, b.popularity, b.out_of_date, m.name, s.name, b.first_submitted, b.last_modified, o.name, b.archived_at \
     FROM packages p JOIN pkgbases b ON b.id = p.pkgbase_id \
     LEFT JOIN users m ON m.id = b.maintainer_id LEFT JOIN users s ON s.id = b.submitter_id \
     LEFT JOIN orgs o ON o.id = b.org_id";
@@ -291,6 +294,7 @@ fn row_to_info(r: &Row) -> rusqlite::Result<PkgInfo> {
         num_votes: r.get(7)?,
         popularity: r.get(8)?,
         out_of_date: r.get(9)?,
+        archived_at: r.get(15)?,
         maintainer: r.get(10)?,
         submitter: r.get(11)?,
         first_submitted: r.get(12)?,
@@ -303,7 +307,9 @@ fn row_to_info(r: &Row) -> rusqlite::Result<PkgInfo> {
 }
 
 fn query_infos(conn: &Connection, filter: &str, args: &[&dyn ToSql]) -> Result<Vec<PkgInfo>> {
-    let sql = format!("{SELECT} WHERE ({filter}) AND b.suspended_at IS NULL ORDER BY p.name");
+    let sql = format!(
+        "{SELECT} WHERE ({filter}) AND b.suspended_at IS NULL AND b.archived_at IS NULL ORDER BY p.name"
+    );
     let mut st = conn.prepare(&sql)?;
     let rows = st.query_map(args, row_to_info)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -368,6 +374,7 @@ impl Store {
             ("users", "suspended_reason", "TEXT"),
             ("pkgbases", "suspended_at", "INTEGER"),
             ("pkgbases", "suspended_reason", "TEXT"),
+            ("pkgbases", "archived_at", "INTEGER"),
         ] {
             let exists = conn
                 .prepare(&format!(
@@ -815,6 +822,39 @@ impl Store {
         Ok(infos)
     }
 
+    /// Package page lookup. Includes archived packages and hides rejected ones.
+    pub fn package_page(&self, name: &str) -> Result<Option<PkgInfo>> {
+        let conn = self.lock();
+        let sql = format!(
+            "{SELECT} WHERE (p.name = ?1 OR b.name = ?1) AND b.suspended_at IS NULL ORDER BY CASE WHEN p.name = ?1 THEN 0 ELSE 1 END, p.name"
+        );
+        let mut st = conn.prepare(&sql)?;
+        let mut infos = st.query_map([name], row_to_info)?;
+        let Some(mut info) = infos.next().transpose()? else {
+            return Ok(None);
+        };
+        drop(infos);
+        drop(st);
+        let mut rel = conn.prepare(
+            "SELECT kind, value FROM relations WHERE package_id = ?1 ORDER BY kind, position",
+        )?;
+        for row in rel.query_map([info.id], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))? {
+            let (k, v) = row?;
+            info.relations.entry(k).or_default().push(v);
+        }
+        info.keywords = strings(
+            &conn,
+            "SELECT keyword FROM keywords WHERE pkgbase_id = ?1 ORDER BY keyword",
+            info.pkgbase_id,
+        )?;
+        info.comaintainers = strings(
+            &conn,
+            "SELECT u.name FROM co_maintainers c JOIN users u ON u.id = c.user_id WHERE c.pkgbase_id = ?1 ORDER BY u.name",
+            info.pkgbase_id,
+        )?;
+        Ok(Some(info))
+    }
+
     /// RPC `search`. An empty `arg` with `by=maintainer` lists orphans.
     pub fn search(&self, by: SearchBy, arg: &str) -> Result<Vec<PkgInfo>> {
         let conn = self.lock();
@@ -855,11 +895,11 @@ impl Store {
         let conn = self.lock();
         let sql = if table == "packages" {
             "SELECT p.name FROM packages p JOIN pkgbases b ON b.id = p.pkgbase_id \
-             WHERE b.suspended_at IS NULL AND p.name LIKE ?1 ESCAPE '\\' ORDER BY p.name LIMIT 20"
+             WHERE b.suspended_at IS NULL AND b.archived_at IS NULL AND p.name LIKE ?1 ESCAPE '\\' ORDER BY p.name LIMIT 20"
                 .to_string()
         } else {
             format!(
-                "SELECT name FROM {table} WHERE suspended_at IS NULL AND name LIKE ?1 ESCAPE '\\' ORDER BY name LIMIT 20"
+                "SELECT name FROM {table} WHERE suspended_at IS NULL AND archived_at IS NULL AND name LIKE ?1 ESCAPE '\\' ORDER BY name LIMIT 20"
             )
         };
         let mut st = conn.prepare(&sql)?;
@@ -884,7 +924,9 @@ impl Store {
     pub fn all_pkgbase_names(&self) -> Result<Vec<String>> {
         let conn = self.lock();
         let mut st =
-            conn.prepare("SELECT name FROM pkgbases WHERE suspended_at IS NULL ORDER BY name")?;
+            conn.prepare(
+                "SELECT name FROM pkgbases WHERE suspended_at IS NULL AND archived_at IS NULL ORDER BY name",
+            )?;
         let rows = st.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
     }

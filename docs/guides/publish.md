@@ -15,6 +15,14 @@ The server checks `.SRCINFO`, the literal `PKGBUILD` assignments, architectures,
 
 Git and SSH pushes are unchanged.
 
+## Archive
+
+On a package you maintain, **Archive** hides it from search, name completion, RPC info, and the metadata dumps. The package page stays, labeled Archived, and the git repository is kept. **Unarchive** puts it back. Archiving asks for confirmation. This is not rejection and not disowning: you remain the maintainer.
+
+## Out of date
+
+**Mark out of date** on your package, or **Flag out-of-date** on someone else's, records that a newer upstream exists. **Clear out-of-date flag** removes it. A new upload of a different version also clears it.
+
 ## What you need
 
 - A verified account. Open the link in the verification mail, or use **Resend verification** on your account page. A site admin can also mark you verified.

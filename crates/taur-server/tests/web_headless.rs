@@ -166,6 +166,17 @@ fn pages_render_in_chromium() {
     );
     assert!(uploaded.contains("webup 1.0.0-1"), "{uploaded}");
     assert!(uploaded.contains("Published webup"), "{uploaded}");
+    let cycle = format!(
+        "(() => {{ localStorage.setItem('taur.token', {session:?}); window.prompt = () => 'upstream 2.0'; window.confirm = () => true; if (!window.__taurBoot) {{ window.__taurBoot = 1; loadMe().then(route); return; }} const click = (label) => [...document.querySelectorAll('button')].find((b) => b.textContent === label); if (!window.__step) {{ const b = click('Mark out of date'); if (b) {{ window.__step = 1; b.click(); }} return; }} if (window.__step === 1) {{ const b = click('Clear out-of-date flag'); if (b) {{ window.__step = 2; b.click(); }} return; }} if (window.__step === 2) {{ const b = click('Archive'); if (b) {{ window.__step = 3; b.click(); }} return; }} if (window.__step === 3 && document.body.innerText.includes('Archived')) {{ const b = click('Unarchive'); if (b) {{ window.__step = 4; b.click(); }} }} }})()"
+    );
+    let restored = dump_hook(
+        &format!("{url}/packages/webup"),
+        profile.path(),
+        "Package restored.",
+        Some(&cycle),
+    );
+    assert!(restored.contains("Package restored."), "{restored}");
+    assert!(!restored.contains("Archived since"), "{restored}");
     store.insert_registry("vendor", "enforce").unwrap();
     store
         .insert_identity("vendor", "carol", "carol@example.com")

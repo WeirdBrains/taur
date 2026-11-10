@@ -12,6 +12,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 - The web UI covers the management commands, and a Docs section with task guides.
 - A verified user can upload a recipe tarball or zip from the site. The PKGBUILD is not executed.
+- Maintainers can archive a package so it leaves search and install, and can mark it out of date.
 - Site owner, above site admin. With no admin or owner and neither bootstrap list set, the first registration becomes owner and admin.
 
 ## [1.3.2] - 2026-11-09

@@ -121,9 +121,9 @@ async function pageSearch(params) {
 
 async function pagePackage(name) {
   let info;
-  try { info = (await api("GET", `/rpc/v5/info?arg[]=${enc(name)}`, undefined, false)).results[0]; }
+  try { info = await api("GET", `/api/v1/packages/by-name/${enc(name)}`, undefined, !!token()); }
   catch (e) { return render(msg(e.message)); }
-  if (!info) return render(msg(`No package named ${name}.`));
+  if (!info || !info.Name) return render(msg(`No package named ${name}.`));
   const base = info.PackageBase;
   const [comments, flag] = await Promise.all([
     api("GET", `/api/v1/packages/${enc(base)}/comments`, undefined, false).catch(() => []),
@@ -149,7 +149,11 @@ async function pagePackage(name) {
     ["Out of date", info.OutOfDate ? h("span", { class: "flagged" }, `since ${fmtTime(info.OutOfDate)} by ${flag.flagger || "?"}: ${flag.comment || ""}`) : "no"],
   ];
   const dl = h("dl", {}, rows.map(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
-  const out = [h("h1", {}, `${info.Name} ${info.Version}`), h("div", { class: "card" }, dl)];
+  const out = [
+    info.Archived ? h("p", { class: "flagged" }, `Archived since ${fmtTime(info.Archived)}. It is hidden from search and install. The git history is kept.`) : null,
+    h("h1", {}, `${info.Name} ${info.Version}`),
+    h("div", { class: "card" }, dl),
+  ];
 
   if (me) {
     const P = `/api/v1/packages/${enc(base)}`;
@@ -158,12 +162,16 @@ async function pagePackage(name) {
             : h("button", { onclick: guard(() => api("POST", `${P}/vote`), "Thanks for voting.") }, "Vote"),
       subscribed ? h("button", { class: "secondary", onclick: guard(() => api("DELETE", `${P}/notify`), "Notifications off.") }, "Disable notifications")
                  : h("button", { class: "secondary", onclick: guard(() => api("POST", `${P}/notify`), "You will be emailed about updates and comments.") }, "Enable notifications"),
-      info.OutOfDate ? h("button", { class: "secondary", onclick: guard(() => api("DELETE", `${P}/flag`), "Flag removed.") }, "Unflag")
-        : h("button", { class: "secondary", onclick: guard(async () => {
-            const c = prompt("Why is it out of date? (e.g. new upstream version)");
+      info.OutOfDate && (info.CanManage || (flag.flagger === me.name))
+        ? h("button", { class: "secondary", onclick: guard(() => api("DELETE", `${P}/flag`), info.CanManage ? "Out-of-date flag cleared." : "Flag removed.") }, info.CanManage ? "Clear out-of-date flag" : "Remove your flag")
+        : !info.OutOfDate ? h("button", { class: "secondary", onclick: guard(async () => {
+            const c = prompt(info.CanManage ? "Mark this package out of date. What changed upstream?" : "Why is it out of date? (e.g. new upstream version)");
             if (!c) throw new Error("A comment is required to flag a package.");
             await api("POST", `${P}/flag`, { comment: c });
-          }, "Flagged out-of-date.") }, "Flag out-of-date"),
+          }, info.CanManage ? "Marked out of date." : "Flagged out-of-date.") }, info.CanManage ? "Mark out of date" : "Flag out-of-date") : null,
+      info.CanManage ? (info.Archived
+        ? h("button", { onclick: guard(() => api("DELETE", `${P}/archive`), "Package restored.") }, "Unarchive")
+        : h("button", { class: "secondary", onclick: confirmAct(`Archive ${base}? It leaves search and install. The git history stays.`, () => api("POST", `${P}/archive`), "Package archived.") }, "Archive")) : null,
       !info.Maintainer ? h("button", { class: "secondary", onclick: guard(() => api("POST", `${P}/adopt`), "Adopted.") }, "Adopt") : null,
       info.Maintainer === me.name ? h("button", { class: "danger", onclick: guard(async () => {
           if (!confirm(`Disown ${base}?`)) throw new Error("Cancelled.");

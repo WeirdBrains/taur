@@ -82,6 +82,11 @@ pub fn app_with(state: AppState) -> Router {
         )
         .route("/api/v1/packages", get(my_packages))
         .route("/api/v1/packages/upload", post(upload_package))
+        .route("/api/v1/packages/by-name/{name}", get(package_by_name))
+        .route(
+            "/api/v1/packages/{pkgbase}/archive",
+            post(archive_package).delete(unarchive_package),
+        )
         .route("/api/v1/packages/{pkgbase}/owner", post(set_owner))
         .route("/api/v1/packages/{pkgbase}/disown", post(disown))
         .route("/api/v1/packages/{pkgbase}/adopt", post(adopt))
@@ -1257,6 +1262,49 @@ async fn remove_member(
 ) -> Result<StatusCode, ApiError> {
     let u = auth_verified(&s, &h)?;
     s.remove_member(u.id, s.org_id(&org)?, s.user_id(&user)?)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn package_by_name(
+    State(s): St,
+    h: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let Some(info) = s.package_page(&name)? else {
+        return Err(Error::NotFound(format!("package {name}")).into());
+    };
+    let mut value = taur_core::rpc::info_value(&info, true);
+    let can_manage = match bearer(&h) {
+        Ok(token) => match s.user_for_token(&token) {
+            Ok(user) => user.verified && s.can_manage_pkgbase(user.id, info.pkgbase_id)?,
+            Err(_) => false,
+        },
+        Err(_) => false,
+    };
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("Archived".into(), json!(info.archived_at));
+        obj.insert("CanManage".into(), json!(can_manage));
+    }
+    Ok(Json(value))
+}
+
+async fn archive_package(
+    State(s): St,
+    h: HeaderMap,
+    Path(pkgbase): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let user = auth_verified(&s, &h)?;
+    s.set_archived(user.id, &pkgbase, true)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn unarchive_package(
+    State(s): St,
+    h: HeaderMap,
+    Path(pkgbase): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let user = auth_verified(&s, &h)?;
+    s.set_archived(user.id, &pkgbase, false)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

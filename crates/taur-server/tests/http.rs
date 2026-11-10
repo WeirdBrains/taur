@@ -2299,3 +2299,103 @@ async fn package_upload_creates_updates_and_checks_permission() {
     );
     let _ = bad;
 }
+
+#[tokio::test]
+async fn archive_hides_a_package_and_the_maintainer_can_flag_it() {
+    let (d, app) = setup();
+    let ada = token(&app, d.path(), "ada").await;
+    let (st, _) = call(
+        &app,
+        send(
+            "POST",
+            "/api/v1/packages/hello-taur/flag",
+            Some(&ada),
+            json!({"comment": "2.0 is out"}),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let page = get_json(&app, "/api/v1/packages/by-name/hello-taur").await;
+    assert!(page["OutOfDate"].is_number());
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "DELETE",
+                "/api/v1/packages/hello-taur/flag",
+                Some(&ada),
+                json!(null),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let bob = token(&app, d.path(), "bob").await;
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/archive",
+                Some(&bob),
+                json!(null),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "POST",
+                "/api/v1/packages/hello-taur/archive",
+                Some(&ada),
+                json!(null),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get_json(&app, "/rpc/v5/search/hello?by=name").await["resultcount"],
+        0
+    );
+    assert_eq!(
+        get_json(&app, "/rpc/v5/info/hello-taur").await["resultcount"],
+        0
+    );
+    let archived = get_json(&app, "/api/v1/packages/by-name/hello-taur").await;
+    assert!(archived["Archived"].is_number(), "{archived}");
+    let (st, dump) = get(&app, "/packages.gz").await;
+    assert_eq!(st, StatusCode::OK);
+    let mut dec = flate2::read::GzDecoder::new(dump.as_slice());
+    let mut text = String::new();
+    use std::io::Read;
+    dec.read_to_string(&mut text).unwrap();
+    assert!(!text.contains("hello-taur"), "{text}");
+    assert_eq!(
+        call(
+            &app,
+            send(
+                "DELETE",
+                "/api/v1/packages/hello-taur/archive",
+                Some(&ada),
+                json!(null),
+            ),
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(
+        get_json(&app, "/rpc/v5/info/hello-taur").await["resultcount"]
+            .as_i64()
+            .unwrap()
+            >= 1
+    );
+    let _ = d;
+}
