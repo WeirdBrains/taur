@@ -13,6 +13,7 @@ Authenticated JSON endpoints (`Authorization: Bearer <token>`, see
 | PUT | `/api/v1/orgs/{org}/members/{user}` | `{"role":"owner\|admin\|contributor"}` | Owner, Admin (not for Owner role/Owners) | 204 (add or change role) |
 | DELETE | `/api/v1/orgs/{org}/members/{user}` | | Owner, Admin (not Owners) | 204 |
 | GET | `/api/v1/packages` | | any user | `[{"pkgbase","maintainer","org"}]` you can manage |
+| POST | `/api/v1/packages/upload` | multipart field `archive` (`.tar.gz`, `.tar`, or `.zip`) | verified user who could push that base | 201 create or 200 update: `{"pkgbase","name","version","created"}` |
 | POST | `/api/v1/packages/{pkgbase}/owner` | `{"org"}` or `{"user"}` | anyone who can manage it (+ ManagePackages in target org) | 204 |
 | POST | `/api/v1/packages/{pkgbase}/disown` | | anyone who can manage it | 204 (orphaned; org link kept) |
 | POST | `/api/v1/packages/{pkgbase}/adopt` | | anyone if orphaned and not org-owned; org members otherwise | 204 |
