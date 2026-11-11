@@ -143,7 +143,37 @@ def main() -> None:
                     msg = json.loads(recv(ws))
                     if msg.get("id") == 1000:
                         print(msg["result"]["result"]["value"])
-                        return
+                        break
+                shot = os.environ.get("TAUR_WEB_SCREENSHOT")
+                if shot:
+                    send(ws, json.dumps({"id": 1001, "method": "Page.enable"}))
+                    while True:
+                        msg = json.loads(recv(ws))
+                        if msg.get("id") == 1001:
+                            break
+                    send(
+                        ws,
+                        json.dumps(
+                            {
+                                "id": 1002,
+                                "method": "Page.captureScreenshot",
+                                "params": {"format": "png", "captureBeyondViewport": False},
+                            }
+                        ),
+                    )
+                    while True:
+                        msg = json.loads(recv(ws))
+                        if msg.get("id") == 1002:
+                            data = msg.get("result", {}).get("data")
+                            if not data:
+                                raise SystemExit(f"screenshot failed: {msg}")
+                            Path = __import__("pathlib").Path
+                            out = Path(shot)
+                            out.parent.mkdir(parents=True, exist_ok=True)
+                            out.write_bytes(__import__("base64").b64decode(data))
+                            os.environ.pop("TAUR_WEB_SCREENSHOT", None)
+                            break
+                return
             time.sleep(0.1)
         raise SystemExit(
             f"marker {marker!r} not seen; last text={text[:500]!r}; page={page.get('url')}; notes={notes[:3]}"

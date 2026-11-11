@@ -62,7 +62,7 @@ async function loadMe() {
 
 function nav() {
   const n = document.getElementById("nav");
-  const items = [link("/", "Packages"), link("/orgs", "Organizations"), link("/docs", "Docs"), link("/requests", "Requests")];
+  const items = [link("/", "Packages"), link("/orgs", "Organizations"), link("/docs", "Docs"), h("a", { href: "https://github.com/WeirdBrains/taur" }, "GitHub"), link("/requests", "Requests")];
   if (me) {
     items.push(link("/upload", "Upload"), link("/account", me.name));
     if (me.is_admin || me.is_moderator) items.push(link("/admin", "Admin"));

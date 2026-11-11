@@ -76,6 +76,34 @@ fn dump(url: &str, profile: &std::path::Path, marker: &str) -> String {
     dump_hook(url, profile, marker, None)
 }
 
+fn dump_shot(url: &str, profile: &std::path::Path, marker: &str, shot: &std::path::Path) -> String {
+    // One-shot capture for the home header. The shared hook path strips the env.
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/chromium_dump.py");
+    let dir = profile.join(format!(
+        "p{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let o = Command::new("python3")
+        .arg(script)
+        .arg(url)
+        .arg(&dir)
+        .arg(marker)
+        .env("TAUR_WEB_SCREENSHOT", shot)
+        .output()
+        .expect("python3");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(o.status.success(), "{text}");
+    text
+}
+
 fn dump_hook(url: &str, profile: &std::path::Path, marker: &str, hook: Option<&str>) -> String {
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/chromium_dump.py");
     let dir = profile.join(format!(
@@ -91,6 +119,8 @@ fn dump_hook(url: &str, profile: &std::path::Path, marker: &str, hook: Option<&s
     if let Some(hook) = hook {
         cmd.arg(hook);
     }
+    // Do not inherit a process-wide screenshot path; later pages would overwrite it.
+    cmd.env_remove("TAUR_WEB_SCREENSHOT");
     let o = cmd.output().expect("python3");
     let text = format!(
         "{}{}",
@@ -120,6 +150,32 @@ fn pages_render_in_chromium() {
     let app = taur_server::app(store.clone());
     rt.spawn(async move { axum::serve(l, app).await.unwrap() });
     let profile = tempfile::tempdir().unwrap();
+    let home = if let Some(shot) = std::env::var_os("TAUR_WEB_SCREENSHOT") {
+        dump_shot(
+            &format!("{url}/"),
+            profile.path(),
+            "Packages",
+            std::path::Path::new(&shot),
+        )
+    } else {
+        dump(&format!("{url}/"), profile.path(), "Packages")
+    };
+    assert!(
+        home.contains("/static/logo-dark.svg"),
+        "home header should include the TAUR mark: {home}"
+    );
+    assert!(
+        home.contains("TAUR mark: an angular tau, not the Arch Linux logo"),
+        "{home}"
+    );
+    assert!(
+        home.contains(r#"href="https://github.com/WeirdBrains/taur""#),
+        "menubar should link to the project GitHub: {home}"
+    );
+    assert!(
+        home.contains(">GitHub</a>"),
+        "GitHub should be a visible nav item: {home}"
+    );
     let page = dump(
         &format!("{url}/packages/hello-taur"),
         profile.path(),

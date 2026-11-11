@@ -50,6 +50,7 @@ pub fn app_with(state: AppState) -> Router {
     let mut router = Router::new()
         .route("/static/app.js", get(web::app_js))
         .route("/static/style.css", get(web::style))
+        .route("/static/logo-dark.svg", get(web::logo_dark))
         .route("/favicon.ico", get(web::favicon));
     for page in web::PAGES {
         router = router.route(page, get(web::index));

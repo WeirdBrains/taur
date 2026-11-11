@@ -1744,6 +1744,14 @@ async fn web_ui_is_served() {
             "{page} should link the favicon: {html}"
         );
         assert!(
+            html.contains(r#"src="/static/logo-dark.svg""#),
+            "{page} should show the header logo: {html}"
+        );
+        assert!(
+            html.contains(r#"alt="TAUR mark: an angular tau, not the Arch Linux logo""#),
+            "{page} should describe the existing TAUR mark: {html}"
+        );
+        assert!(
             html.contains(&format!("TAUR {}", env!("CARGO_PKG_VERSION"))),
             "{page} footer should show the binary version: {html}"
         );
@@ -1755,6 +1763,7 @@ async fn web_ui_is_served() {
     for (path, ctype) in [
         ("/static/app.js", "text/javascript"),
         ("/static/style.css", "text/css"),
+        ("/static/logo-dark.svg", "image/svg+xml"),
         ("/favicon.ico", "image/x-icon"),
     ] {
         let r = app
@@ -1776,8 +1785,24 @@ async fn web_ui_is_served() {
     assert_eq!(&ico[..4], &[0, 0, 1, 0], "body must be an ICO");
     let embedded = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/web/favicon.ico"));
     assert_eq!(ico, embedded, "/favicon.ico must be the embedded icon");
+    let (status, logo) = get(&app, "/static/logo-dark.svg").await;
+    assert_eq!(status, StatusCode::OK);
+    let embedded_logo = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/web/logo-dark.svg"));
+    assert_eq!(
+        logo, embedded_logo,
+        "/static/logo-dark.svg must be the embedded mark"
+    );
     let (_, js) = get(&app, "/static/app.js").await;
     let js = String::from_utf8(js).unwrap();
+    assert!(
+        js.contains(r#"href: "https://github.com/WeirdBrains/taur""#)
+            && js.contains(r#", "GitHub""#),
+        "nav must include an external GitHub link"
+    );
+    assert!(
+        !js.contains(r#"link("https://github.com/WeirdBrains/taur""#),
+        "GitHub must not be a data-link SPA route"
+    );
     // every API path the UI calls exists
     for p in [
         "/api/v1/login",
