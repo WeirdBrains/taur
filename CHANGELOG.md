@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- The package-server header shows the existing TAUR mark (`web/logo-dark.svg`, the same asset as the project site's dark logo) at the left, linking home, and a GitHub menu item pointing at https://github.com/WeirdBrains/taur.
+- Documentation for using yay and paru against the public instance (`https://pkg.taur.weirdbrains.com`): helper setup, one-shot search/info/install/update, persistent configuration and how to restore official AUR defaults, and stale-cache recovery limited to the `taur` package. yay and paru RPC URL flags are documented separately (yay's `--aurrpcurl` keeps a trailing `?`; paru's does not).
+
 ## [1.7.0] - 2026-11-10
 
 ### Added
