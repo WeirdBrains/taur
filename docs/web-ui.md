@@ -4,6 +4,10 @@
 `crates/taur-server/web/`, embedded in the binary; no Node toolchain). It is a thin
 client of the JSON API, like `taurctl`. The footer shows the running server's version
 (`CARGO_PKG_VERSION` of the `taur` binary). The same TAUR mark used on the project site is served as `/favicon.ico` (embedded `web/favicon.ico`, `image/x-icon`) and linked from the page.
+The header places that mark at the left (`/static/logo-dark.svg`, the existing
+`logo-dark.svg` asset, with accessible alt text) as a home link, and the menubar
+includes a GitHub item pointing at `https://github.com/WeirdBrains/taur`. The header
+wraps on a narrow viewport so the nav can sit under the brand.
 
 ## Pages
 | Path | What |
@@ -45,8 +49,10 @@ audit links only for a site admin.
 
 ## Tests
 HTTP tests check every page route and asset is served with the right headers and that
-the API calls the UI makes work. `web_dom.js` (Node, minimal DOM) checks that a missing
-archived banner does not render the text `null`, and that index pager links keep the
+the API calls the UI makes work, including `/static/logo-dark.svg` and the GitHub nav
+URL. `web_dom.js` (Node, minimal DOM) checks that a missing
+archived banner does not render the text `null`, that the GitHub item is an external
+link, and that index pager links keep the
 chosen sort and reset the page when the sort changes. Core and HTTP tests cover
 anonymous organization directory access, package-list scoping, historic revision
 snapshots, and index pagination ties. A headless Chromium check renders package, search,

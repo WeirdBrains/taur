@@ -92,6 +92,9 @@ assert(nav.children[0].attributes.href === "/?sort=popularity", "previous keeps 
 assert(nav.children[2].tagName === "SPAN", "next is inert on the last page");
 
 assert(src.includes('link("/orgs", "Organizations")'), "Organizations is in the public nav");
+assert(src.includes('href: "https://github.com/WeirdBrains/taur"'), "GitHub is in the public nav");
+assert(src.includes(', "GitHub"'), "GitHub nav label is present");
+assert(!src.includes('link("https://github.com/WeirdBrains/taur"'), "GitHub is not a data-link SPA route");
 assert(src.includes("/api/v1/organizations"), "directory uses the public organizations API");
 assert(!src.includes("Download counts are not recorded"), "downloaded sort must not fall back or disclose a missing counter");
 assert(src.includes("DownloadCount"), "UI displays the download count");

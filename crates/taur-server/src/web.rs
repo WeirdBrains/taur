@@ -10,6 +10,7 @@ const INDEX_TEMPLATE: &str = include_str!("../web/index.html");
 const APP_JS: &str = include_str!("../web/app.js");
 const STYLE: &str = include_str!("../web/style.css");
 const FAVICON: &[u8] = include_bytes!("../web/favicon.ico");
+const LOGO_DARK: &[u8] = include_bytes!("../web/logo-dark.svg");
 const VERSION_PLACEHOLDER: &str = "__TAUR_VERSION__";
 
 fn index_html() -> &'static str {
@@ -80,6 +81,10 @@ pub async fn favicon() -> Response {
     asset_bytes(FAVICON, "image/x-icon")
 }
 
+pub async fn logo_dark() -> Response {
+    asset_bytes(LOGO_DARK, "image/svg+xml")
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -107,5 +112,27 @@ mod tests {
             "favicon.ico must be an ICO"
         );
         assert!(super::FAVICON.len() > 16);
+    }
+
+    #[test]
+    fn index_brand_uses_the_existing_dark_logo_and_links_home() {
+        let html = super::INDEX_TEMPLATE;
+        assert!(html.contains(r#"href="/" class="brand""#));
+        assert!(html.contains(r#"src="/static/logo-dark.svg""#));
+        assert!(html.contains(r#"alt="TAUR mark: an angular tau, not the Arch Linux logo""#));
+        assert!(html.contains(r#"aria-label="TAUR home""#));
+    }
+
+    #[test]
+    fn logo_dark_is_the_existing_site_mark() {
+        let svg = std::str::from_utf8(super::LOGO_DARK).unwrap();
+        assert!(svg.contains("<svg"), "logo-dark.svg must be an SVG");
+        assert!(svg.contains(r#"viewBox="0 0 64 64""#));
+        assert!(
+            svg.contains(r##"fill="#d6e6f2""##)
+                && svg.contains(r##"fill="#8fe9f2""##)
+                && svg.contains(r##"fill="#3fd8e8""##),
+            "must keep the existing light-on-dark fills, not a new mark"
+        );
     }
 }

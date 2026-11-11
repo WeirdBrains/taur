@@ -2,9 +2,10 @@
 @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --fg:#e6e8eb; --muted:#9aa3b2; --card:#1c2027; --line:#2c323c; } }
 * { box-sizing: border-box; }
 body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-header { display:flex; align-items:center; gap:1.5rem; padding:.6rem 1.5rem; background:#0f2a3d; color:#fff; }
+header { display:flex; align-items:center; flex-wrap:wrap; gap:1.5rem; padding:.6rem 1.5rem; background:#0f2a3d; color:#fff; }
 header a { color:#fff; text-decoration:none; }
-.brand { font-weight:700; font-size:1.3rem; letter-spacing:.05em; }
+.brand { font-weight:700; font-size:1.3rem; letter-spacing:.05em; display:flex; align-items:center; gap:.55rem; }
+.brand .logo { width:36px; height:36px; display:block; flex-shrink:0; }
 nav { display:flex; gap:1rem; flex-wrap:wrap; flex:1; }
 nav .right { margin-left:auto; }
 main { max-width:1000px; margin:1.5rem auto; padding:0 1rem; }
