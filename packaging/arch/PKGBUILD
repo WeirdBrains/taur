@@ -10,7 +10,7 @@
 # GitHub asset exists, scripts/check-package-metadata.py set-tarball-sha256
 # writes the verified hash and .SRCINFO is regenerated.
 pkgname=taur
-pkgver=1.6.0
+pkgver=1.7.0
 pkgrel=1
 pkgdesc='AUR-compatible package server'
 arch=('x86_64')
@@ -21,7 +21,7 @@ backup=('etc/taur/taur.env')
 options=('!strip' '!debug' '!lto')
 install=taur.install
 source=("https://github.com/WeirdBrains/taur/releases/download/v${pkgver}/taur-${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
-sha256sums=('1ef4b03d5b37652d2e24aaf770fef828a6cf8c25bac132bad71cedad59d7dc5f')
+sha256sums=('UPSTREAM_TARBALL_SHA256')
 
 package() {
   cd "${srcdir}/taur-${pkgver}"
