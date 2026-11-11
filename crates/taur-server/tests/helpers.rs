@@ -308,7 +308,13 @@ fn helper_cmd(bin: &Path, iso: &Iso, name: &str, args: &[&str]) -> (bool, String
     } else {
         "--builddir"
     };
-    let rpc = format!("{}/rpc?", iso.base);
+    // yay's official default RPC URL ends in `?` (GET query concat).
+    // paru POSTs the form to the URL as-is and defaults to `{aururl}/rpc` with no `?`.
+    let rpc = if name == "paru" {
+        format!("{}/rpc", iso.base)
+    } else {
+        format!("{}/rpc?", iso.base)
+    };
     cmd.args([
         "--noconfirm",
         "--aururl",

@@ -236,7 +236,14 @@ To install `taur` from a TAUR server (for example the public instance), use the 
 
 ```sh
 yay --aururl https://pkg.taur.weirdbrains.com --aurrpcurl 'https://pkg.taur.weirdbrains.com/rpc?' -S taur
+paru --aururl https://pkg.taur.weirdbrains.com --aurrpcurl https://pkg.taur.weirdbrains.com/rpc -S taur
 ```
+
+These are alternate AUR endpoints, not a pacman `Server=` URL. Pass the flags on the
+command line so other AUR packages keep using the official AUR. yay's RPC URL keeps a
+trailing `?`; paru's does not (paru POSTs to `/rpc`). Helper setup, persistent
+config, restoring defaults, and stale-cache recovery for `taur` only are in
+[Using with yay and paru](yay.md).
 
 That recipe is `packaging/arch/PKGBUILD`. It is not the internal `payload.tar.gz` wrapper used only to build the official `.pkg.tar.zst`.
 
