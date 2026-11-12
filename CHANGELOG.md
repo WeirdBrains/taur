@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-12
+
 ### Added
 
 - Usage metrics: web UI page views and daily visitors (salted daily hashes, no stored addresses), daily package downloads, a public `/stats` page and `GET /api/v1/metrics`. Installs are not counted. `TAUR_PAGE_VIEWS=false` turns view counting off.
