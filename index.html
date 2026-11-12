@@ -19,6 +19,7 @@
     <a href="./" aria-current="page">Overview</a>
     <a href="docs/">Guides</a>
     <a href="docs/install.html">Install</a>
+    <a href="https://pkg.taur.weirdbrains.com/">Packages</a>
     <a href="https://github.com/WeirdBrains/taur">GitHub</a>
   </nav>
 </header>
@@ -28,7 +29,7 @@
     <p class="lede">Package server</p>
     <h1>An AUR-compatible server for your own packages.</h1>
     <p>TAUR speaks the AUR RPC, serves one git repository per package base, and gives you accounts, organizations, and a small web UI. <code>yay</code> and <code>paru</code> can search it with <code>--aururl</code>.</p>
-    <p><a class="btn" href="docs/install.html">Install</a><a class="btn ghost" href="docs/">Guides</a></p>
+    <p><a class="btn" href="docs/install.html">Install</a><a class="btn ghost" href="https://pkg.taur.weirdbrains.com/">Browse packages</a><a class="btn ghost" href="docs/">Guides</a></p>
     <p class="lede">This site is the project documentation. The server you run has its own package UI at the bind address.</p>
   </div>
   <img class="mark" src="assets/logo.svg" alt="TAUR mark: an angular tau, not the Arch Linux logo">
@@ -51,11 +52,12 @@ cd taur
 cargo build --release
 ./target/release/taur --home /tmp/taur-dev import tests/fixtures/hello-taur
 ./target/release/taur --home /tmp/taur-dev serve --bind 127.0.0.1:8080</code></pre>
-  <p>The public package service is <code>https://packages.taur.weirdbrains.com</code>. This site does not serve RPC or git. Without <code>--save</code>:</p>
-  <pre><code>yay --aururl https://packages.taur.weirdbrains.com --aurrpcurl 'https://packages.taur.weirdbrains.com/rpc?' -Ss hello</code></pre>
+  <p>The public package service is <a href="https://pkg.taur.weirdbrains.com/"><code>https://pkg.taur.weirdbrains.com</code></a>. This site does not serve RPC or git. Without <code>--save</code>:</p>
+  <pre><code>yay --aururl https://pkg.taur.weirdbrains.com --aurrpcurl 'https://pkg.taur.weirdbrains.com/rpc?' -Ss hello</code></pre>
 </section>
 </main>
 <footer>
+  <p>Browse packages at <a href="https://pkg.taur.weirdbrains.com/">pkg.taur.weirdbrains.com</a> · Source on <a href="https://github.com/WeirdBrains/taur">GitHub</a></p>
   <p>TAUR is not Arch Linux and this mark is not the Arch Linux logo. Hosting at taur.weirdbrains.com is the intended name; this tree does not configure DNS or TLS.</p>
 </footer>
 <script src="main.js"></script>
