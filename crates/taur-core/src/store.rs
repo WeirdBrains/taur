@@ -339,6 +339,8 @@ pub struct Store {
     rate: Mutex<Limiter>,
     /// `TAUR_ADMINS` named someone. Registration must not invent another admin.
     reserve_admins: AtomicBool,
+    /// Count web UI page views (`TAUR_PAGE_VIEWS`). On by default.
+    page_views: AtomicBool,
 }
 
 fn read_line(dir: &Path, name: &str) -> Option<String> {
@@ -408,6 +410,7 @@ impl Store {
         }
         crate::registry::migrate(&conn)?;
         crate::mirror::migrate(&conn)?;
+        crate::metrics::migrate(&conn)?;
         let mailer = crate::mail::FileMailer::new(home.join("outbox"), crate::DEFAULT_MAIL_FROM);
         Ok(Store {
             conn: Mutex::new(conn),
@@ -419,6 +422,7 @@ impl Store {
             ssh_clone_base: std::sync::RwLock::new(None),
             rate: Mutex::new(Limiter::default()),
             reserve_admins: AtomicBool::new(false),
+            page_views: AtomicBool::new(true),
         })
     }
 
@@ -449,6 +453,24 @@ impl Store {
         forwarded: Option<&str>,
     ) -> Result<()> {
         self.enforce_limit_at(class, peer, forwarded, Instant::now())
+    }
+
+    /// The client address for a request, using the configured trusted proxies the
+    /// same way rate limits do. `None` without a peer.
+    pub fn client_address(&self, peer: Option<IpAddr>, forwarded: Option<&str>) -> Option<IpAddr> {
+        self.rate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .client(peer, forwarded)
+    }
+
+    /// Turn web UI page-view counting on or off (`TAUR_PAGE_VIEWS`).
+    pub fn set_page_views(&self, on: bool) {
+        self.page_views.store(on, Ordering::Relaxed);
+    }
+
+    pub fn page_views_enabled(&self) -> bool {
+        self.page_views.load(Ordering::Relaxed)
     }
 
     pub fn enforce_limit_at(
@@ -983,10 +1005,18 @@ impl Store {
     /// identities are not stored. A missing pkgbase is a no-op so a completed
     /// download is not failed by the counter.
     pub fn record_snapshot_download(&self, pkgbase: &str) -> Result<()> {
-        self.lock().execute(
+        self.record_snapshot_download_at(pkgbase, now())
+    }
+
+    /// [`Store::record_snapshot_download`] at a given time; also adds to that UTC
+    /// day's download aggregate (see [`crate::metrics`]).
+    pub fn record_snapshot_download_at(&self, pkgbase: &str, at: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
             "UPDATE pkgbases SET download_count = download_count + 1 WHERE name = ?1",
             [pkgbase],
         )?;
+        crate::metrics::record_download_day(&conn, pkgbase, at)?;
         Ok(())
     }
 

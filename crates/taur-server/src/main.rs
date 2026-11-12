@@ -55,6 +55,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             store.configure_rate_limits(&cfg.rate);
             log_limits(&cfg.rate);
+            store.set_page_views(cfg.page_views);
+            if !cfg.page_views {
+                eprintln!("taur: page-view counting is off (TAUR_PAGE_VIEWS=false)");
+            }
             let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
             tokio::spawn(async move {
                 let _ = tokio::signal::ctrl_c().await;

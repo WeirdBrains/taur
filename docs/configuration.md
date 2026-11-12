@@ -46,6 +46,7 @@ the variable (the SMTP URL is never printed or logged).
 | `TAUR_SSH_RATE_WINDOW` | `--ssh-rate-window` | `60` | Window for the SSH class. |
 | `TAUR_TRUSTED_PROXIES` | `--trusted-proxies` | empty | CIDRs allowed to send `X-Forwarded-For`. A `/0` prefix is rejected. |
 | `TAUR_RATE_MAX_KEYS` | `--rate-max-keys` | `8192` | Client keys remembered per class. |
+| `TAUR_PAGE_VIEWS` | `--page-views` | `true` | Count web UI page views (daily aggregates, no stored addresses). `false` turns it off. See [metrics.md](metrics.md). |
 
 Notes:
 - **Site admins:** `TAUR_ADMINS` only grants, idempotently, on every start. Removing a

@@ -95,6 +95,10 @@ assert(src.includes('link("/orgs", "Organizations")'), "Organizations is in the 
 assert(src.includes('href: "https://github.com/WeirdBrains/taur"'), "GitHub is in the public nav");
 assert(src.includes(', "GitHub"'), "GitHub nav label is present");
 assert(!src.includes('link("https://github.com/WeirdBrains/taur"'), "GitHub is not a data-link SPA route");
+assert(src.includes('const PROJECT_SITE = "https://taur.weirdbrains.com/";'), "project site URL is defined");
+assert(src.includes('h("a", { href: PROJECT_SITE }, "Project site")'), "Project site is an external nav link");
+assert(src.includes('link("/stats", "Stats")'), "Stats is in the public nav");
+assert(!/reportView\([^)]*search/.test(src), "page views never send the query string");
 assert(src.includes("/api/v1/organizations"), "directory uses the public organizations API");
 assert(!src.includes("Download counts are not recorded"), "downloaded sort must not fall back or disclose a missing counter");
 assert(src.includes("DownloadCount"), "UI displays the download count");

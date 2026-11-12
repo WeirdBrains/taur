@@ -53,6 +53,17 @@ async function api(method, path, body, auth = true) {
   return data;
 }
 const enc = encodeURIComponent;
+const PROJECT_SITE = "https://taur.weirdbrains.com/";
+
+// Page views: only the path is sent (never the query string, which can carry
+// tokens), without the session token. Skipped when the browser asks not to be
+// tracked. The server stores daily aggregates only.
+function reportView(path) {
+  if (navigator.doNotTrack === "1" || navigator.globalPrivacyControl === true) return;
+  try {
+    fetch("/api/v1/views", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }), keepalive: true }).catch(() => {});
+  } catch { /* metrics never break the page */ }
+}
 
 async function loadMe() {
   if (!token()) { me = null; return null; }
@@ -62,7 +73,7 @@ async function loadMe() {
 
 function nav() {
   const n = document.getElementById("nav");
-  const items = [link("/", "Packages"), link("/orgs", "Organizations"), link("/docs", "Docs"), h("a", { href: "https://github.com/WeirdBrains/taur" }, "GitHub"), link("/requests", "Requests")];
+  const items = [link("/", "Packages"), link("/orgs", "Organizations"), link("/docs", "Docs"), link("/stats", "Stats"), h("a", { href: PROJECT_SITE }, "Project site"), h("a", { href: "https://github.com/WeirdBrains/taur" }, "GitHub"), link("/requests", "Requests")];
   if (me) {
     items.push(link("/upload", "Upload"), link("/account", me.name));
     if (me.is_admin || me.is_moderator) items.push(link("/admin", "Admin"));
@@ -191,6 +202,8 @@ async function pagePackage(name) {
     ["Organization", info.Organization ? link(`/orgs/${enc(info.Organization)}`, info.Organization) : "—"], ["Submitter", info.Submitter || "—"],
     ["Votes", info.NumVotes],
     ["Downloads", info.DownloadCount ?? 0],
+    ["Downloads (30 days)", info.Downloads30d ?? 0],
+    ["Page views (30 days)", info.PageViews30d ?? 0],
     ["Popularity", info.Popularity.toFixed(2)],
     ["First submitted", fmtTime(info.FirstSubmitted)], ["Last updated", fmtTime(info.LastModified)],
     ["Out of date", info.OutOfDate ? h("span", { class: "flagged" }, `since ${fmtTime(info.OutOfDate)} by ${flag.flagger || "?"}: ${flag.comment || ""}`) : "no"],
@@ -199,7 +212,7 @@ async function pagePackage(name) {
   const out = [
     info.Archived ? h("p", { class: "flagged" }, `Archived since ${fmtTime(info.Archived)}. It is hidden from search and install. The git history is kept.`) : null,
     h("h1", {}, `${info.Name} ${info.Version}`),
-    h("div", { class: "card" }, dl, h("p", { class: "muted" }, "Downloads count successful snapshot and recipe-archive responses for this package base, including historic revisions. They are not a count of installed binaries or unique users.")),
+    h("div", { class: "card" }, dl, h("p", { class: "muted" }, "Downloads count successful snapshot and recipe-archive responses for this package base, including historic revisions. They are not a count of installed binaries or unique users. Page views count this page in the web UI, at most once per visitor every 30 minutes. Installs are not counted: pacman, yay and paru do not report them.")),
   ];
 
   if (me) {
@@ -947,12 +960,40 @@ async function pageRevision(name, rev) {
   );
 }
 
+async function pageStats(params) {
+  const days = Math.min(365, Math.max(1, parseInt(params.get("days") || "30", 10) || 30));
+  render(h("h1", {}, "Stats"), h("p", { class: "muted" }, "Loading…"));
+  let m;
+  try { m = await api("GET", `/api/v1/metrics?days=${days}`, undefined, false); } catch (e) { return render(h("h1", {}, "Stats"), msg(e.message)); }
+  const ranges = h("p", {}, [7, 30, 90, 365].map((d) => [d === m.days ? h("strong", {}, `${d} days`) : link(`/stats?days=${d}`, `${d} days`), " "]));
+  const totals = h("dl", {},
+    h("dt", {}, "Page views"), h("dd", {}, m.page_views_enabled ? m.views : `${m.views} (counting is off on this server)`),
+    h("dt", {}, "Daily visitors (summed)"), h("dd", {}, m.visitor_days),
+    h("dt", {}, "Downloads"), h("dd", {}, m.downloads),
+    h("dt", {}, "Downloads, all time"), h("dd", {}, m.downloads_all_time),
+    h("dt", {}, "Installs"), h("dd", {}, "not counted"));
+  const table = (title, head, rows) => h("div", { class: "card" }, h("h2", {}, title),
+    rows.length ? h("table", {}, h("thead", {}, h("tr", {}, head.map((x) => h("th", {}, x)))), h("tbody", {}, rows)) : h("p", { class: "muted" }, "None yet."));
+  const pageCell = (name) => (name.includes("*") ? name : link(name, name));
+  render(
+    h("h1", {}, "Stats"),
+    ranges,
+    h("div", { class: "card" }, totals,
+      h("p", { class: "muted" }, "Page views are web UI pages, counted at most once per visitor and page every 30 minutes. A visitor is a hash of the address and browser with a salt that is deleted daily, so the same person on two days counts twice, and visitors behind one address and browser count once. Addresses are not stored. Downloads are successful snapshot and recipe-archive responses (yay; paru's git clones are not counted). Installs are not counted: pacman, yay and paru do not report them, and a download is not an install. Daily data is kept for 400 days.")),
+    table("Top packages by downloads", ["Package base", "Downloads"], m.top_downloads.map((c) => h("tr", {}, h("td", {}, link(`/packages/${enc(c.name)}`, c.name)), h("td", {}, c.count)))),
+    table("Top pages", ["Page", "Views"], m.top_pages.map((c) => h("tr", {}, h("td", {}, pageCell(c.name)), h("td", {}, c.count)))),
+    table("By day (UTC)", ["Date", "Views", "Visitors", "Downloads"], m.daily.slice().reverse().filter((d) => d.views || d.visitors || d.downloads).map((d) => h("tr", {}, h("td", {}, d.date), h("td", {}, d.views), h("td", {}, d.visitors), h("td", {}, d.downloads)))),
+  );
+}
+
 // ---- router ----
 async function route() {
   const path = decodeURIComponent(location.pathname);
   const params = new URLSearchParams(location.search);
   nav();
+  reportView(location.pathname);
   let m;
+  if (path === "/stats") return pageStats(params);
   if (path === "/" || path === "/packages" || path === "/packages/") return pageSearch(params);
   if ((m = path.match(/^\/packages\/([^/]+)\/revisions\/([^/]+)\/?$/))) return pageRevision(m[1], m[2]);
   if ((m = path.match(/^\/packages\/([^/]+)\/?$/))) return pagePackage(m[1]);

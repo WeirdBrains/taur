@@ -320,6 +320,10 @@ pub struct ServeArgs {
     /// Maximum distinct client keys remembered per limit class.
     #[arg(long, env = "TAUR_RATE_MAX_KEYS", default_value_t = rate_defaults::MAX_KEYS)]
     pub rate_max_keys: usize,
+    /// Count web UI page views (salted daily visitor hashes, no stored addresses).
+    /// `false` turns view counting off; downloads are still counted.
+    #[arg(long, env = "TAUR_PAGE_VIEWS", default_value_t = true, action = clap::ArgAction::Set)]
+    pub page_views: bool,
 }
 
 /// Validated `taur serve` settings.
@@ -340,6 +344,7 @@ pub struct ServeConfig {
     pub admins: Vec<String>,
     pub owners: Vec<String>,
     pub rate: RatePolicy,
+    pub page_views: bool,
 }
 
 fn addr(var: &str, v: &str) -> Result<SocketAddr, String> {
@@ -707,6 +712,7 @@ impl ServeArgs {
             admins,
             owners,
             rate,
+            page_views: self.page_views,
         })
     }
 
@@ -1024,6 +1030,11 @@ pub const ENV_VARS: &[(&str, &str, &str)] = &[
         "TAUR_RATE_MAX_KEYS",
         "8192",
         "Maximum distinct client keys remembered per limit class.",
+    ),
+    (
+        "TAUR_PAGE_VIEWS",
+        "true",
+        "Count web UI page views as daily aggregates with salted daily visitor hashes; client addresses are not stored. false turns view counting off.",
     ),
 ];
 

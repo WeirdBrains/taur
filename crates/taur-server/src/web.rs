@@ -20,7 +20,7 @@ fn index_html() -> &'static str {
 }
 
 /// Paths rendered by the web UI (`{x}` = one segment).
-pub const PAGES: [&str; 22] = [
+pub const PAGES: [&str; 23] = [
     "/",
     "/packages",
     "/packages/{name}",
@@ -43,6 +43,7 @@ pub const PAGES: [&str; 22] = [
     "/docs",
     "/docs/{slug}",
     "/upload",
+    "/stats",
 ];
 
 const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";

@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Usage metrics: web UI page views and daily visitors (salted daily hashes, no stored addresses), daily package downloads, a public `/stats` page and `GET /api/v1/metrics`. Installs are not counted. `TAUR_PAGE_VIEWS=false` turns view counting off.
+- The package-server header and footer link to the project site, and the footer links GitHub.
+
 ## [1.8.0] - 2026-11-10
 
 ### Added
