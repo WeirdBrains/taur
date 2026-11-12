@@ -32,6 +32,8 @@ jobs:
           fetch-tags: true
       - name: tags
         run: git fetch origin --tags
+      - name: release config
+        run: python3 scripts/weirdnet_release.py validate
       - name: fmt
         run: cargo fmt --all -- --check
       - name: clippy
