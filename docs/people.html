@@ -15,13 +15,13 @@
 <header class="nav">
   <a class="brand" href="../"><img class="logo" src="../assets/logo.svg" alt="" width="36" height="36"> taur</a>
   <button class="menu" aria-expanded="false" aria-controls="links">Menu</button>
-  <nav id="links" aria-label="Main"><a href="../">Overview</a><a href="./">Guides</a><a href="people.html" aria-current="page">Accounts</a><a href="https://github.com/WeirdBrains/taur">GitHub</a></nav>
+  <nav id="links" aria-label="Main"><a href="../">Overview</a><a href="./">Guides</a><a href="people.html" aria-current="page">Accounts</a><a href="https://pkg.taur.weirdbrains.com/">Packages</a><a href="https://github.com/WeirdBrains/taur">GitHub</a></nav>
 </header>
 <main id="main" class="light doc">
 <h1>Accounts, organizations, votes, flags, comments</h1>
 <p class="lede"><code>taurctl</code> talks only to the HTTP API. The token file is mode <code>0600</code> under <code>--config-dir</code> (default <code>~/.config/taurctl</code>). Point tests at another directory.</p>
 <h2>Account</h2>
-<pre><code>taurctl --server https://packages.taur.weirdbrains.com --config-dir /tmp/taurctl register alice alice@example.com
+<pre><code>taurctl --server https://pkg.taur.weirdbrains.com --config-dir /tmp/taurctl register alice alice@example.com
 # read the token from the outbox when SMTP is unset, then:
 taurctl --config-dir /tmp/taurctl verify TOKEN
 taurctl --config-dir /tmp/taurctl login alice

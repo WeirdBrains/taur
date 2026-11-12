@@ -1,7 +1,7 @@
 # TAUR project site
 
 Static pages for `https://taur.weirdbrains.com`. This branch is only the project site.
-The package repository, RPC, git, and API are `https://packages.taur.weirdbrains.com`,
+The public package repository, RPC, git, and API are `https://pkg.taur.weirdbrains.com`,
 served by the `taur` binary from the `main` branch.
 
 ## Preview
@@ -28,3 +28,8 @@ service hostname is not this site.
 not an Arch Linux endorsement. `assets/logo-dark.svg` is the same geometry for a dark
 background. `assets/icon.svg` is the favicon tile. `assets/favicon.ico` and the root `/favicon.ico` are the same mark in ICO form (16, 32, and 48 px), so browsers that request `/favicon.ico` get it. `assets/wordmark.svg` sets the word
 "taur" beside the mark. No Arch artwork was traced.
+
+## Cross-links
+
+Every page links the public package server (`https://pkg.taur.weirdbrains.com/`) in the
+nav and footer, next to GitHub. The package server links back here from its header and footer.
