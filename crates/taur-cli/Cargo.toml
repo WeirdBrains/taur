@@ -10,6 +10,7 @@ name = "taurctl"
 path = "src/main.rs"
 
 [dependencies]
+weirdnet-mcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap = { version = "4", features = ["derive", "env"] }

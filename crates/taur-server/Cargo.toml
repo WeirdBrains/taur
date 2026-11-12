@@ -10,6 +10,7 @@ name = "taur"
 path = "src/main.rs"
 
 [dependencies]
+weirdnet-mcp.workspace = true
 taur-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

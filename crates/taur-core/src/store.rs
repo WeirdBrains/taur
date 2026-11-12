@@ -484,6 +484,7 @@ impl Store {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .enforce(class, peer, forwarded, now)
+            .map_err(crate::accounts::map_err)
     }
 
     /// Replace the mailer (default: file outbox at `<home>/outbox`).

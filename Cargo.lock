@@ -3705,16 +3705,15 @@ dependencies = [
  "tokio",
  "ureq",
  "urlencoding",
+ "weirdnet-mcp",
 ]
 
 [[package]]
 name = "taur-core"
 version = "1.9.0"
 dependencies = [
- "argon2 0.5.3",
  "ed25519-dalek 2.2.0",
  "flate2",
- "ipnet",
  "lettre",
  "rand_core 0.6.4",
  "rusqlite",
@@ -3726,6 +3725,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "url",
+ "weirdnet-accounts",
  "zip",
 ]
 
@@ -3760,6 +3760,7 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tower",
+ "weirdnet-mcp",
  "x509-parser",
 ]
 
@@ -4250,6 +4251,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
 dependencies = [
  "rustls-pki-types",
+]
+
+[[package]]
+name = "weirdnet-accounts"
+version = "0.1.0"
+source = "git+https://github.com/WeirdBrains/weirdnet-accounts?branch=main#5b4bbfed0e26fd6ef6a96160df5a470b0c771d35"
+dependencies = [
+ "argon2 0.5.3",
+ "ipnet",
+ "rand_core 0.6.4",
+ "serde",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror",
+]
+
+[[package]]
+name = "weirdnet-mcp"
+version = "0.1.0"
+source = "git+https://github.com/WeirdBrains/weirdnet-mcp?branch=main#eccc3be01152a6c1e7e942daaa2efaa2f861e9ca"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
