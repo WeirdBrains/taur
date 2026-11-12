@@ -6,7 +6,9 @@ client of the JSON API, like `taurctl`. The footer shows the running server's ve
 (`CARGO_PKG_VERSION` of the `taur` binary). The same TAUR mark used on the project site is served as `/favicon.ico` (embedded `web/favicon.ico`, `image/x-icon`) and linked from the page.
 The header places that mark at the left (`/static/logo-dark.svg`, the existing
 `logo-dark.svg` asset, with accessible alt text) as a home link, and the menubar
-includes a GitHub item pointing at `https://github.com/WeirdBrains/taur`. The header
+includes a GitHub item pointing at `https://github.com/WeirdBrains/taur` and a Project site item
+pointing at `https://taur.weirdbrains.com/` (both external links). The footer repeats the
+Project site, GitHub and Stats links. The header
 wraps on a narrow viewport so the nav can sit under the brand.
 
 ## Pages
@@ -16,9 +18,10 @@ wraps on a narrow viewport so the nav can sit under the brand.
 | `/upload` | Verified users upload a `.tar.gz`, `.tar`, or `.zip` containing `PKGBUILD` and `.SRCINFO`. The owner list defaults to their account and includes organizations where they can manage packages (Owner, Admin, or Contributor). Open the list and type in the filter at the top to narrow it. |
 | `/packages/<name>` | Also: maintainers archive or unarchive, and mark a package out of date or clear that flag. Anyone signed in can flag it. |
 | `/`, `/packages?q=&by=` | With a query: search packages (all RPC `by` fields), sorted by popularity. With no query: a paginated index of 20 packages per page, sorted by last update (`updated`, default), `downloaded`, or `popularity`. Downloads are the number of successful snapshot/recipe-archive responses for that package base (current and historic revisions). They are not installs or unique users, and existing packages start at 0 (past downloads are not backfilled). Changing sort returns to page 1; page links keep the chosen sort. |
-| `/packages/<name>` | Package details (deps, maintainers, org, votes, downloads, popularity, flag, clone URL, snapshot), comments; when signed in: vote, flag/unflag, adopt/disown, comment/edit/delete, file requests; maintainers also edit co-maintainers and transfer to an org or user. Same URL yay shows as "AUR URL". Maintainer and co-maintainer names link to `/users/<name>`. The organization name, when present, links to `/orgs/<name>`. Previous recorded git revisions are listed and open `/packages/<name>/revisions/<rev>` for that revision's metadata and snapshot. |
+| `/packages/<name>` | Package details (deps, maintainers, org, votes, downloads, 30-day downloads and page views, popularity, flag, clone URL, snapshot), comments; when signed in: vote, flag/unflag, adopt/disown, comment/edit/delete, file requests; maintainers also edit co-maintainers and transfer to an org or user. Same URL yay shows as "AUR URL". Maintainer and co-maintainer names link to `/users/<name>`. The organization name, when present, links to `/orgs/<name>`. Previous recorded git revisions are listed and open `/packages/<name>/revisions/<rev>` for that revision's metadata and snapshot. |
 | `/packages/<name>/revisions/<rev>` | Immutable details for a recorded git revision of that package (version from `.SRCINFO` at that commit, and a snapshot of that tree). Unknown revisions are not found. |
 | `/users/<name>` | Packages that account maintains and co-maintains. |
+| `/stats` | Public usage metrics for 7, 30, 90 or 365 days: page views, daily visitors, downloads, top packages and pages, and a per-day table. Installs are not counted. See [metrics.md](metrics.md). |
 | `/register`, `/login` | Account creation and sign-in |
 | `/verify?token=` | Target of the verification email |
 | `/reset`, `/reset?token=` | Request a reset link; target of the reset email |
@@ -34,6 +37,11 @@ wraps on a narrow viewport so the nav can sit under the brand.
 Buttons are shown when they're likely to be allowed; the server enforces every rule.
 Admin links are shown only for a moderator or site admin, and registry, mirror, and
 audit links only for a site admin.
+
+## Page views
+Each rendered page sends `POST /api/v1/views` with `location.pathname` only (no query
+string, no session token), unless the browser sets Do Not Track or Global Privacy
+Control. See [metrics.md](metrics.md).
 
 ## Auth and security
 - Bearer token from `POST /api/v1/login`, kept in `localStorage` (`taur.token`) and

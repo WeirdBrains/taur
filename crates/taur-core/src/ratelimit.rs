@@ -130,6 +130,11 @@ impl Limiter {
         }
     }
 
+    /// Client address for `peer`, honouring `X-Forwarded-For` only from trusted proxies.
+    pub fn client(&self, peer: Option<IpAddr>, forwarded: Option<&str>) -> Option<IpAddr> {
+        peer.map(|ip| client_ip(ip, forwarded, &self.trusted))
+    }
+
     pub fn enforce(
         &mut self,
         class: LimitClass,

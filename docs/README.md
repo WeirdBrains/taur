@@ -14,6 +14,7 @@
 - [Using with yay and paru](yay.md)
 - [taurctl management CLI](cli.md)
 - [Web UI](web-ui.md)
+- [Usage metrics (page views, downloads)](metrics.md)
 - [Task guides shown in the web UI](guides/)
 - [MCP server](mcp.md)
 - [gRPC API](grpc.md)

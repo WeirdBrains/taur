@@ -71,6 +71,8 @@ pub fn app_with(state: AppState) -> Router {
         .route("/packages-meta-ext-v1.json.gz", get(dump_meta_ext))
         .route("/mcp", post(mcp_post).get(mcp_get).delete(mcp_get))
         .route("/api/v1/server", get(server_info))
+        .route("/api/v1/views", post(record_view))
+        .route("/api/v1/metrics", get(metrics_summary))
         .route("/api/v1/register", post(register))
         .route("/api/v1/login", post(login))
         .route("/api/v1/logout", post(logout))
@@ -648,6 +650,75 @@ async fn server_info(State(s): St) -> Response {
         "ssh_clone_base": s.ssh_clone_base(),
     }))
     .into_response()
+}
+
+// ---- metrics ----
+
+#[derive(Deserialize)]
+struct ViewReport {
+    path: String,
+}
+
+/// The browser asked not to be tracked (`DNT: 1` or Global Privacy Control).
+fn opted_out(h: &HeaderMap) -> bool {
+    let on = |name: &str| {
+        h.get(name)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.trim() == "1")
+    };
+    on("dnt") || on("sec-gpc")
+}
+
+/// `POST /api/v1/views` — the web UI reports one page view. Always `204`; the
+/// response does not say whether the view was counted.
+async fn record_view(State(s): St, req: axum::extract::Request) -> Response {
+    let peer = req
+        .extensions()
+        .get::<ConnectInfo<std::net::SocketAddr>>()
+        .map(|c| c.0.ip());
+    let h = req.headers().clone();
+    let Ok(body) = axum::body::to_bytes(req.into_body(), 4096).await else {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    };
+    let Ok(report) = serde_json::from_slice::<ViewReport>(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "expected {\"path\": \"/...\"}" })),
+        )
+            .into_response();
+    };
+    if !s.page_views_enabled() || opted_out(&h) {
+        return StatusCode::NO_CONTENT.into_response();
+    }
+    let forwarded = h.get("x-forwarded-for").and_then(|v| v.to_str().ok());
+    let client = s.client_address(peer, forwarded);
+    let ua = h
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    match s.record_page_view(&report.path, client, ua) {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => ApiError(e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct MetricsQuery {
+    days: Option<i64>,
+}
+
+/// `GET /api/v1/metrics?days=30` — public site-wide aggregates.
+async fn metrics_summary(
+    State(s): St,
+    Query(q): Query<MetricsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let summary = s.metrics_summary(q.days.unwrap_or(30))?;
+    let mut v = serde_json::to_value(summary).map_err(|e| Error::Invalid(e.to_string()))?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("page_views_enabled".into(), json!(s.page_views_enabled()));
+        obj.insert("installs".into(), Value::Null);
+    }
+    Ok(Json(v))
 }
 
 // ---- MCP ----
@@ -1389,6 +1460,9 @@ async fn package_by_name(
     if let Some(obj) = value.as_object_mut() {
         obj.insert("Archived".into(), json!(info.archived_at));
         obj.insert("CanManage".into(), json!(can_manage));
+        let m = s.package_metrics(&info.name, &info.pkgbase, 30)?;
+        obj.insert("PageViews30d".into(), json!(m.views));
+        obj.insert("Downloads30d".into(), json!(m.downloads));
     }
     Ok(Json(value))
 }

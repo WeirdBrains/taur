@@ -384,3 +384,91 @@ async fn snapshot_get_increments_download_count_but_head_and_failures_do_not() {
     let info = s.info(&["hello-taur".into()]).unwrap();
     assert_eq!(info[0].download_count, 2);
 }
+
+async fn post_view(
+    app: &axum::Router,
+    path: &str,
+    peer: [u8; 4],
+    extra: &[(&str, &str)],
+) -> StatusCode {
+    use axum::extract::ConnectInfo;
+    let mut req = Request::post("/api/v1/views")
+        .header("content-type", "application/json")
+        .header("user-agent", "test-browser");
+    for (k, v) in extra {
+        req = req.header(*k, *v);
+    }
+    let mut req = req
+        .body(Body::from(serde_json::json!({ "path": path }).to_string()))
+        .unwrap();
+    req.extensions_mut()
+        .insert(ConnectInfo(std::net::SocketAddr::from((peer, 9))));
+    call(app, req).await.0
+}
+
+#[tokio::test]
+async fn page_views_and_downloads_show_in_metrics_and_package_json() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Arc::new(Store::open(d.path()).unwrap());
+    let pk = tempfile::tempdir().unwrap();
+    import_pkg(&s, pk.path(), "foo", "1", None);
+    let app = taur_server::app(s.clone());
+
+    assert_eq!(
+        post_view(&app, "/packages/foo", [10, 0, 0, 1], &[]).await,
+        StatusCode::NO_CONTENT
+    );
+    // A repeat, an opted-out browser and an unknown page are all 204 but not counted.
+    post_view(&app, "/packages/foo", [10, 0, 0, 1], &[]).await;
+    post_view(&app, "/packages/foo", [10, 0, 0, 2], &[("dnt", "1")]).await;
+    post_view(&app, "/packages/foo", [10, 0, 0, 3], &[("sec-gpc", "1")]).await;
+    assert_eq!(
+        post_view(&app, "/nope", [10, 0, 0, 1], &[]).await,
+        StatusCode::NO_CONTENT
+    );
+    post_view(&app, "/packages/foo?token=x", [10, 0, 0, 4], &[]).await;
+
+    let (st, _) = get(&app, "/cgit/aur.git/snapshot/foo.tar.gz").await;
+    assert_eq!(st, StatusCode::OK);
+
+    let m = get_ok(&app, "/api/v1/metrics?days=7").await;
+    assert_eq!(m["days"], 7);
+    assert_eq!(m["views"], 2);
+    assert_eq!(m["visitor_days"], 2);
+    assert_eq!(m["downloads"], 1);
+    assert_eq!(m["downloads_all_time"], 1);
+    assert_eq!(m["page_views_enabled"], true);
+    assert!(m["installs"].is_null(), "installs are not counted");
+    assert_eq!(m["top_downloads"][0]["name"], "foo");
+    assert_eq!(m["daily"].as_array().unwrap().len(), 7);
+
+    let p = get_ok(&app, "/api/v1/packages/by-name/foo").await;
+    assert_eq!(p["PageViews30d"], 2);
+    assert_eq!(p["Downloads30d"], 1);
+    assert_eq!(p["DownloadCount"], 1);
+
+    // Turning counting off stops new views without failing the request.
+    s.set_page_views(false);
+    post_view(&app, "/", [10, 0, 0, 9], &[]).await;
+    let m = get_ok(&app, "/api/v1/metrics").await;
+    assert_eq!(m["views"], 2);
+    assert_eq!(m["page_views_enabled"], false);
+    assert_eq!(m["days"], 30);
+}
+
+#[tokio::test]
+async fn stats_page_is_served_and_links_cross_sites() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Arc::new(Store::open(d.path()).unwrap());
+    let app = taur_server::app(s);
+    let (st, body) = get(&app, "/stats").await;
+    assert_eq!(st, StatusCode::OK);
+    let html = String::from_utf8(body).unwrap();
+    assert!(html.contains(r#"href="https://taur.weirdbrains.com/">Project site</a>"#));
+    assert!(html.contains(r#"href="https://github.com/WeirdBrains/taur">GitHub</a>"#));
+    let (_, js) = get(&app, "/static/app.js").await;
+    let js = String::from_utf8(js).unwrap();
+    assert!(js.contains(r#"const PROJECT_SITE = "https://taur.weirdbrains.com/";"#));
+    assert!(js.contains(r#"h("a", { href: PROJECT_SITE }, "Project site")"#));
+    assert!(js.contains(r#"link("/stats", "Stats")"#));
+}
