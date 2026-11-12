@@ -4256,7 +4256,8 @@ dependencies = [
 [[package]]
 name = "weirdnet-accounts"
 version = "0.1.0"
-source = "git+https://github.com/WeirdBrains/weirdnet-accounts?branch=main#5b4bbfed0e26fd6ef6a96160df5a470b0c771d35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaad9f6ab7c01de8bbb2d39729c79889ebf88aad2d638998a886bc56e850a267"
 dependencies = [
  "argon2 0.5.3",
  "ipnet",
@@ -4270,7 +4271,8 @@ dependencies = [
 [[package]]
 name = "weirdnet-mcp"
 version = "0.1.0"
-source = "git+https://github.com/WeirdBrains/weirdnet-mcp?branch=main#eccc3be01152a6c1e7e942daaa2efaa2f861e9ca"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ae214dcfb3d659540dcfbf47f3c324571c300b6f3788a84a61a6314c67252b5"
 dependencies = [
  "serde_json",
 ]
