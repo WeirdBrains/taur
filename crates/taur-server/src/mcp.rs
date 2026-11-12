@@ -1,37 +1,27 @@
 //! Model Context Protocol (MCP) server: JSON-RPC 2.0 over the streamable HTTP transport
 //! (`POST /mcp`, JSON responses, stateless). Tools are thin wrappers over `taur-core`;
-//! management tools use the caller's bearer token.
+//! management tools use the caller's bearer token. The protocol handling (initialize,
+//! ping, tools/list, tools/call, batches) is `weirdnet-mcp`'s.
 
 use serde_json::{Value, json};
 use taur_core::{Error, Role, Store, accounts::User};
+use weirdnet_mcp::{Param, ParamType, Server, ServerInfo, ToolError, ToolSpec, Tools};
 
-pub const PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
-
-struct Tool {
-    name: &'static str,
-    description: &'static str,
-    /// (name, JSON type, description, required)
-    params: &'static [(&'static str, &'static str, &'static str, bool)],
-    auth: bool,
-    read_only: bool,
-    destructive: bool,
-}
-
-const P: (&str, &str, &str, bool) = ("pkgbase", "string", "Package base name", true);
+const P: Param = Param::required("pkgbase", ParamType::String, "Package base name");
 
 macro_rules! tool {
     ($n:expr, $d:expr, [$($p:expr),*], auth=$a:expr, ro=$r:expr, destructive=$x:expr) => {
-        Tool { name: $n, description: $d, params: &[$($p),*], auth: $a, read_only: $r, destructive: $x }
+        ToolSpec { name: $n, description: $d, params: &[$($p),*], auth: $a, read_only: $r, destructive: $x, open_world: false }
     };
 }
 
-const TOOLS: &[Tool] = &[
+const TOOLS: &[ToolSpec] = &[
     tool!(
         "search_packages",
         "Search packages (AUR RPC v5 search). `by`: name, name-desc (default), maintainer, depends, makedepends, optdepends, checkdepends, keywords, groups, provides, conflicts, replaces, submitter, comaintainers.",
         [
-            ("query", "string", "Search term", true),
-            ("by", "string", "Field to search", false)
+            Param::required("query", ParamType::String, "Search term"),
+            Param::optional("by", ParamType::String, "Field to search")
         ],
         auth = false,
         ro = true,
@@ -40,7 +30,11 @@ const TOOLS: &[Tool] = &[
     tool!(
         "package_info",
         "Full details for packages by name (AUR RPC v5 info).",
-        [("names", "array", "Package names", true)],
+        [Param::required(
+            "names",
+            ParamType::StringArray,
+            "Package names"
+        )],
         auth = false,
         ro = true,
         destructive = false
@@ -64,7 +58,10 @@ const TOOLS: &[Tool] = &[
     tool!(
         "reject_package",
         "Reject a package base (moderator or site admin). The repository is kept and hidden from search.",
-        [P, ("reason", "string", "Why it is rejected", true)],
+        [
+            P,
+            Param::required("reason", ParamType::String, "Why it is rejected")
+        ],
         auth = true,
         ro = false,
         destructive = true
@@ -73,8 +70,8 @@ const TOOLS: &[Tool] = &[
         "reject_user",
         "Reject an ordinary account (moderator or site admin). Sessions end; the account row stays.",
         [
-            ("name", "string", "User name", true),
-            ("reason", "string", "Why the account is rejected", true)
+            Param::required("name", ParamType::String, "User name"),
+            Param::required("reason", ParamType::String, "Why the account is rejected")
         ],
         auth = true,
         ro = false,
@@ -92,8 +89,8 @@ const TOOLS: &[Tool] = &[
         "reverse_rejection",
         "Reverse one open package or user rejection. Site admin only. Does not create an account or package.",
         [
-            ("id", "integer", "Audit event id", true),
-            ("reason", "string", "Why it is reversed", true)
+            Param::required("id", ParamType::Integer, "Audit event id"),
+            Param::required("reason", ParamType::String, "Why it is reversed")
         ],
         auth = true,
         ro = false,
@@ -103,8 +100,8 @@ const TOOLS: &[Tool] = &[
         "accept_rejection",
         "Accept one rejected upload or registration so that same attempt can be retried. Site admin only. Does not create an account or store a recipe.",
         [
-            ("id", "integer", "Audit event id", true),
-            ("reason", "string", "Why it is accepted", true)
+            Param::required("id", ParamType::Integer, "Audit event id"),
+            Param::required("reason", ParamType::String, "Why it is accepted")
         ],
         auth = true,
         ro = false,
@@ -114,8 +111,8 @@ const TOOLS: &[Tool] = &[
         "revoke_acceptance",
         "Withdraw an acceptance of a rejected upload or registration. Site admin only. The business rule applies to that attempt again.",
         [
-            ("id", "integer", "Acceptance event id", true),
-            ("reason", "string", "Why it is withdrawn", true)
+            Param::required("id", ParamType::Integer, "Acceptance event id"),
+            Param::required("reason", ParamType::String, "Why it is withdrawn")
         ],
         auth = true,
         ro = false,
@@ -134,11 +131,10 @@ const TOOLS: &[Tool] = &[
         "Vote (or with on=false, remove your vote) for a package base.",
         [
             P,
-            (
+            Param::optional(
                 "on",
-                "boolean",
-                "true to vote (default), false to unvote",
-                false
+                ParamType::Boolean,
+                "true to vote (default), false to unvote"
             )
         ],
         auth = true,
@@ -148,7 +144,10 @@ const TOOLS: &[Tool] = &[
     tool!(
         "notify",
         "Subscribe (or with on=false, unsubscribe) to email notifications for a package base.",
-        [P, ("on", "boolean", "true to subscribe (default)", false)],
+        [
+            P,
+            Param::optional("on", ParamType::Boolean, "true to subscribe (default)")
+        ],
         auth = true,
         ro = false,
         destructive = false
@@ -156,7 +155,10 @@ const TOOLS: &[Tool] = &[
     tool!(
         "flag_out_of_date",
         "Flag a package base out-of-date with a comment.",
-        [P, ("comment", "string", "Why it is out of date", true)],
+        [
+            P,
+            Param::required("comment", ParamType::String, "Why it is out of date")
+        ],
         auth = true,
         ro = false,
         destructive = false
@@ -172,7 +174,10 @@ const TOOLS: &[Tool] = &[
     tool!(
         "add_comment",
         "Comment on a package base.",
-        [P, ("content", "string", "Comment text", true)],
+        [
+            P,
+            Param::required("content", ParamType::String, "Comment text")
+        ],
         auth = true,
         ro = false,
         destructive = false
@@ -181,8 +186,8 @@ const TOOLS: &[Tool] = &[
         "pin_comment",
         "Pin (or with pinned=false, unpin) a comment.",
         [
-            ("id", "integer", "Comment id", true),
-            ("pinned", "boolean", "Default true", false)
+            Param::required("id", ParamType::Integer, "Comment id"),
+            Param::optional("pinned", ParamType::Boolean, "Default true")
         ],
         auth = true,
         ro = false,
@@ -191,7 +196,7 @@ const TOOLS: &[Tool] = &[
     tool!(
         "delete_comment",
         "Delete a comment.",
-        [("id", "integer", "Comment id", true)],
+        [Param::required("id", ParamType::Integer, "Comment id")],
         auth = true,
         ro = false,
         destructive = true
@@ -199,7 +204,10 @@ const TOOLS: &[Tool] = &[
     tool!(
         "set_comaintainers",
         "Replace the co-maintainer list of a package base.",
-        [P, ("users", "array", "User names", true)],
+        [
+            P,
+            Param::required("users", ParamType::StringArray, "User names")
+        ],
         auth = true,
         ro = false,
         destructive = false
@@ -225,8 +233,8 @@ const TOOLS: &[Tool] = &[
         "Transfer a package base to an organization or a user (exactly one).",
         [
             P,
-            ("org", "string", "Organization name", false),
-            ("user", "string", "User name", false)
+            Param::optional("org", ParamType::String, "Organization name"),
+            Param::optional("user", ParamType::String, "User name")
         ],
         auth = true,
         ro = false,
@@ -237,9 +245,9 @@ const TOOLS: &[Tool] = &[
         "File an orphan, deletion or merge request.",
         [
             P,
-            ("kind", "string", "orphan, deletion or merge", true),
-            ("merge_into", "string", "Target for merge", false),
-            ("comment", "string", "Reason", true)
+            Param::required("kind", ParamType::String, "orphan, deletion or merge"),
+            Param::optional("merge_into", ParamType::String, "Target for merge"),
+            Param::required("comment", ParamType::String, "Reason")
         ],
         auth = true,
         ro = false,
@@ -248,7 +256,11 @@ const TOOLS: &[Tool] = &[
     tool!(
         "list_requests",
         "Package requests (pending only unless all=true).",
-        [("all", "boolean", "Include closed requests", false)],
+        [Param::optional(
+            "all",
+            ParamType::Boolean,
+            "Include closed requests"
+        )],
         auth = true,
         ro = true,
         destructive = false
@@ -257,9 +269,13 @@ const TOOLS: &[Tool] = &[
         "close_request",
         "Accept or reject a request (site admins; requesters may reject to withdraw).",
         [
-            ("id", "integer", "Request id", true),
-            ("accept", "boolean", "true to accept, false to reject", true),
-            ("comment", "string", "Closure comment", false)
+            Param::required("id", ParamType::Integer, "Request id"),
+            Param::required(
+                "accept",
+                ParamType::Boolean,
+                "true to accept, false to reject"
+            ),
+            Param::optional("comment", ParamType::String, "Closure comment")
         ],
         auth = true,
         ro = false,
@@ -276,7 +292,7 @@ const TOOLS: &[Tool] = &[
     tool!(
         "show_org",
         "An organization's members and packages.",
-        [("org", "string", "Organization", true)],
+        [Param::required("org", ParamType::String, "Organization")],
         auth = true,
         ro = true,
         destructive = false
@@ -284,7 +300,7 @@ const TOOLS: &[Tool] = &[
     tool!(
         "create_org",
         "Create an organization (you become owner).",
-        [("org", "string", "Organization", true)],
+        [Param::required("org", ParamType::String, "Organization")],
         auth = true,
         ro = false,
         destructive = false
@@ -293,9 +309,9 @@ const TOOLS: &[Tool] = &[
         "set_member",
         "Add a member or change their role.",
         [
-            ("org", "string", "Organization", true),
-            ("user", "string", "User", true),
-            ("role", "string", "owner, admin or contributor", true)
+            Param::required("org", ParamType::String, "Organization"),
+            Param::required("user", ParamType::String, "User"),
+            Param::required("role", ParamType::String, "owner, admin or contributor")
         ],
         auth = true,
         ro = false,
@@ -305,8 +321,8 @@ const TOOLS: &[Tool] = &[
         "remove_member",
         "Remove a member from an organization.",
         [
-            ("org", "string", "Organization", true),
-            ("user", "string", "User", true)
+            Param::required("org", ParamType::String, "Organization"),
+            Param::required("user", ParamType::String, "User")
         ],
         auth = true,
         ro = false,
@@ -315,7 +331,7 @@ const TOOLS: &[Tool] = &[
     tool!(
         "delete_org",
         "Delete an organization (owners).",
-        [("org", "string", "Organization", true)],
+        [Param::required("org", ParamType::String, "Organization")],
         auth = true,
         ro = false,
         destructive = true
@@ -331,7 +347,7 @@ const TOOLS: &[Tool] = &[
     tool!(
         "add_ssh_key",
         "Add an SSH public key (OpenSSH format).",
-        [("key", "string", "Public key line", true)],
+        [Param::required("key", ParamType::String, "Public key line")],
         auth = true,
         ro = false,
         destructive = false
@@ -339,155 +355,69 @@ const TOOLS: &[Tool] = &[
     tool!(
         "remove_ssh_key",
         "Remove one of your SSH keys.",
-        [("id", "integer", "Key id", true)],
+        [Param::required("id", ParamType::Integer, "Key id")],
         auth = true,
         ro = false,
         destructive = true
     ),
 ];
 
-fn tool_json(t: &Tool) -> Value {
-    let mut props = serde_json::Map::new();
-    let mut req = vec![];
-    for (n, ty, d, r) in t.params {
-        let mut p = json!({"type": ty, "description": d});
-        if *ty == "array" {
-            p["items"] = json!({"type": "string"});
-        }
-        props.insert(n.to_string(), p);
-        if *r {
-            req.push(*n);
-        }
+struct TaurTools<'a>(&'a Store);
+
+impl Tools for TaurTools<'_> {
+    fn specs(&self) -> &[ToolSpec] {
+        TOOLS
     }
-    json!({
-        "name": t.name,
-        "description": if t.auth { format!("{} Requires a bearer token.", t.description) } else { t.description.to_string() },
-        "inputSchema": {"type": "object", "properties": props, "required": req},
-        "annotations": {"readOnlyHint": t.read_only, "destructiveHint": t.destructive, "openWorldHint": false},
-    })
-}
 
-fn rpc_ok(id: Value, result: Value) -> Value {
-    json!({"jsonrpc": "2.0", "id": id, "result": result})
-}
-
-fn rpc_err(id: Value, code: i64, msg: &str) -> Value {
-    json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": msg}})
+    fn call(&self, tool: &ToolSpec, args: &Value, token: Option<&str>) -> Result<Value, ToolError> {
+        let store = self.0;
+        let result = (|| -> taur_core::Result<Value> {
+            let user = if tool.auth {
+                let u = store.user_for_token(token.ok_or(Error::Unauthorized)?)?;
+                if !tool.read_only {
+                    store.require_verified(&u)?;
+                }
+                Some(u)
+            } else {
+                None
+            };
+            call(store, tool.name, user, args)
+        })();
+        result.map_err(|e| match &e {
+            Error::Db(_) | Error::Io(_) | Error::Json(_) | Error::Mail(_) => {
+                eprintln!("taur: mcp internal error: {e}");
+                ToolError("internal error".into())
+            }
+            _ => ToolError(e.to_string()),
+        })
+    }
 }
 
 /// Handle one JSON-RPC message (or batch). `None` means no response (notifications).
 pub fn handle(store: &Store, token: Option<&str>, msg: Value) -> Option<Value> {
-    if let Value::Array(batch) = msg {
-        let out: Vec<Value> = batch
-            .into_iter()
-            .filter_map(|m| handle(store, token, m))
-            .collect();
-        return (!out.is_empty()).then_some(Value::Array(out));
-    }
-    let id = msg.get("id").cloned();
-    let method = msg.get("method").and_then(Value::as_str);
-    let (Some(id), Some(method)) = (id, method) else {
-        // Notifications (no id) and responses get no reply.
-        return if msg.get("method").is_some() || msg.get("result").is_some() {
-            None
-        } else {
-            Some(rpc_err(Value::Null, -32600, "invalid request"))
-        };
+    let info = ServerInfo {
+        name: "taur".into(),
+        title: "TAUR".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        instructions: "TAUR is an AUR-compatible package server. Search and info are public; management tools need the user's TAUR bearer token.".into(),
     };
-    let params = msg.get("params").cloned().unwrap_or(json!({}));
-    Some(match method {
-        "initialize" => {
-            let asked = params["protocolVersion"].as_str().unwrap_or("");
-            let v = if PROTOCOL_VERSIONS.contains(&asked) {
-                asked
-            } else {
-                PROTOCOL_VERSIONS[0]
-            };
-            rpc_ok(
-                id,
-                json!({
-                    "protocolVersion": v,
-                    "capabilities": {"tools": {"listChanged": false}},
-                    "serverInfo": {"name": "taur", "title": "TAUR", "version": env!("CARGO_PKG_VERSION")},
-                    "instructions": "TAUR is an AUR-compatible package server. Search and info are public; management tools need the user's TAUR bearer token.",
-                }),
-            )
-        }
-        "ping" => rpc_ok(id, json!({})),
-        "tools/list" => rpc_ok(
-            id,
-            json!({"tools": TOOLS.iter().map(tool_json).collect::<Vec<_>>()}),
-        ),
-        "tools/call" => {
-            let name = params["name"].as_str().unwrap_or("");
-            let Some(tool) = TOOLS.iter().find(|t| t.name == name) else {
-                return Some(rpc_err(id, -32602, &format!("unknown tool: {name}")));
-            };
-            let args = params.get("arguments").cloned().unwrap_or(json!({}));
-            let result = (|| -> taur_core::Result<Value> {
-                let user = if tool.auth {
-                    let u = store.user_for_token(token.ok_or(Error::Unauthorized)?)?;
-                    if !tool.read_only {
-                        store.require_verified(&u)?;
-                    }
-                    Some(u)
-                } else {
-                    None
-                };
-                call(store, tool.name, user, &args)
-            })();
-            match result {
-                Ok(v) => rpc_ok(
-                    id,
-                    json!({
-                        "content": [{"type": "text", "text": serde_json::to_string_pretty(&v).unwrap_or_default()}],
-                        "structuredContent": if v.is_object() { v.clone() } else { json!({"result": v}) },
-                        "isError": false,
-                    }),
-                ),
-                Err(e) => {
-                    let text = match &e {
-                        Error::Db(_) | Error::Io(_) | Error::Json(_) | Error::Mail(_) => {
-                            eprintln!("taur: mcp internal error: {e}");
-                            "internal error".to_string()
-                        }
-                        _ => e.to_string(),
-                    };
-                    rpc_ok(
-                        id,
-                        json!({"content": [{"type": "text", "text": text}], "isError": true}),
-                    )
-                }
-            }
-        }
-        _ => rpc_err(id, -32601, &format!("method not found: {method}")),
-    })
+    Server::new(info, TaurTools(store)).handle(token, msg)
 }
 
 fn s<'a>(a: &'a Value, k: &str) -> taur_core::Result<&'a str> {
-    a[k].as_str()
-        .ok_or_else(|| Error::Invalid(format!("missing string argument \"{k}\"")))
+    weirdnet_mcp::args::string(a, k).map_err(Error::Invalid)
 }
 
 fn i(a: &Value, k: &str) -> taur_core::Result<i64> {
-    a[k].as_i64()
-        .ok_or_else(|| Error::Invalid(format!("missing integer argument \"{k}\"")))
+    weirdnet_mcp::args::integer(a, k).map_err(Error::Invalid)
 }
 
 fn b(a: &Value, k: &str, default: bool) -> bool {
-    a[k].as_bool().unwrap_or(default)
+    weirdnet_mcp::args::boolean(a, k, default)
 }
 
 fn strings(a: &Value, k: &str) -> taur_core::Result<Vec<String>> {
-    a[k].as_array()
-        .ok_or_else(|| Error::Invalid(format!("missing array argument \"{k}\"")))?
-        .iter()
-        .map(|v| {
-            v.as_str()
-                .map(String::from)
-                .ok_or_else(|| Error::Invalid(format!("\"{k}\" must contain strings")))
-        })
-        .collect()
+    weirdnet_mcp::args::strings(a, k).map_err(Error::Invalid)
 }
 
 fn pb(store: &Store, name: &str) -> taur_core::Result<i64> {

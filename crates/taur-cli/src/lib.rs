@@ -473,32 +473,10 @@ fn execute(cli: Cli) -> Result<(), CliError> {
         Cmd::Config(_) => unreachable!(),
         Cmd::Upgrade { .. } => unreachable!(),
         Cmd::Mcp => {
-            use std::io::{BufRead, Write};
-            let stdin = std::io::stdin();
-            let mut out = std::io::stdout();
-            for line in stdin.lock().lines() {
-                let line = line.map_err(|e| CliError::Transport(e.to_string()))?;
-                if line.trim().is_empty() {
-                    continue;
-                }
-                let reply = match c.mcp(&line) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        let id = serde_json::from_str::<serde_json::Value>(&line)
-                            .ok()
-                            .and_then(|v| v.get("id").cloned());
-                        id.map(|id| {
-                            serde_json::json!({"jsonrpc": "2.0", "id": id,
-                                "error": {"code": -32603, "message": e.to_string()}})
-                            .to_string()
-                        })
-                    }
-                };
-                if let Some(r) = reply {
-                    writeln!(out, "{}", r.trim()).ok();
-                    out.flush().ok();
-                }
-            }
+            weirdnet_mcp::stdio::bridge(std::io::stdin().lock(), std::io::stdout(), |line| {
+                c.mcp(line)
+            })
+            .map_err(|e| CliError::Transport(e.to_string()))?;
         }
         Cmd::Register { name, email } => {
             let p = password(g, "New password: ")?;

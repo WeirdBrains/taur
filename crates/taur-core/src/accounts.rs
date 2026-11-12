@@ -3,17 +3,16 @@
 //! Passwords are hashed with Argon2id (PHC string format). Session tokens are 32
 //! random bytes (hex) handed to the client once; only their SHA-256 is stored.
 
-use crate::{Error, Result, Store, hex, now};
-use argon2::Argon2;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use rand_core::{OsRng, RngCore};
+use crate::{Error, Result, Store, now};
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
+use weirdnet_accounts::names::{NamePolicy, validate_email};
+use weirdnet_accounts::password::{check_length, hash_password as wa_hash, verify_password};
+use weirdnet_accounts::token::{random_token, token_hash};
 
 /// Session lifetime: 30 days.
 pub const SESSION_TTL_SECS: i64 = 30 * 24 * 3600;
-pub const MIN_PASSWORD_LEN: usize = 8;
+pub const MIN_PASSWORD_LEN: usize = weirdnet_accounts::password::MIN_PASSWORD_LEN;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct User {
@@ -42,12 +41,6 @@ fn user_row(r: &rusqlite::Row) -> rusqlite::Result<User> {
     })
 }
 
-fn random_token() -> String {
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
-    hex(&bytes)
-}
-
 /// A freshly issued session. Deliberately not `Debug` so the token is not logged by accident.
 #[derive(Serialize)]
 pub struct Session {
@@ -57,56 +50,28 @@ pub struct Session {
 
 /// AUR-style user names: 3-16 chars of `[A-Za-z0-9._-]`, starting and ending alphanumeric.
 pub fn validate_username(name: &str) -> Result<()> {
-    let ok = (3..=16).contains(&name.len())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
-        && name.starts_with(|c: char| c.is_ascii_alphanumeric())
-        && name.ends_with(|c: char| c.is_ascii_alphanumeric());
-    if ok {
-        Ok(())
-    } else {
-        Err(Error::Invalid(
-            "user name must be 3-16 characters of A-Z a-z 0-9 . _ - and start/end alphanumeric"
-                .into(),
-        ))
+    NamePolicy::AUR.validate(name).map_err(map_err)
+}
+
+/// Map a `weirdnet-accounts` error onto TAUR\'s.
+pub(crate) fn map_err(e: weirdnet_accounts::Error) -> Error {
+    match e {
+        weirdnet_accounts::Error::Invalid(m) => Error::Invalid(m),
+        weirdnet_accounts::Error::Hash => Error::Hash,
+        weirdnet_accounts::Error::RateLimited { retry_after } => Error::RateLimited { retry_after },
+        weirdnet_accounts::Error::ApiKey(_) => Error::Unauthorized,
     }
 }
 
 fn hash_password(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-    Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
-        .map(|h| h.to_string())
-        .map_err(|_| Error::Hash)
-}
-
-fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash)
-        .map(|h| {
-            Argon2::default()
-                .verify_password(password.as_bytes(), &h)
-                .is_ok()
-        })
-        .unwrap_or(false)
-}
-
-fn token_hash(token: &str) -> String {
-    hex(&Sha256::digest(token.as_bytes()))
+    wa_hash(password).map_err(map_err)
 }
 
 impl Store {
     pub fn register(&self, name: &str, email: &str, password: &str) -> Result<User> {
         validate_username(name)?;
-        let email = email.trim();
-        if !email.contains('@') || email.len() > 254 {
-            return Err(Error::Invalid("invalid email address".into()));
-        }
-        if password.chars().count() < MIN_PASSWORD_LEN {
-            return Err(Error::Invalid(format!(
-                "password must be at least {MIN_PASSWORD_LEN} characters"
-            )));
-        }
+        let email = validate_email(email).map_err(map_err)?;
+        check_length(password, MIN_PASSWORD_LEN).map_err(map_err)?;
         self.guard_registration(name, email)?;
         let hash = hash_password(password)?;
         let created = now();
@@ -271,11 +236,7 @@ impl Store {
     /// Finish a password reset: sets the password, ends every session. Resetting via
     /// the emailed link also proves the address, so the account becomes verified.
     pub fn reset_password(&self, token: &str, new_password: &str) -> Result<()> {
-        if new_password.chars().count() < MIN_PASSWORD_LEN {
-            return Err(Error::Invalid(format!(
-                "password must be at least {MIN_PASSWORD_LEN} characters"
-            )));
-        }
+        check_length(new_password, MIN_PASSWORD_LEN).map_err(map_err)?;
         let uid = self.take_email_token(token, "reset")?;
         let hash = hash_password(new_password)?;
         let conn = self.lock();
