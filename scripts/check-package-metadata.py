@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check or update TAUR package-version metadata for scripts/release.sh.
+"""Check or update TAUR package-version metadata for the release (release.toml hooks).
 
 The public Arch recipe is packaging/arch/PKGBUILD. Its source must be the
 GitHub release tarball URL for the workspace version. sha256sums is either

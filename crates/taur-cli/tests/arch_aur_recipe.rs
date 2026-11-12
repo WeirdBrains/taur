@@ -169,3 +169,51 @@ fn internal_recipe_is_the_local_payload_wrapper() {
     assert!(internal.contains("source=(payload.tar.gz)"));
     assert!(internal.contains("scripts/package.sh"));
 }
+
+#[test]
+fn set_pkgver_resets_the_tarball_hash_to_the_placeholder() {
+    // The release script's post_bump hook (release.toml) runs set-pkgver, so a previous
+    // release's tarball hash is never left on a new pkgver.
+    let tmp = tempfile::tempdir().unwrap();
+    let arch = tmp.path().join("packaging/arch");
+    fs::create_dir_all(&arch).unwrap();
+    fs::write(arch.join("PKGBUILD"), pkgbuild()).unwrap();
+    let out = Command::new("python3")
+        .current_dir(repo())
+        .args([
+            "scripts/check-package-metadata.py",
+            "set-pkgver",
+            "99.0.0",
+            "--root",
+        ])
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = fs::read_to_string(arch.join("PKGBUILD")).unwrap();
+    assert!(text.lines().any(|l| l == "pkgver=99.0.0"), "{text}");
+    assert!(
+        text.contains("sha256sums=('UPSTREAM_TARBALL_SHA256')"),
+        "{text}"
+    );
+}
+
+#[test]
+fn release_config_runs_the_package_metadata_hooks() {
+    let cfg = fs::read_to_string(repo().join("release.toml")).unwrap();
+    for needle in [
+        "scripts/check-package-metadata.py check {old}",
+        "scripts/check-package-metadata.py set-pkgver {version}",
+        "taur-srcinfo packaging/arch",
+        "man_pages_up_to_date",
+        "cargo clippy --all-targets --offline -- -D warnings",
+        "cargo build --release --offline",
+    ] {
+        assert!(cfg.contains(needle), "release.toml should run {needle}");
+    }
+    assert!(repo().join("scripts/weirdnet_release.py").is_file());
+}

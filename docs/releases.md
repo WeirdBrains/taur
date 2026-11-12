@@ -1,48 +1,56 @@
 # Making a release
 
-`scripts/release.sh` bumps the workspace version, checks the tree, commits, tags, and pushes. It does not build the public archive and it does not create a GitHub Release. Those assets are a separate step after the tag is on `main`.
+Releases use the shared WeirdBrains release script, vendored from weirdnet-project-helpers as `scripts/weirdnet_release.py` and configured by `release.toml`. Don't edit the vendored copy: change weirdnet-project-helpers and re-vendor it. The script bumps the workspace version, checks the tree, runs the gates, commits, tags, and pushes. It does not build the public archive and it does not create a GitHub Release. Those assets are a separate step after the tag is on `main`.
 
-Run it from a clean `main` that matches `origin/main`. The default bump is the next minor, and patch goes back to 0.
+Run it from a clean `main` that is not behind `origin/main`. The default bump is the next minor, and patch goes back to 0. Release notes come from `## [Unreleased]` in `CHANGELOG.md`; a message argument is optional and adds a bullet.
 
 ```sh
-scripts/release.sh --dry-run
-scripts/release.sh
+python3 scripts/weirdnet_release.py --dry-run
+python3 scripts/weirdnet_release.py
 ```
 
 `1.2.0` becomes `1.3.0`. The commit message is `release: v1.3.0`. The annotated tag is `v1.3.0`. The push is one atomic update of `main` and that tag:
 
 ```sh
-git push --atomic origin HEAD:main refs/tags/v1.3.0
+git push --atomic origin HEAD:refs/heads/main refs/tags/v1.3.0
 ```
 
-Other local tags are not pushed. An existing `v1.3.0` tag, locally or on `origin`, stops the script. The push is not forced.
+Other local tags are not pushed. An existing `v1.3.0` tag, locally or on `origin`, stops the script, and so does a version that isn't newer than every `v*` tag. The push is not forced. It asks before releasing (`--yes` skips the question).
 
 ## Which number changes
 
 ```sh
-scripts/release.sh --patch          # 1.2.0 -> 1.2.1, tag v1.2.1
-scripts/release.sh --major          # 1.2.0 -> 2.0.0, tag v2.0.0
-scripts/release.sh --version 1.4.0  # explicit stable core, tag v1.4.0
+python3 scripts/weirdnet_release.py --patch          # 1.2.0 -> 1.2.1, tag v1.2.1
+python3 scripts/weirdnet_release.py --major          # 1.2.0 -> 2.0.0, tag v2.0.0
+python3 scripts/weirdnet_release.py --version 1.4.0  # explicit stable core, tag v1.4.0
 ```
 
-`--major`, `--patch`, and `--version` cannot be combined. `--major` sets minor and patch to 0. A minor bump sets patch to 0. Each component is `0` or a number without a leading zero. `1.2`, `01.2.0`, `1.2.3-rc.1`, `1.2.3+ghi`, and `v1.2.3` are rejected. The new version must be greater than the version in `[workspace.package]`.
+`--major`, `--patch`, and `--version` cannot be combined. Each component is `0` or a number without a leading zero. `1.2`, `01.2.0`, `1.2.3-rc.1`, `1.2.3+ghi`, and `v1.2.3` are rejected. The new version must be greater than the version in `[workspace.package]`.
 
-`--dry-run` prints the plan and does not edit files, commit, tag, or push. It still requires a clean `main` that matches `origin/main`.
+`--dry-run` prints the plan and the diffs and does not edit files, commit, tag, or push. It still requires a clean `main` and runs the read-only metadata check.
 
-## What the script changes
+## What the release changes
 
 - `Cargo.toml` workspace version, which the `taur` and `taurctl` binaries report
 - `Cargo.lock` versions for `taur-cli`, `taur-core`, and `taur-server`
-- `CHANGELOG.md`, by dating `## [Unreleased]` as `## [X.Y.Z] - YYYY-MM-DD` when that heading is not already there
-- `packaging/arch/PKGBUILD` `pkgver`, set to the same workspace version (`pkgrel` stays 1), and `sha256sums` reset to the placeholder `UPSTREAM_TARBALL_SHA256` so a previous release tarball hash is not reused
-- `packaging/arch/.SRCINFO`, regenerated with `makepkg --printsrcinfo` (or an Arch container if `makepkg` is not on PATH)
+- `CHANGELOG.md`: `## [Unreleased]` becomes `## [X.Y.Z] - YYYY-MM-DD` (America/New_York) and an empty `## [Unreleased]` stays on top
+- `packaging/arch/PKGBUILD` `pkgver`, set to the same workspace version (`pkgrel` stays 1), and `sha256sums` reset to the placeholder `UPSTREAM_TARBALL_SHA256` so a previous release tarball hash is not reused (`check-package-metadata.py set-pkgver`, a `release.toml` hook)
+- `packaging/arch/.SRCINFO`, regenerated (`weirdnet_release.py taur-srcinfo --tool auto`: `makepkg --printsrcinfo` when makepkg is on PATH, otherwise the script's own generator, which prints the same fields in the same order)
 - man pages, regenerated from the CLI so they show the same version
 
-Debian `control.in` and the RPM spec keep `@VERSION@` placeholders, which `scripts/package.sh` fills in. The release script checks those markers and that the public Arch `pkgver` already matches the current workspace version; a missing file or mismatch stops the release. The public `packaging/arch/PKGBUILD` source must be the GitHub release tarball URL. Its `sha256sums` is either `UPSTREAM_TARBALL_SHA256` (after a bump, before the asset exists) or the verified 64-character digest of that tarball. A `payload.tar.gz` source is rejected there. `.SRCINFO` is source-recipe metadata: it is included under `packaging/arch/` in the tree and in the release tarball, and it is not installed as a runtime file.
+Debian `control.in` and the RPM spec keep `@VERSION@` placeholders, which `scripts/package.sh` fills in. Before anything changes, `check-package-metadata.py check` confirms those markers and that the public Arch `pkgver` matches the current workspace version; after the bump it checks the new one.
 
-`packaging/arch-internal/PKGBUILD` is only for `scripts/package.sh` to wrap a local `payload.tar.gz` into the official GitHub `.pkg.tar.zst`. After the tarball hash is known, `package.sh` also writes `taur-VERSION-arch-aur.tar.gz` beside the four official assets (not listed in `SHA256SUMS`) for upload to a TAUR server with `taurctl pkg upload`. Fill a committed public hash after publication with `python3 scripts/check-package-metadata.py set-tarball-sha256 HASH --recipe-dir packaging/arch` and regenerate `.SRCINFO`.
+Before the commit it runs `cargo fmt --all -- --check`, `cargo clippy --all-targets --offline -- -D warnings`, `cargo test --offline`, and `cargo build --release --offline`. A failed check restores the checkout to the commit you started from.
 
-Before the commit it runs `cargo fmt --all -- --check`, `cargo clippy --all-targets --offline -- -D warnings`, `cargo test --offline`, and `cargo build --release --offline`. A failed check restores the checkout to the commit you started from. A failed push leaves that release commit and its tag only on this machine; `origin` is unchanged and the tag is not overwritten.
+## TAUR recipe
+
+After the GitHub release exists and `set-tarball-sha256` has written the verified hash (and `.SRCINFO` is regenerated and committed):
+
+```sh
+python3 scripts/weirdnet_release.py taur X.Y.Z --dry-run   # checks, downloads and compares the tarball, packs, taurctl whoami
+python3 scripts/weirdnet_release.py taur X.Y.Z             # taurctl pkg upload ARCHIVE --org WeirdBrains --yes
+python3 scripts/weirdnet_release.py assets X.Y.Z           # the release has every file in release.toml
+```
 
 ## GitHub release assets
 

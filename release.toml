@@ -1,0 +1,81 @@
+# TAUR release config for weirdnet-project-helpers (scripts/weirdnet_release.py).
+# Usage: python3 scripts/weirdnet_release.py [--patch|--major|--version X.Y.Z] [--dry-run]
+# Notes come from CHANGELOG.md `## [Unreleased]`; a message is optional.
+helpers = "0.1.1"
+project = "taur"
+next = [
+  "the v* tag runs .github/workflows/release.yml on alien-blue (packages, smoke, GitHub release)",
+  "python3 scripts/check-package-metadata.py set-tarball-sha256 ... then python3 scripts/weirdnet_release.py taur-srcinfo packaging/arch --tool auto; commit",
+  "python3 scripts/weirdnet_release.py taur {version} --dry-run, then without --dry-run",
+  "python3 scripts/weirdnet_release.py assets {version}",
+]
+
+[env]
+CARGO_TARGET_DIR = "/mnt/ext1/cargo-target"
+
+[[files]]
+kind = "cargo-workspace"
+path = "Cargo.toml"
+primary = true
+
+[[files]]
+kind = "cargo-lock"
+path = "Cargo.lock"
+packages = ["taur-cli", "taur-core", "taur-server"]
+
+[changelog]
+path = "CHANGELOG.md"
+
+[hooks]
+# Debian/RPM @VERSION@ templates and the public Arch pkgver must match the current version.
+pre = ["python3 scripts/check-package-metadata.py check {old} --root ."]
+post_bump = [
+  # pkgver -> new, sha256sums -> UPSTREAM_TARBALL_SHA256 (a previous hash is never reused)
+  "python3 scripts/check-package-metadata.py set-pkgver {version} --root .",
+  "python3 scripts/weirdnet_release.py taur-srcinfo packaging/arch --tool auto",
+  "python3 scripts/check-package-metadata.py check {version} --root .",
+  "TAUR_UPDATE_MAN=1 cargo test --offline -p taur-cli --test cli man_pages_up_to_date -- --exact",
+  "TAUR_UPDATE_MAN=1 cargo test --offline -p taur-server --test http taur_man_pages_up_to_date -- --exact",
+]
+stage = ["man", "packaging/arch/PKGBUILD", "packaging/arch/.SRCINFO"]
+
+[checks]
+commands = [
+  "cargo fmt --all -- --check",
+  "cargo clippy --all-targets --offline -- -D warnings",
+  "cargo test --offline",
+  "cargo build --release --offline",
+]
+
+[taur]
+org = "WeirdBrains"
+
+[[taur.packages]]               # the committed public recipe, after set-tarball-sha256
+name = "taur"
+dir = "packaging/arch"
+srcinfo_tool = "auto"
+
+[[platforms]]
+os = "linux"
+arch = ["x86_64"]
+arch_note = "server package; aarch64 not built yet"
+formats = ["tar.gz", "deb", "rpm", "pkg.tar.zst"]
+channels = ["github", "taur"]
+assets = ["taur-{version}-x86_64-unknown-linux-gnu.tar.gz", "taur_{version}-1_amd64.deb", "taur-{version}-1.x86_64.rpm",
+          "taur-{version}-1-x86_64.pkg.tar.zst", "taur-{version}-arch-aur.tar.gz", "SHA256SUMS"]
+
+[[platforms]]
+os = "macos"
+opt_out = "Linux server; taurctl on macOS not planned yet"
+
+[[platforms]]
+os = "windows"
+opt_out = "Linux server; taurctl on Windows not planned yet"
+
+[[platforms]]
+os = "android"
+opt_out = "server software"
+
+[[platforms]]
+os = "ios"
+opt_out = "server software"

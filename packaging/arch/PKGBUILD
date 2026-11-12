@@ -5,8 +5,8 @@
 # packaging/arch-internal/PKGBUILD and a local payload.tar.gz.
 #
 # sha256sums is UPSTREAM_TARBALL_SHA256 until the tarball for this pkgver is
-# published. scripts/release.sh resets it to that placeholder when bumping
-# pkgver so a previous release's hash is never left in place. After the
+# published. The release (release.toml, set-pkgver) resets it to that placeholder
+# when bumping pkgver so a previous release's hash is never left in place. After the
 # GitHub asset exists, scripts/check-package-metadata.py set-tarball-sha256
 # writes the verified hash and .SRCINFO is regenerated.
 pkgname=taur

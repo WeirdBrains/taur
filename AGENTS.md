@@ -34,6 +34,10 @@ Adapted from `~/Projects/WeirdBrains/muninn/AGENTS.md`.
   man pages, add a
   `CHANGELOG.md` entry, commit as `release: vX.Y.Z`, create an annotated tag `vX.Y.Z`,
   then push main with the tag.
+- `python3 scripts/weirdnet_release.py` (the shared WeirdBrains release script, vendored from
+  weirdnet-project-helpers; configured by `release.toml`) does all of this. `--dry-run` first.
+  Don't edit the vendored copy; change weirdnet-project-helpers and re-vendor it. See
+  `docs/releases.md`.
 - `CHANGELOG.md` (Keep a Changelog format) stays **summary level**: a few short one-line
   bullets per release naming the feature. No implementation details, file lists or
   sub-bullets. Tag messages are one short line.
