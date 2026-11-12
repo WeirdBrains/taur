@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-12
+
 ### Changed
 
 - Internal: password hashing, session-token hashing, user-name and email rules and the per-client rate limiter now come from [weirdnet-accounts](https://github.com/WeirdBrains/weirdnet-accounts); the MCP protocol handling and `taurctl mcp` stdio bridge come from [weirdnet-mcp](https://github.com/WeirdBrains/weirdnet-mcp). No behaviour change: messages, limits, tool lists and responses are identical.
