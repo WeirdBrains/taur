@@ -42,18 +42,48 @@ impl Family {
         }
     }
 
-    fn installer(self, pkg: &Path) -> Result<(String, Vec<String>), CliError> {
+    fn installer(
+        self,
+        pkg: &Path,
+        config: ConfigPolicy,
+    ) -> Result<(String, Vec<String>), CliError> {
         let pkg = pkg
             .to_str()
             .ok_or_else(|| CliError::Input("package path is not valid UTF-8".into()))?
             .to_string();
         match self {
-            Family::Deb => Ok(("apt-get".into(), vec!["install".into(), "-y".into(), pkg])),
+            Family::Deb => {
+                let mut args = vec!["install".to_string(), "-y".to_string()];
+                match config {
+                    // Keep an edited /etc/taur/taur.env without prompting.
+                    ConfigPolicy::Keep => args.extend([
+                        "-o".into(),
+                        "Dpkg::Options::=--force-confdef".into(),
+                        "-o".into(),
+                        "Dpkg::Options::=--force-confold".into(),
+                    ]),
+                    // The old file was backed up first; take the packaged one.
+                    ConfigPolicy::Replace => {
+                        args.extend(["-o".into(), "Dpkg::Options::=--force-confnew".into()])
+                    }
+                }
+                args.push(pkg);
+                Ok(("apt-get".into(), args))
+            }
             Family::Rpm => Ok(("dnf".into(), vec!["install".into(), "-y".into(), pkg])),
             Family::Arch => Ok((
                 "pacman".into(),
                 vec!["-U".into(), "--noconfirm".into(), pkg],
             )),
+        }
+    }
+
+    /// Where the package manager leaves a new default config it did not install.
+    fn new_config_suffix(self) -> Option<&'static str> {
+        match self {
+            Family::Deb => None,
+            Family::Rpm => Some(".rpmnew"),
+            Family::Arch => Some(".pacnew"),
         }
     }
 
@@ -71,12 +101,23 @@ pub struct Platform {
     pub family: Family,
 }
 
+/// What happens to an existing /etc/taur/taur.env during the install.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfigPolicy {
+    /// The default, and `--no`: keep the existing file without asking.
+    Keep,
+    /// `--yes`: back the existing file up, then install the packaged default.
+    Replace,
+}
+
 #[derive(Clone, Debug)]
 pub struct Options {
     pub version: Option<String>,
     pub restart: bool,
     pub dry_run: bool,
     pub yes: bool,
+    /// Keep the existing configuration without asking (`-n`, `--no`).
+    pub no: bool,
     pub json: bool,
     pub health_url: Option<String>,
 }
@@ -244,7 +285,8 @@ pub fn run_with(opts: Options, io: &mut dyn Env) -> Result<Outcome, CliError> {
         io.log("no installed 'taur' package was found; this will be a fresh install");
     }
 
-    let (prog, args) = platform.family.installer(&PathBuf::from(&asset))?;
+    let config = config_policy(&opts)?;
+    let (prog, args) = platform.family.installer(&PathBuf::from(&asset), config)?;
     let planned = display_cmd(io, &prog, &args);
     if opts.dry_run {
         io.log(&format!("would install with: {planned}"));
@@ -303,16 +345,56 @@ pub fn run_with(opts: Options, io: &mut dyn Env) -> Result<Outcome, CliError> {
     std::fs::write(&pkg_path, &bytes).map_err(|e| CliError::Input(e.to_string()))?;
     verify_sha256(io, &pkg_path, &asset, &sums_text)?;
 
-    let (prog, args) = platform.family.installer(&pkg_path)?;
+    // Neither -y nor -n: ask, and anything but yes keeps the file.
+    let env = io.env_file();
+    let config = if !opts.yes && !opts.no && env.exists() {
+        match io.confirm(&format!(
+            "replace {} with the packaged default? The current file is backed up first. No keeps it",
+            env.display()
+        )) {
+            Ok(()) => ConfigPolicy::Replace,
+            Err(_) => ConfigPolicy::Keep,
+        }
+    } else {
+        config
+    };
+    let (prog, args) = platform.family.installer(&pkg_path, config)?;
     let shown = display_cmd(io, &prog, &args);
     if !opts.yes {
+        let config_note = match config {
+            ConfigPolicy::Keep => format!("{} is kept", env.display()),
+            ConfigPolicy::Replace => format!(
+                "{} is backed up, then replaced with the packaged default",
+                env.display()
+            ),
+        };
         io.confirm(&format!(
-            "install TAUR {} with `{shown}`? Configuration, the database, and git repositories are left in place",
+            "install TAUR {} with `{shown}`? {config_note}; the database and git repositories are left in place",
             release.tag
         ))?;
     }
+    let backup = if config == ConfigPolicy::Replace {
+        backup_config(io)?
+    } else {
+        None
+    };
     run_privileged(io, &prog, &args)?;
     io.log(&format!("installed {}", asset));
+    match config {
+        ConfigPolicy::Keep => io.log(&format!("kept the existing {}", io.env_file().display())),
+        ConfigPolicy::Replace => {
+            if let Some(suffix) = platform.family.new_config_suffix() {
+                install_new_config(io, suffix)?;
+            }
+            if let Some(b) = &backup {
+                io.log(&format!(
+                    "installed the packaged {}; the previous one is at {}",
+                    io.env_file().display(),
+                    b.display()
+                ));
+            }
+        }
+    }
 
     let mut restarted = false;
     let mut rolled_back = false;
@@ -332,7 +414,7 @@ pub fn run_with(opts: Options, io: &mut dyn Env) -> Result<Outcome, CliError> {
                         prev.file_name().unwrap_or_default().to_string_lossy()
                     ));
                     io.log("reinstalling the previous package cannot undo a database schema migration; restore a pre-upgrade database backup if the service still fails");
-                    let (p, a) = platform.family.installer(prev)?;
+                    let (p, a) = platform.family.installer(prev, ConfigPolicy::Keep)?;
                     run_privileged(io, &p, &a)?;
                     rolled_back = true;
                     if let Err(e2) = restart_and_check(io, &opts) {
@@ -610,6 +692,64 @@ pub fn bind_to_health_url(env_file: &Path) -> Option<String> {
         return None;
     }
     Some(format!("http://127.0.0.1:{port}"))
+}
+
+fn config_policy(opts: &Options) -> Result<ConfigPolicy, CliError> {
+    match (opts.yes, opts.no) {
+        (true, true) => Err(CliError::Input("--yes and --no cannot be combined".into())),
+        (true, false) => Ok(ConfigPolicy::Replace),
+        (false, _) => Ok(ConfigPolicy::Keep),
+    }
+}
+
+/// Copy the existing config to `<file>.bak-<unix seconds>`, keeping mode and owner.
+fn backup_config(io: &dyn Env) -> Result<Option<PathBuf>, CliError> {
+    let env = io.env_file();
+    if !env.exists() {
+        return Ok(None);
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut name = env.as_os_str().to_owned();
+    name.push(format!(".bak-{secs}"));
+    let backup = PathBuf::from(name);
+    run_privileged(
+        io,
+        "cp",
+        &[
+            "-a".into(),
+            env.display().to_string(),
+            backup.display().to_string(),
+        ],
+    )?;
+    io.log(&format!(
+        "backed up {} to {}",
+        env.display(),
+        backup.display()
+    ));
+    Ok(Some(backup))
+}
+
+/// Move the package manager's `.pacnew`/`.rpmnew` default into place.
+fn install_new_config(io: &dyn Env, suffix: &str) -> Result<(), CliError> {
+    let env = io.env_file();
+    let mut name = env.as_os_str().to_owned();
+    name.push(suffix);
+    let new = PathBuf::from(name);
+    if !new.exists() {
+        return Ok(());
+    }
+    run_privileged(
+        io,
+        "mv",
+        &[
+            "-f".into(),
+            new.display().to_string(),
+            env.display().to_string(),
+        ],
+    )
 }
 
 fn run_privileged(io: &dyn Env, program: &str, args: &[String]) -> Result<(), CliError> {

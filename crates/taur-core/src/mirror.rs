@@ -41,8 +41,8 @@ pub const PROVENANCE_MIRROR: &str = "mirror";
 /// The copy is kept.
 pub const STALE_AFTER_SECS: i64 = 7 * 24 * 60 * 60;
 const MAX_SELECTED: i64 = 200;
-const MAX_FILES: usize = 64;
-const MAX_TREE_BYTES: u64 = 1024 * 1024;
+const MAX_FILES: usize = 256;
+const MAX_TREE_BYTES: u64 = 64 * 1024 * 1024;
 const FETCH_LIMIT: Duration = Duration::from_secs(60);
 
 const SCHEMA: &str = r#"

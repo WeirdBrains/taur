@@ -10,7 +10,7 @@ organization's exact name (3-16 characters of `A-Z` `a-z` `0-9` `.` `_` `-`, sta
 and ending alphanumeric), and the uploader must be an Owner, Admin, or Contributor of
 that organization. An existing package base is updated only when
 that user could push it, and its owner is left unchanged. A non-empty `organization`
-that is not the current owner is rejected. The archive is at most 8 MiB. See
+that is not the current owner is rejected. The archive is at most 64 MiB. See
 [Publish a package](guides/publish.md).
 
 `taur import DIR [--maintainer USER]`

@@ -195,9 +195,117 @@ fn opts(version: &str) -> Options {
         restart: false,
         dry_run: false,
         yes: true,
+        no: false,
         json: false,
         health_url: None,
     }
+}
+
+#[test]
+fn no_keeps_the_existing_config() {
+    let mut io = Fake::new();
+    let dir = tempfile::tempdir().unwrap();
+    io.env_file = dir.path().join("taur.env");
+    std::fs::write(&io.env_file, "TAUR_BIND=0.0.0.0:9000\n").unwrap();
+    io.commands.extend(["cp".into(), "mv".into()]);
+    io.confirms = vec![true; 4];
+    populate(&mut io, "1.5.0", Family::Deb, b"deb-pkg");
+    let mut o = opts("1.5.0");
+    o.yes = false;
+    o.no = true;
+    run_with(o, &mut io).unwrap();
+    let ran = io.ran().join("\n");
+    assert!(ran.contains("Dpkg::Options::=--force-confold"), "{ran}");
+    assert!(!ran.contains("cp -a"), "{ran}");
+    assert!(!ran.contains("mv -f"), "{ran}");
+    assert!(io.logs().contains("kept the existing"), "{}", io.logs());
+}
+
+#[test]
+fn yes_backs_up_then_installs_the_packaged_config() {
+    let mut io = Fake::new();
+    let dir = tempfile::tempdir().unwrap();
+    io.env_file = dir.path().join("taur.env");
+    std::fs::write(&io.env_file, "TAUR_BIND=0.0.0.0:9000\n").unwrap();
+    std::fs::write(dir.path().join("taur.env.pacnew"), "# default\n").unwrap();
+    io.os_release = "ID=arch\n".into();
+    io.commands = ["pacman", "sudo", "sha256sum", "cp", "mv"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    populate(&mut io, "1.5.0", Family::Arch, b"pkg");
+    run_with(opts("1.5.0"), &mut io).unwrap();
+    let ran = io.ran();
+    let env = io.env_file.display().to_string();
+    let cp = ran
+        .iter()
+        .position(|r| r.starts_with(&format!("sudo cp -a {env} {env}.bak-")))
+        .unwrap_or_else(|| panic!("{ran:?}"));
+    let install = ran
+        .iter()
+        .position(|r| r.contains("pacman -U"))
+        .unwrap_or_else(|| panic!("{ran:?}"));
+    let mv = ran
+        .iter()
+        .position(|r| r == &format!("sudo mv -f {env}.pacnew {env}"))
+        .unwrap_or_else(|| panic!("{ran:?}"));
+    assert!(cp < install && install < mv, "{ran:?}");
+}
+
+#[test]
+fn default_keeps_the_existing_config() {
+    let mut io = Fake::new();
+    io.confirms = vec![true; 4];
+    populate(&mut io, "1.5.0", Family::Deb, b"deb-pkg");
+    let mut o = opts("1.5.0");
+    o.yes = false;
+    run_with(o, &mut io).unwrap();
+    let ran = io.ran().join("\n");
+    assert!(ran.contains("Dpkg::Options::=--force-confold"), "{ran}");
+    assert!(!ran.contains("cp -a"), "{ran}");
+}
+
+#[test]
+fn the_config_question_defaults_to_keeping_the_file() {
+    for (answer, replaced) in [(false, false), (true, true)] {
+        let mut io = Fake::new();
+        let dir = tempfile::tempdir().unwrap();
+        io.env_file = dir.path().join("taur.env");
+        std::fs::write(&io.env_file, "TAUR_BIND=0.0.0.0:9000\n").unwrap();
+        io.commands.extend(["cp".into(), "mv".into()]);
+        io.confirms = vec![answer, true, true];
+        populate(&mut io, "1.5.0", Family::Deb, b"deb-pkg");
+        let mut o = opts("1.5.0");
+        o.yes = false;
+        run_with(o, &mut io).unwrap();
+        let ran = io.ran().join("\n");
+        let logs = io.logs();
+        assert!(
+            logs.contains(
+                "with the packaged default? The current file is backed up first. No keeps it"
+            ),
+            "{logs}"
+        );
+        if replaced {
+            assert!(ran.contains("cp -a"), "{ran}");
+            assert!(ran.contains("--force-confnew"), "{ran}");
+            assert!(logs.contains("is backed up, then replaced"), "{logs}");
+        } else {
+            assert!(!ran.contains("cp -a"), "{ran}");
+            assert!(ran.contains("--force-confold"), "{ran}");
+            assert!(logs.contains("taur.env is kept;"), "{logs}");
+        }
+    }
+}
+
+#[test]
+fn yes_and_no_conflict() {
+    let mut io = Fake::new();
+    populate(&mut io, "1.5.0", Family::Deb, b"deb-pkg");
+    let mut o = opts("1.5.0");
+    o.no = true;
+    let e = run_with(o, &mut io).unwrap_err().to_string();
+    assert!(e.contains("cannot be combined"), "{e}");
 }
 
 #[test]

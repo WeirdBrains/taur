@@ -9,7 +9,7 @@ This is how a package you maintain shows up in search.
 
 ## Upload from the site
 
-Open [Upload](/upload) after your email is verified. Choose a `.tar.gz`, `.tar`, or `.zip` of the package directory. `PKGBUILD` and `.SRCINFO` sit at the top of that directory, or inside one folder. The archive is at most 8 MiB, with at most 64 files, and each file is at most 256 KiB. Nested directories, symlinks, and paths that leave the directory are refused.
+Open [Upload](/upload) after your email is verified. Choose a `.tar.gz`, `.tar`, or `.zip` of the package directory. `PKGBUILD` and `.SRCINFO` sit at the top of that directory, or inside one folder. The archive is at most 64 MiB, with at most 256 files, and each file is at most 64 MiB. Nested directories, symlinks, and paths that leave the directory are refused.
 
 The Owner control lists your account and every organization where you can manage packages (Owner, Admin, or Contributor). The default is your account. Open the list and type in the filter at the top to narrow the options; if nothing matches, the list says so and the current owner stays selected. A new package is created under that owner immediately. An update keeps the current owner. If you name an organization that is not the package's organization, the upload is refused and nothing is moved.
 

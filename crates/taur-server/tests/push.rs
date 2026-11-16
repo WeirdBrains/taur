@@ -214,7 +214,7 @@ fn push_over_http_and_ssh() {
     assert!(!ok && out.contains("subdirectories"), "{out}");
     let big = s.work.path().join("big-pkg");
     write_pkg(&big, "big-pkg", "1");
-    std::fs::write(big.join("blob.bin"), vec![7u8; 300 * 1024]).unwrap();
+    std::fs::write(big.join("blob.bin"), vec![7u8; 64 * 1024 * 1024 + 1]).unwrap();
     git(&big, &["init", "-q"], &[]);
     git(&big, &["add", "-A"], &[]);
     git(&big, &["commit", "-qm", "x"], &[]);

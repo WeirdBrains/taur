@@ -12,8 +12,8 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 /// Largest accepted archive, compressed or not.
-pub const MAX_ARCHIVE_BYTES: u64 = 8 * 1024 * 1024;
-const MAX_FILES: usize = 64;
+pub const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_FILES: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Published {
@@ -47,7 +47,7 @@ pub fn extract_recipe(bytes: &[u8]) -> Result<RecipeDir> {
         return Err(Error::Invalid("the upload is empty".into()));
     }
     if bytes.len() as u64 > MAX_ARCHIVE_BYTES {
-        return Err(Error::Invalid("the archive is larger than 8 MiB".into()));
+        return Err(Error::Invalid("the archive is larger than 64 MiB".into()));
     }
     let files = match sniff(bytes)? {
         Kind::Zip => read_zip(bytes)?,
@@ -222,7 +222,7 @@ fn read_limited<R: Read>(mut reader: R) -> Result<Vec<u8>> {
         }
         if out.len() as u64 + n as u64 > MAX_ARCHIVE_BYTES {
             return Err(Error::Invalid(
-                "the uncompressed archive is larger than 8 MiB".into(),
+                "the uncompressed archive is larger than 64 MiB".into(),
             ));
         }
         out.extend_from_slice(&buf[..n]);
@@ -499,6 +499,41 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn archives_up_to_64_mib_are_accepted() {
+        let (pkg, src) = recipe("1");
+        // Over the old 8 MiB archive cap, 64-file cap and 256 KiB per-file cap.
+        let blob = "a".repeat(128 * 1024);
+        let big = "b".repeat(2 * 1024 * 1024);
+        let mut names: Vec<String> = (0..70).map(|i| format!("data{i}.bin")).collect();
+        names.push("big.bin".into());
+        let mut raw = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut raw);
+            let mut files: Vec<(&str, &str)> = vec![("PKGBUILD", &pkg), (".SRCINFO", &src)];
+            files.extend(names.iter().map(|n| {
+                let body = if n == "big.bin" { &big } else { &blob };
+                (n.as_str(), body.as_str())
+            }));
+            for (name, body) in files {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(body.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                builder
+                    .append_data(&mut header, name, body.as_bytes())
+                    .unwrap();
+            }
+            builder.finish().unwrap();
+        }
+        assert!(raw.len() as u64 > 8 * 1024 * 1024);
+        let unpacked = extract_recipe(&raw).unwrap();
+        assert!(unpacked.path().join("data69.bin").is_file());
+        assert!(unpacked.path().join("big.bin").is_file());
+        let too_big = vec![0u8; MAX_ARCHIVE_BYTES as usize + 1];
+        assert!(extract_recipe(&too_big).is_err());
     }
 
     #[test]

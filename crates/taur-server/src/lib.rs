@@ -91,7 +91,13 @@ pub fn app_with(state: AppState) -> Router {
         .route("/api/v1/organizations/{org}", get(show_public_org))
         .route("/api/v1/packages", get(my_packages))
         .route("/api/v1/packages/index", get(package_index))
-        .route("/api/v1/packages/upload", post(upload_package))
+        .route(
+            "/api/v1/packages/upload",
+            // Room for a full-size archive plus the multipart framing.
+            post(upload_package).layer(DefaultBodyLimit::max(
+                taur_core::upload::MAX_ARCHIVE_BYTES as usize + 1024 * 1024,
+            )),
+        )
         .route("/api/v1/packages/by-name/{name}", get(package_by_name))
         .route(
             "/api/v1/packages/{pkgbase}/revisions",
@@ -1515,7 +1521,7 @@ async fn upload_package(
                     .await
                     .map_err(|e| Error::Invalid(format!("could not read the upload: {e}")))?;
                 if data.len() as u64 > taur_core::upload::MAX_ARCHIVE_BYTES {
-                    return Err(Error::Invalid("the archive is larger than 8 MiB".into()).into());
+                    return Err(Error::Invalid("the archive is larger than 64 MiB".into()).into());
                 }
                 archive = Some(data);
             }

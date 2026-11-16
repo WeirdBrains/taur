@@ -4,7 +4,7 @@
 .SH NAME
 taurctl\-upgrade \- Upgrade the installed TAUR package from a GitHub Release
 .SH SYNOPSIS
-\fBtaurctl upgrade\fR [\fB\-\-server\fR] [\fB\-\-version\fR] [\fB\-\-config\-dir\fR] [\fB\-\-restart\fR] [\fB\-\-dry\-run\fR] [\fB\-\-json\fR] [\fB\-\-health\-url\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtaurctl upgrade\fR [\fB\-\-server\fR] [\fB\-\-version\fR] [\fB\-\-config\-dir\fR] [\fB\-\-restart\fR] [\fB\-\-dry\-run\fR] [\fB\-\-json\fR] [\fB\-\-health\-url\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-n\fR|\fB\-\-no\fR] [\fB\-\-password\-stdin\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Upgrade the installed TAUR package from a GitHub Release.
 .PP
@@ -38,6 +38,9 @@ URL used for the post\-restart health check (default: http://127.0.0.1:<TAUR_BIN
 \fB\-y\fR, \fB\-\-yes\fR
 Don\*(Aqt ask for confirmation
 .TP
+\fB\-n\fR, \fB\-\-no\fR
+Keep the existing /etc/taur/taur.env (the default). With \-y instead, the old file is backed up to taur.env.bak\-<time> and the packaged default is installed
+.TP
 \fB\-\-password\-stdin\fR
 Read the password from the first line of stdin instead of prompting
 .TP
@@ -48,3 +51,4 @@ Examples:
   taurctl upgrade
   taurctl upgrade \-\-version 1.5.0
   taurctl upgrade \-\-version 1.5.0 \-\-restart \-y
+  taurctl upgrade \-n

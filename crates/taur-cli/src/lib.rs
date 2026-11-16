@@ -138,7 +138,7 @@ pub enum Cmd {
     /// are left in place. A package rollback cannot undo a database schema
     /// migration. The service is not restarted unless `--restart` is given.
     #[command(
-        after_help = "Examples:\n  taurctl upgrade\n  taurctl upgrade --version 1.5.0\n  taurctl upgrade --version 1.5.0 --restart -y\n"
+        after_help = "Examples:\n  taurctl upgrade\n  taurctl upgrade --version 1.5.0\n  taurctl upgrade --version 1.5.0 --restart -y\n  taurctl upgrade -n\n"
     )]
     Upgrade {
         /// Release tag or version (for example 1.5.0 or v1.5.0). Default: the latest GitHub Release.
@@ -154,6 +154,10 @@ pub enum Cmd {
         /// URL used for the post-restart health check (default: http://127.0.0.1:<TAUR_BIND port>).
         #[arg(long, value_name = "URL")]
         health_url: Option<String>,
+        /// Keep the existing /etc/taur/taur.env (the default). With -y instead, the old
+        /// file is backed up to taur.env.bak-<time> and the packaged default is installed.
+        #[arg(short = 'n', long = "no")]
+        no: bool,
     },
 }
 
@@ -456,6 +460,7 @@ fn execute(cli: Cli) -> Result<(), CliError> {
         restart,
         dry_run,
         health_url,
+        no,
     } = &cli.cmd
     {
         upgrade::run(upgrade::Options {
@@ -463,6 +468,7 @@ fn execute(cli: Cli) -> Result<(), CliError> {
             restart: *restart,
             dry_run: *dry_run,
             yes: g.yes,
+            no: *no,
             json: g.json,
             health_url: health_url.clone(),
         })?;

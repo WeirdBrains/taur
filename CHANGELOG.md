@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Changed
+
+- Larger package limits: archives up to 64 MiB (was 8 MiB), files up to 64 MiB (was 256 KiB), up to 256 files (was 64), and mirrored trees up to 64 MiB (was 1 MiB).
+
+### Added
+
+- `taurctl upgrade -n`/`--no` keeps `/etc/taur/taur.env` (also the default, now without a dpkg prompt); `-y` backs it up to `taur.env.bak-<time>` and installs the packaged default.
+
 ## [1.10.0] - 2026-11-12
 
 ### Changed

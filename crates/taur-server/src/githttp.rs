@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 use taur_core::srcinfo::validate_name;
 
 /// Largest accepted request body (pack upload).
-pub const MAX_BODY: usize = 64 * 1024 * 1024;
+pub const MAX_BODY: usize = 128 * 1024 * 1024;
 
 fn decode_b64(s: &str) -> Option<Vec<u8>> {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

@@ -10,7 +10,7 @@ use crate::{Error, Result, Store};
 use std::path::Path;
 
 /// Largest allowed blob (aurweb's default `max_blob_size`).
-pub const MAX_BLOB_SIZE: u64 = 256 * 1024;
+pub const MAX_BLOB_SIZE: u64 = 64 * 1024 * 1024;
 const ZERO: &str = "0000000000000000000000000000000000000000";
 
 #[derive(Debug, Clone, PartialEq)]

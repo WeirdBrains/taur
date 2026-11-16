@@ -26,7 +26,7 @@ The base URL is `{url}/{pkgbase}.git`.
 
 A pacman `Server=` repository is a set of built archives. It is not a recipe, and TAUR will not import it as one.
 
-Git is run without the operator's git config, without a credential helper, without redirect following, and without hooks. The fetch is depth 1, one minute, and the tree may be at most 1 MiB and 64 regular files. Symlinks, subdirectories, and submodules are refused. `PKGBUILD` is not executed.
+Git is run without the operator's git config, without a credential helper, without redirect following, and without hooks. The fetch is depth 1, one minute, and the tree may be at most 64 MiB and 256 regular files. Symlinks, subdirectories, and submodules are refused. `PKGBUILD` is not executed.
 
 Each copied tree includes `TAUR-MIRROR` with the source URL and the upstream commit. `taur mirror status` prints that revision. The note says the copy is not an operator signature and not an Arch or AUR verification.
 

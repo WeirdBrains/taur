@@ -37,7 +37,7 @@ taurctl pkg vote|unvote|notify|unnotify|flag|unflag|comments|comment|comaintaine
 taurctl comment edit|delete|pin|unpin …
 taurctl mcp                                     # MCP over stdio, see mcp.md
 taurctl request file|list|show|accept|reject …
-taurctl upgrade [--version X] [--restart] [--dry-run]   # local package install, see below
+taurctl upgrade [--version X] [--restart] [--dry-run] [-n]   # local package install, see below
 ```
 `unregister`, `org delete` and `pkg disown` ask for confirmation; without a terminal
 they refuse unless `-y` is given. `taurctl upgrade` also asks before installing (and
@@ -62,8 +62,15 @@ taurctl upgrade --version 1.5.0 --dry-run
 - The selected file is checked against the release `SHA256SUMS` before anything is
   installed. Root or `sudo` is required to run the package manager.
 - `/etc/taur` and `/var/lib/taur` (configuration, the SQLite database, and git
-  repositories) are left in place by the package manager. This command does not move
-  the database.
+  repositories) are left in place. This command does not move the database.
+- `/etc/taur/taur.env` is never replaced unless you say so. Without `-y` or `-n`, the
+  command asks `replace /etc/taur/taur.env with the packaged default? ... [y/N]`; the
+  default answer, no, keeps it, and so does a non-interactive run. When it is kept
+  (the default, or `-n`/`--no`): pacman leaves the new
+  default as `taur.env.pacnew`, dnf as `taur.env.rpmnew`, and apt-get runs with
+  `--force-confold` so dpkg keeps the existing file without prompting. With `-y`, or yes at the question, the
+  existing file is first copied to `taur.env.bak-<unix time>` (mode and owner kept),
+  then the packaged default replaces it. `-y` and `-n` cannot be combined.
 - The service is not restarted unless you pass `--restart`. After a restart it checks
   `GET /api/v1/server` (default `http://127.0.0.1:<TAUR_BIND port>`). If that fails and
   the previously installed package was retained, that package is reinstalled and the
