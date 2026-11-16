@@ -21,7 +21,7 @@ backup=('etc/taur/taur.env')
 options=('!strip' '!debug' '!lto')
 install=taur.install
 source=("https://github.com/WeirdBrains/taur/releases/download/v${pkgver}/taur-${pkgver}-x86_64-unknown-linux-gnu.tar.gz")
-sha256sums=('UPSTREAM_TARBALL_SHA256')
+sha256sums=('434966750059e646b89e5dc3b24fd4db90435e2475901c7b379e7ed7a872a75e')
 
 package() {
   cd "${srcdir}/taur-${pkgver}"
