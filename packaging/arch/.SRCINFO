@@ -1,6 +1,6 @@
 pkgbase = taur
 	pkgdesc = AUR-compatible package server
-	pkgver = 1.10.0
+	pkgver = 1.11.0
 	pkgrel = 1
 	url = https://github.com/WeirdBrains/taur
 	install = taur.install
@@ -13,7 +13,7 @@ pkgbase = taur
 	options = !debug
 	options = !lto
 	backup = etc/taur/taur.env
-	source = https://github.com/WeirdBrains/taur/releases/download/v1.10.0/taur-1.10.0-x86_64-unknown-linux-gnu.tar.gz
-	sha256sums = 4d646388b8fecfc108f3af404f5dc2ccf396b2e267cdd1371a0ad13c245ebc89
+	source = https://github.com/WeirdBrains/taur/releases/download/v1.11.0/taur-1.11.0-x86_64-unknown-linux-gnu.tar.gz
+	sha256sums = UPSTREAM_TARBALL_SHA256
 
 pkgname = taur

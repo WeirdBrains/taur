@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-16
+
 ### Changed
 
 - Larger package limits: archives up to 64 MiB (was 8 MiB), files up to 64 MiB (was 256 KiB), up to 256 files (was 64), and mirrored trees up to 64 MiB (was 1 MiB).
