@@ -3,7 +3,7 @@ Upstream-Name: taur
 Source: https://github.com/WeirdBrains/taur
 
 Files: *
-Copyright: WeirdBrains
+Copyright: Weird Brains LLC
 License: MIT or Apache-2.0
  The upstream crate license is MIT OR Apache-2.0. The license texts are the
  standard MIT license and the Apache License, Version 2.0.

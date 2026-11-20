@@ -3,7 +3,7 @@ Version: @VERSION@-1
 Section: net
 Priority: optional
 Architecture: amd64
-Maintainer: WeirdBrains <taur@weirdbrains.com>
+Maintainer: Weird Brains LLC <taur@weirdbrains.com>
 Homepage: https://github.com/WeirdBrains/taur
 Depends: git, adduser, libc6 (>= 2.31)@EXTRA_DEPENDS@
 Recommends: systemd

@@ -72,5 +72,5 @@ fi
 /usr/share/man/man1
 
 %changelog
-* @RPM_DATE@ WeirdBrains <taur@weirdbrains.com> - @VERSION@-1
+* @RPM_DATE@ Weird Brains LLC <taur@weirdbrains.com> - @VERSION@-1
 - Package TAUR @VERSION@.

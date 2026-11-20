@@ -1,4 +1,4 @@
-# Maintainer: WeirdBrains <taur@weirdbrains.com>
+# Maintainer: Weird Brains LLC <taur@weirdbrains.com>
 # Public AUR-compatible recipe. Helpers such as yay clone these files from a
 # TAUR server and download the published GitHub release tarball. This file is
 # not used to build the official GitHub .pkg.tar.zst; that uses

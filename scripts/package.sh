@@ -303,7 +303,7 @@ taur (${version}-1) unstable; urgency=medium
 
   * Package TAUR ${version}.
 
- -- WeirdBrains <taur@weirdbrains.com>  ${deb_date}
+ -- Weird Brains LLC <taur@weirdbrains.com>  ${deb_date}
 EOF
 gzip -n -9 "$deb_root/usr/share/doc/taur/changelog.Debian"
 sed -e "s/@VERSION@/${version}/g" -e "s/@EXTRA_DEPENDS@/${extra_depends}/g" \
@@ -375,7 +375,7 @@ cp "$repo/packaging/arch/taur.install" "$arch_dir/taur.install"
 (cd "$arch_dir" && makepkg --printsrcinfo > .SRCINFO) || die "makepkg --printsrcinfo failed for the staged Arch recipe"
 (
   cd "$arch_dir"
-  SOURCE_DATE_EPOCH="$epoch" PACKAGER="WeirdBrains <taur@weirdbrains.com>" \
+  SOURCE_DATE_EPOCH="$epoch" PACKAGER="Weird Brains LLC <taur@weirdbrains.com>" \
     makepkg --nodeps --force --noconfirm
 )
 arch_built="$(find "$arch_dir" -name "taur-${version}-1-x86_64.pkg.tar.*" -type f | head -1)"
