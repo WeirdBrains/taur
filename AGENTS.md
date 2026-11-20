@@ -3,8 +3,8 @@
 Adapted from `~/Projects/WeirdBrains/muninn/AGENTS.md`.
 
 ## Where to work
-- Always work directly on the owner's machine, in
-  `~/Projects/WeirdBrains/TAUR`. No cloud agents, no clones elsewhere.
+- Always work directly on the owner's machine, in its existing TAUR checkout.
+  No cloud agents, no clones elsewhere.
 - Toolchain: Rust >= 1.99 (edition 2024), cargo on this machine. Prefer bundled/vendored
   crate features over installing system packages (e.g. bundled SQLite; a vendored `protoc`
   crate for gRPC); ask before installing anything.
@@ -34,7 +34,7 @@ Adapted from `~/Projects/WeirdBrains/muninn/AGENTS.md`.
   man pages, add a
   `CHANGELOG.md` entry, commit as `release: vX.Y.Z`, create an annotated tag `vX.Y.Z`,
   then push main with the tag.
-- `python3 scripts/weirdnet_release.py` (the shared WeirdBrains release script, vendored from
+- `python3 scripts/weirdnet_release.py` (the shared [WeirdBrains](https://weirdbrains.com) release script, vendored from
   weirdnet-project-helpers; configured by `release.toml`) does all of this. `--dry-run` first.
   Don't edit the vendored copy; change weirdnet-project-helpers and re-vendor it. See
   `docs/releases.md`.

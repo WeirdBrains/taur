@@ -10,8 +10,7 @@ next = [
   "python3 scripts/weirdnet_release.py assets {version}",
 ]
 
-[env]
-CARGO_TARGET_DIR = "/path/to/cargo-target"
+# Build outside the checkout: export CARGO_TARGET_DIR (for example a scratch disk) before releasing.
 
 [[files]]
 kind = "cargo-workspace"

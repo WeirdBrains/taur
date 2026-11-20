@@ -41,7 +41,6 @@ jobs:
       TAUR_PARU: /tmp/taur-paru-v2.2.0/paru
       TAUR_REQUIRE_HELPERS: yay,paru
       TAUR_REQUIRE_ISOLATION: "1"
-      TAUR_ZIG: /home/user/.local/opt/zig-x86_64-linux-0.14.1/zig
     outputs:
       outdir: ${{ steps.pack.outputs.outdir }}
       tag: ${{ steps.ref.outputs.tag }}
@@ -53,6 +52,10 @@ jobs:
           fetch-tags: true
       - name: tags
         run: git fetch origin --tags
+      - name: zig
+        run: |
+          zig="$HOME/.local/opt/zig-x86_64-linux-0.14.1/zig"
+          if [ -x "$zig" ]; then echo "TAUR_ZIG=$zig" >> "$GITHUB_ENV"; fi
       - id: ref
         name: resolve tag
         run: |
@@ -84,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ steps.ref.outputs.tag }}"
-          out="/home/user/actions-runner-taur/outgoing/${GITHUB_RUN_ID}"
+          out="$HOME/actions-runner-taur/outgoing/${GITHUB_RUN_ID}"
           rm -rf "$out"
           mkdir -p "$out"
           scripts/package.sh --output "$out" "$tag"

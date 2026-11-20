@@ -1,6 +1,6 @@
 # Making a release
 
-Releases use the shared WeirdBrains release script, vendored from weirdnet-project-helpers as `scripts/weirdnet_release.py` and configured by `release.toml`. Don't edit the vendored copy: change weirdnet-project-helpers and re-vendor it. The script bumps the workspace version, checks the tree, runs the gates, commits, tags, and pushes. It does not build the public archive and it does not create a GitHub Release. Those assets are a separate step after the tag is on `main`.
+Releases use the shared [WeirdBrains](https://weirdbrains.com) release script, vendored from weirdnet-project-helpers as `scripts/weirdnet_release.py` and configured by `release.toml`. Don't edit the vendored copy: change weirdnet-project-helpers and re-vendor it. The script bumps the workspace version, checks the tree, runs the gates, commits, tags, and pushes. It does not build the public archive and it does not create a GitHub Release. Those assets are a separate step after the tag is on `main`.
 
 Run it from a clean `main` that is not behind `origin/main`. The default bump is the next minor, and patch goes back to 0. Release notes come from `## [Unreleased]` in `CHANGELOG.md`; a message argument is optional and adds a bullet.
 
@@ -85,24 +85,20 @@ The packages install `/usr/bin/taur`, `/usr/bin/taurctl`, man pages, docs, the s
 
 ## GitHub Actions on the self-hosted runner
 
-CI and release builds run only on a self-hosted runner on this machine. The workflows do not use a GitHub-hosted runner.
+CI and release builds run only on a self-hosted runner. The workflows do not use a GitHub-hosted runner.
 
-The runner is installed for `m3talsmith` (not root) at `~/actions-runner-taur`, version 2.338.2. Its labels are `self-hosted`, `Linux`, `X64` and `taur`. Both workflow files require all of those labels. A user systemd service keeps it running while this user is logged in:
+The runner runs as an ordinary user (not root) from `~/actions-runner-taur`. Both workflow files require the labels `self-hosted`, `Linux`, `X64` and `taur`. A user systemd service keeps it running while that user is logged in:
 
 ```sh
 systemctl --user status actions-runner-taur.service
 systemctl --user restart actions-runner-taur.service
 ```
 
-The unit is `~/.config/systemd/user/actions-runner-taur.service` and it is enabled. It does not start at boot until lingering is turned on, which needs a password on this machine:
+The unit is `~/.config/systemd/user/actions-runner-taur.service`. It does not start at boot unless lingering is turned on for that user (`sudo loginctl enable-linger <user>`).
 
-```sh
-sudo loginctl enable-linger m3talsmith
-```
+The release job uses Zig from `~/.local/opt/zig-x86_64-linux-0.14.1/zig` when it is there (as `TAUR_ZIG`) and writes packages to `~/actions-runner-taur/outgoing/<run id>`.
 
-That command has not been run. `Linger=no` until it is.
-
-`scripts/svc.sh` from the runner install wants root to write `/etc/systemd/system`. The user unit above is the service that is actually running. It executes `~/actions-runner-taur/bin/runsvc.sh`.
+`scripts/svc.sh` from the runner install wants root to write `/etc/systemd/system`. The user unit above is the one that runs. It executes `~/actions-runner-taur/bin/runsvc.sh`.
 
 ### What is allowed to start a job
 
