@@ -466,6 +466,7 @@ async fn stats_page_is_served_and_links_cross_sites() {
     let html = String::from_utf8(body).unwrap();
     assert!(html.contains(r#"href="https://taur.weirdbrains.com/">Project site</a>"#));
     assert!(html.contains(r#"href="https://github.com/WeirdBrains/taur">GitHub</a>"#));
+    assert!(html.contains(r#"<a href="https://weirdbrains.com">Weird Brains</a>"#));
     let (_, js) = get(&app, "/static/app.js").await;
     let js = String::from_utf8(js).unwrap();
     assert!(js.contains(r#"const PROJECT_SITE = "https://taur.weirdbrains.com/";"#));
