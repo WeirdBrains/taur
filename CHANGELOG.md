@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-20
+
 ### Changed
 
 - The package server footer links [Weird Brains](https://weirdbrains.com); packages name Weird Brains LLC as maintainer and copyright holder.
