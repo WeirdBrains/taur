@@ -31,7 +31,7 @@ TAUR_TRUSTED_PROXIES=10.0.0.0/8</code></pre>
 <h2>TLS</h2>
 <p><code>TAUR_TLS=off</code> is plaintext HTTP, and gRPC on <code>TAUR_GRPC_BIND</code> is plaintext HTTP/2. Put a proxy in front if you want TLS there. <code>TAUR_TLS=acme</code> is HTTP-01 in the process: HTTPS on <code>TAUR_BIND</code>, and gRPC uses that same certificate. It does not start without <code>TAUR_DOMAIN</code> and <code>TAUR_ACME_ACCEPT_TERMS=yes</code>, and it does not fall back to HTTP on the application port. SSH is separate. A Caddy snippet for this documentation site is <code>Caddyfile</code> in this branch. It does not start by itself.</p>
 </main>
-<footer class="docfoot"><a href="./">All guides</a></footer>
+<footer class="docfoot"><a href="./">All guides</a> · A <a href="https://weirdbrains.com">Weird Brains</a> project</footer>
 <script src="../main.js"></script>
 </body>
 </html>

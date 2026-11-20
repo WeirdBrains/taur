@@ -33,3 +33,4 @@ background. `assets/icon.svg` is the favicon tile. `assets/favicon.ico` and the 
 
 Every page links the public package server (`https://pkg.taur.weirdbrains.com/`) in the
 nav and footer, next to GitHub. The package server links back here from its header and footer.
+Every page footer also links [Weird Brains](https://weirdbrains.com).
