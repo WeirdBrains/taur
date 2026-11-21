@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Fixed
+
+- Web UI: page headings show in their written case again.
+
 ## [1.13.0] - 2026-11-20
 
 ### Changed

@@ -125,6 +125,16 @@ mod tests {
     }
 
     #[test]
+    fn headings_keep_their_case() {
+        // innerText follows text-transform; page titles must read as written.
+        let rule = super::STYLE
+            .lines()
+            .find(|l| l.starts_with("h1, h2 {"))
+            .expect("h1, h2 rule");
+        assert!(!rule.contains("text-transform"), "{rule}");
+    }
+
+    #[test]
     fn logo_dark_is_the_existing_site_mark() {
         let svg = std::str::from_utf8(super::LOGO_DARK).unwrap();
         assert!(svg.contains("<svg"), "logo-dark.svg must be an SVG");

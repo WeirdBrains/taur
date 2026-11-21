@@ -53,7 +53,7 @@ a:hover { color:var(--pink); }
 footer a { color:var(--fg); text-decoration-color:var(--pink); }
 footer a:hover { color:var(--acid); }
 
-h1, h2 { font-family:var(--display); font-weight:900; text-transform:uppercase; letter-spacing:.04em; line-height:1.1; }
+h1, h2 { font-family:var(--display); font-weight:900; letter-spacing:.03em; line-height:1.1; } /* headings stay in their written case (innerText, copy and tests see it) */
 h1 { font-size:2.3rem; margin:.2rem 0 1.1rem; color:var(--fg); text-shadow:3px 3px 0 var(--pink); }
 h2 { font-size:1.2rem; margin:.1rem 0 .8rem; color:var(--yellow); }
 
