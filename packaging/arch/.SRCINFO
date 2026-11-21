@@ -14,6 +14,6 @@ pkgbase = taur
 	options = !lto
 	backup = etc/taur/taur.env
 	source = https://github.com/WeirdBrains/taur/releases/download/v1.13.1/taur-1.13.1-x86_64-unknown-linux-gnu.tar.gz
-	sha256sums = UPSTREAM_TARBALL_SHA256
+	sha256sums = 61c63fc7f318bf597cd478382838540db604788d3310833e62e36aa6b610e9cd
 
 pkgname = taur
