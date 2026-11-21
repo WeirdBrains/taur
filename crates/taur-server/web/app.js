@@ -121,6 +121,16 @@ function pager(page, total, per, hrefFor) {
   return h("nav", { class: "pager", "aria-label": "Pagination" }, prev, h("span", {}, `Page ${page} of ${pages}`), next);
 }
 
+// Home hero: the TAUR mark as a sticker plus a copy-paste helper line for this instance.
+function hero(origin) {
+  return h("section", { class: "hero", "aria-label": "About TAUR" },
+    h("img", { class: "hero-logo", src: "/static/logo-dark.svg", width: "150", height: "150", alt: "" }),
+    h("div", {},
+      h("p", { class: "hero-title", "aria-hidden": "true" }, "TAUR"),
+      h("p", { class: "hero-tag" }, "An ", h("mark", {}, "AUR-compatible"), " package server. Point yay or paru here and go."),
+      h("pre", {}, `yay --aururl ${origin} --aurrpcurl '${origin}/rpc?' -S <package>`)));
+}
+
 // ---- pages ----
 async function pageSearch(params) {
   const q = params.get("q") || "";
@@ -130,7 +140,7 @@ async function pageSearch(params) {
     h("input", { name: "q", value: q, placeholder: "Search packages", "aria-label": "Search" }),
     h("select", { name: "by", "aria-label": "Search by" }, fields.map((f) => h("option", { value: f, selected: f === by }, f))),
     h("button", {}, "Search"));
-  const out = [h("h1", {}, "Packages"), h("div", { class: "card" }, form)];
+  const out = [q ? null : hero(location.origin), h("h1", {}, "Packages"), h("div", { class: "card" }, form)];
   if (q.length >= 2 || (by === "maintainer" && q)) {
     try {
       const r = await api("GET", `/rpc/v5/search/${enc(q)}?by=${enc(by)}`, undefined, false);

@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Changed
+
+- Web UI: a louder punk theme (black, hot pink, acid green, hazard yellow) and a home hero with the TAUR mark.
+
 ## [1.12.0] - 2026-11-20
 
 ### Changed

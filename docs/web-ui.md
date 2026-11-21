@@ -11,6 +11,22 @@ pointing at `https://taur.weirdbrains.com/` (both external links). The footer re
 Project site, GitHub and Stats links. The header
 wraps on a narrow viewport so the nav can sit under the brand.
 
+## Look
+The UI uses one dark, high-contrast "punk zine" theme (no light variant): near-black
+`#0a0a0c` background, off-white `#f2efe6` text, hot pink `#ff2e88`, acid green `#c6ff00`
+(links), hazard yellow `#ffe600` (headings, table heads) and `#ff5a3c` for errors and
+danger buttons. Cards have hard offset shadows, the header sits on a pink/yellow hazard
+stripe and the TAUR mark is drawn as a tilted sticker. Text pairs meet WCAG AA (body
+text about 16:1, pink on black 5.6:1); focus rings are yellow. Fonts are local only (the
+CSP allows no font hosts): headings use a heavy display stack (`Archivo Black`, `Anton`,
+`Impact`, `Arial Black`, then `system-ui`) and code a monospace stack. The palette lives
+in CSS variables at the top of `web/style.css`.
+
+The package index (`/` without a query) opens with a hero: the same `logo-dark.svg` mark
+at sticker size (decorative, `alt=""`; the header keeps the descriptive alt text), the
+TAUR wordmark, and a `yay --aururl … --aurrpcurl …` line built from the page's own origin.
+Search results skip the hero.
+
 ## Pages
 | Path | What |
 |---|---|
@@ -60,7 +76,7 @@ HTTP tests check every page route and asset is served with the right headers and
 the API calls the UI makes work, including `/static/logo-dark.svg` and the GitHub nav
 URL. `web_dom.js` (Node, minimal DOM) checks that a missing
 archived banner does not render the text `null`, that the GitHub item is an external
-link, and that index pager links keep the
+link, that the home hero shows the TAUR mark and an install line for its own origin, and that index pager links keep the
 chosen sort and reset the page when the sort changes. Core and HTTP tests cover
 anonymous organization directory access, package-list scoping, historic revision
 snapshots, and index pagination ties. A headless Chromium check renders package, search,

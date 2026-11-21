@@ -55,8 +55,8 @@ function extractHelpers(src) {
 const src = fs.readFileSync(path.join(__dirname, "../web/app.js"), "utf8");
 const ctx = { document, Node, URLSearchParams };
 vm.createContext(ctx);
-vm.runInContext(extractHelpers(src) + "\nthis.h = h; this.render = render; this.indexHref = indexHref; this.pager = pager;", ctx);
-const { h, render, indexHref, pager } = ctx;
+vm.runInContext(extractHelpers(src) + "\nthis.h = h; this.render = render; this.indexHref = indexHref; this.pager = pager; this.hero = hero;", ctx);
+const { h, render, indexHref, pager, hero } = ctx;
 
 function assert(cond, msg) {
   if (!cond) {
@@ -104,5 +104,12 @@ assert(!src.includes("Download counts are not recorded"), "downloaded sort must 
 assert(src.includes("DownloadCount"), "UI displays the download count");
 
 assert(src.includes("/packages/${enc(info.Organization)}".replace("info.Organization", "info.Organization")) || src.includes('`/orgs/${enc(info.Organization)}`'), "package org name links to the profile");
+
+const top = hero("https://pkg.example.com");
+assert(top.tagName === "SECTION" && top.className === "hero", "home hero is a section");
+assert(top.children[0].tagName === "IMG" && top.children[0].attributes.src === "/static/logo-dark.svg", "hero shows the existing TAUR mark");
+assert(top.children[0].attributes.alt === "", "hero mark is decorative (the header carries the alt text)");
+assert(top.textContent.includes("yay --aururl https://pkg.example.com --aurrpcurl 'https://pkg.example.com/rpc?' -S <package>"), "hero helper line uses this instance's origin");
+assert(src.includes("q ? null : hero(location.origin)"), "hero shows on the index only, not on search results");
 
 console.log("ok");
